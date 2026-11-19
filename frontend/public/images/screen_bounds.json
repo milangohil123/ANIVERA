@@ -1,0 +1,24 @@
+{
+  "macbook": {
+    "width": 1024,
+    "height": 576,
+    "size": 125185
+  },
+  "phone": {
+    "size": 553623,
+    "height": 4096,
+    "width": 4096
+  },
+  "macbookScreen": {
+    "minX": 176,
+    "maxX": 845,
+    "minY": 86,
+    "maxY": 488,
+    "width": 669,
+    "height": 402,
+    "leftPct": "17.19",
+    "topPct": "14.93",
+    "widthPct": "65.33",
+    "heightPct": "69.79"
+  }
+}

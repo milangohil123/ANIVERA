@@ -1,0 +1,54 @@
+# ==============================================================================
+# PashuRakshak Botad — Backend (.gitignore)
+# Python / FastAPI / SQLAlchemy / Alembic / Pytest
+# ==============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+.venv/
+.venv*/
+venv/
+venv*/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Testing, Cache & Coverage
+.cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+nosetests.xml
+htmlcov/
+.hypothesis/
+
+# Build & Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Logs & Runtime
+*.log
+logs/
+*.pid
+
+# Local Database Dumps & SQLite
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.bak

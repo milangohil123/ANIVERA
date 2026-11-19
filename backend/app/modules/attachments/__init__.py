@@ -1,0 +1,2 @@
+"""Attachments domain module."""
+

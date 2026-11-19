@@ -1,0 +1,12 @@
+{
+  "macbook": {
+    "width": 1024,
+    "height": 576,
+    "size": 125185
+  },
+  "phone": {
+    "size": 553623,
+    "height": 4096,
+    "width": 4096
+  }
+}

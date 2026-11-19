@@ -1,0 +1,153 @@
+# ==============================================================================
+# PashuRakshak Botad — Root Git Ignore
+# Comprehensive rules for Monorepo (FastAPI Backend + React Frontend)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Variables & Secrets (CRITICAL)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+
+# ------------------------------------------------------------------------------
+# 2. Operating System & Local Desktop Artifacts
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------------------------
+# 3. Python / Backend Build & Bytecode
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+
+# ------------------------------------------------------------------------------
+# 4. Virtual Environments (Backend & Frontend stray venvs)
+# ------------------------------------------------------------------------------
+.venv/
+.venv*/
+venv/
+venv*/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ------------------------------------------------------------------------------
+# 5. Testing & Code Quality / Coverage
+# ------------------------------------------------------------------------------
+.cache/
+.pytest_cache/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+htmlcov/
+.eslintcache
+
+# ------------------------------------------------------------------------------
+# 6. Node / Frontend Dependencies & Build Outputs
+# ------------------------------------------------------------------------------
+node_modules/
+*/node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+dist/
+dist-ssr/
+dev-dist/
+*.local
+
+# ------------------------------------------------------------------------------
+# 7. IDE & Editor Configuration
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+*.sublime-workspace
+*.sublime-project
+
+# ------------------------------------------------------------------------------
+# 8. Local File Storage, Attachments & Media (Preserve folder structure via .gitkeep)
+# ------------------------------------------------------------------------------
+storage/attachments/*
+storage/uploads/*
+storage/imports/*
+storage/labels/*
+storage/exports/*
+storage/temp/*
+!storage/**/.gitkeep
+!storage/README.md
+
+# ------------------------------------------------------------------------------
+# 9. Logs & Runtime Files
+# ------------------------------------------------------------------------------
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ------------------------------------------------------------------------------
+# 10. Database Dumps & Local Data Backups
+# ------------------------------------------------------------------------------
+*.dump
+*.sql.bak
+*.sqlite
+*.sqlite3
+*.db
+
+# ------------------------------------------------------------------------------
+# 11. Local Sandboxes & Temporary Scripts
+# ------------------------------------------------------------------------------
+powershell.bat
+powershell.cmd
+*.tmp
+*.bak
