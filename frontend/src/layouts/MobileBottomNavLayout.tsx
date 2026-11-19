@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../i18n';
 import { STRINGS_GU } from '../constants/stringsGu';
 import { SyncStatusChip } from '../components/common/SyncStatusChip';
 import { NotificationBell } from '../components/common/NotificationBell';
@@ -32,10 +33,11 @@ export const MobileBottomNavLayout: React.FC<MobileBottomNavLayoutProps> = ({
   onTriggerSync,
 }) => {
   const { session, profile, role, logout } = useAuth();
+  const { t } = useTranslation();
   const [isLogoutOpen, setIsLogoutOpen] = useState(false);
 
-  const displayName = profile?.full_name || session?.user.fullName || 'ક્ષેત્રીય સ્ટાફ';
-  const roleLabel = STRINGS_GU.roles[role] || role;
+  const displayName = profile?.full_name || session?.user.fullName || t('role.FW');
+  const roleLabel = t(`role.${role}`) || STRINGS_GU.roles[role] || role;
 
   return (
     <div className="min-h-screen bg-[#F1F5FF] flex flex-col font-body text-[#0F172A]">
@@ -69,7 +71,7 @@ export const MobileBottomNavLayout: React.FC<MobileBottomNavLayoutProps> = ({
           <button
             onClick={() => setIsLogoutOpen(true)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-100 transition-colors"
-            title={STRINGS_GU.actions.logout}
+            title={t('common.logout') || STRINGS_GU.actions.logout}
           >
             <LogOut className="w-4 h-4" />
           </button>

@@ -17,6 +17,7 @@ from app.modules.technical.endpoints import router as technical_router
 from app.modules.reports.endpoints import router as reports_router
 from app.modules.maps.endpoints import router as maps_router
 from app.modules.duty.endpoints import router as duty_router
+from app.modules.translation.endpoints import router as translation_router
 
 api_router = APIRouter()
 
@@ -71,6 +72,9 @@ api_router.include_router(maps_router, prefix="/maps", tags=["Geospatial & Maps"
 
 # Include duty management, live tracking, and smart complaint assignments under /duty
 api_router.include_router(duty_router, prefix="/duty", tags=["Duty & Smart Location Tracking"])
+
+# Include dynamic content translation endpoint under /translation
+api_router.include_router(translation_router, prefix="/translation", tags=["Dynamic Translation"])
 
 
 

@@ -16,6 +16,9 @@ import {
   Clock,
   Smartphone,
   History,
+  Shield,
+  Layers,
+  UserCheck,
 } from 'lucide-react';
 import { STRINGS_GU } from './stringsGu';
 import { type NavItemDef } from '../layouts/WebSidebarLayout';
@@ -78,9 +81,15 @@ export const COOP_NAV_ITEMS: NavItemDef[] = [
 
 export const ADMIN_NAV_ITEMS: NavItemDef[] = [
   { path: '/admin/overview', get label() { return STRINGS_GU.nav.admin.overview; }, icon: <LayoutDashboard className={ICON_CLASS} /> },
+  { path: '/admin/map', get label() { return STRINGS_GU.nav.admin.map; }, icon: <MapPin className={ICON_CLASS} /> },
+  { path: '/admin/geography', get label() { return STRINGS_GU.nav.admin.geography; }, icon: <Database className={ICON_CLASS} /> },
+  { path: '/admin/daho', get label() { return STRINGS_GU.nav.admin.daho; }, icon: <Shield className={ICON_CLASS} /> },
+  { path: '/admin/assignments', get label() { return STRINGS_GU.nav.admin.assignments; }, icon: <Layers className={ICON_CLASS} /> },
+  { path: '/admin/oversight', get label() { return STRINGS_GU.nav.admin.oversight; }, icon: <BarChart3 className={ICON_CLASS} /> },
+  { path: '/admin/roles', get label() { return STRINGS_GU.nav.admin.roles; }, icon: <UserCheck className={ICON_CLASS} /> },
   { path: '/admin/users', get label() { return STRINGS_GU.nav.admin.users; }, icon: <Users className={ICON_CLASS} /> },
-  { path: '/admin/devices', get label() { return STRINGS_GU.nav.admin.devices; }, icon: <Smartphone className={ICON_CLASS} /> },
   { path: '/admin/audit-logs', get label() { return STRINGS_GU.nav.admin.auditLogs; }, icon: <History className={ICON_CLASS} /> },
   { path: '/admin/system-health', get label() { return STRINGS_GU.nav.admin.systemHealth; }, icon: <Activity className={ICON_CLASS} /> },
+  { path: '/admin/devices', get label() { return STRINGS_GU.nav.admin.devices; }, icon: <Smartphone className={ICON_CLASS} /> },
   { path: '/admin/profile', get label() { return STRINGS_GU.nav.admin.profile; }, icon: <User className={ICON_CLASS} /> },
 ];

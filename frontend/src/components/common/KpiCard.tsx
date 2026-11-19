@@ -80,13 +80,16 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-xl border border-[#E2E8F0] p-4 transition-all duration-150 hover:border-slate-300 hover:shadow-xs flex flex-col justify-between min-h-[104px] ${
+      className={`bg-white rounded-xl border border-[#E2E8F0] p-3 sm:p-3.5 transition-all duration-150 hover:border-slate-300 hover:shadow-xs flex flex-col justify-between min-h-[112px] min-w-0 flex-1 ${
         onClick ? 'cursor-pointer active:scale-[0.99]' : ''
       } ${className}`}
     >
-      {/* Top Header: Small Uppercase Label + Icon Container */}
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] sm:text-xs font-semibold text-[#64748B] uppercase tracking-wider font-heading leading-tight line-clamp-1">
+      {/* Top Header: Label + Icon Container */}
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <span
+          title={typeof label === 'string' ? label : undefined}
+          className="text-[11px] sm:text-xs font-semibold text-[#64748B] uppercase tracking-wider font-heading leading-tight line-clamp-2 break-words min-w-0 flex-1"
+        >
           {label}
         </span>
         {icon && (
@@ -99,12 +102,12 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       </div>
 
       {/* Main Metric Value */}
-      <div className="my-1.5 flex items-baseline justify-between gap-2">
+      <div className="my-1.5 flex items-baseline justify-between gap-2 min-w-0">
         {isLoading ? (
           <div className="h-7 w-20 bg-slate-100 animate-pulse rounded" />
         ) : (
           <div
-            className={`text-2xl sm:text-[28px] font-bold tracking-tight font-heading tabular-nums leading-none ${
+            className={`text-2xl sm:text-[26px] font-bold tracking-tight font-heading tabular-nums leading-none truncate min-w-0 ${
               valueColor || 'text-[#172033]'
             }`}
           >
@@ -114,7 +117,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
         {trend && (
           <span
-            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
               trend.isUp ? 'bg-[#E6F3EF] text-[#164E45]' : 'bg-slate-100 text-slate-600'
             }`}
           >
@@ -124,9 +127,12 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       </div>
 
       {/* Footer Subtext & Optional Badge */}
-      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 text-xs text-[#64748B]">
+      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 text-xs text-[#64748B] min-w-0">
         {subtext ? (
-          <div className="flex items-center gap-1 truncate text-[11px] font-medium text-[#64748B]">
+          <div
+            title={typeof subtext === 'string' ? subtext : undefined}
+            className="flex items-center gap-1 truncate text-[11px] font-medium text-[#64748B] min-w-0 flex-1"
+          >
             {subtextIcon}
             <span className="truncate">{subtext}</span>
           </div>

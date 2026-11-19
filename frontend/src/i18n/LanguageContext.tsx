@@ -9,6 +9,11 @@ import {
 import { gu } from './locales/gu';
 import { en } from './locales/en';
 import { hi } from './locales/hi';
+import {
+  getLocalizedDistrictName,
+  formatLocalizedDate,
+  formatLocalizedNumber,
+} from './localize';
 
 const dictionaries: Record<SupportedLanguage, any> = {
   gu,
@@ -20,6 +25,9 @@ export interface LanguageContextValue {
   language: SupportedLanguage;
   setLanguage: (lang: SupportedLanguage) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
+  localizeDistrict: (districtInput: any) => string;
+  formatDate: (dateInput: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions) => string;
+  formatNumber: (num: number | null | undefined) => string;
   supportedLanguages: LanguageMeta[];
   currentLanguageMeta: LanguageMeta;
 }
@@ -38,8 +46,35 @@ function resolvePath(obj: any, path: string): string | undefined {
   return typeof current === 'string' ? current : undefined;
 }
 
-// Global reference for standalone calls
-let globalCurrentLanguage: SupportedLanguage = DEFAULT_LANGUAGE;
+// Global reference for standalone calls initialized from storage
+const getInitialStoredLang = (): SupportedLanguage => {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored === 'gu' || stored === 'en' || stored === 'hi') {
+      return stored;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LANGUAGE;
+};
+
+let globalCurrentLanguage: SupportedLanguage = getInitialStoredLang();
+
+const formatMissingKeyFallback = (key: string, lang: string): string => {
+  if (process.env.NODE_ENV !== 'production' || (typeof window !== 'undefined' && (window as any).__DEV__)) {
+    console.warn(`[i18n] Missing translation key: "${key}" for language "${lang}"`);
+  }
+  if (key.includes('.')) {
+    const lastPart = key.split('.').pop() || key;
+    return lastPart
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim() || key;
+  }
+  return key;
+};
 
 export const tStandalone = (key: string, params?: Record<string, string | number>): string => {
   const dict = dictionaries[globalCurrentLanguage] || dictionaries[DEFAULT_LANGUAGE];
@@ -54,7 +89,9 @@ export const tStandalone = (key: string, params?: Record<string, string | number
     text = resolvePath(dictionaries.en, key);
   }
 
-  if (!text) return key;
+  if (!text) {
+    return formatMissingKeyFallback(key, globalCurrentLanguage);
+  }
 
   if (params) {
     return Object.entries(params).reduce((acc, [paramKey, paramVal]) => {
@@ -91,7 +128,19 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setLanguage = useCallback((lang: SupportedLanguage) => {
     if (lang === 'gu' || lang === 'en' || lang === 'hi') {
+      globalCurrentLanguage = lang;
+      try {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+      } catch {
+        // ignore
+      }
+      document.documentElement.lang = lang;
       setLanguageState(lang);
+      try {
+        window.dispatchEvent(new CustomEvent('pashurakshak:languagechange', { detail: { language: lang } }));
+      } catch {
+        // ignore
+      }
     }
   }, []);
 
@@ -109,7 +158,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         text = resolvePath(dictionaries.en, key);
       }
 
-      if (!text) return key;
+      if (!text) {
+        return formatMissingKeyFallback(key, language);
+      }
 
       if (params) {
         return Object.entries(params).reduce((acc, [paramKey, paramVal]) => {
@@ -118,6 +169,27 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       return text;
+    },
+    [language]
+  );
+
+  const localizeDistrict = useCallback(
+    (districtInput: any): string => {
+      return getLocalizedDistrictName(districtInput, language);
+    },
+    [language]
+  );
+
+  const formatDate = useCallback(
+    (dateInput: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions): string => {
+      return formatLocalizedDate(dateInput, language, options);
+    },
+    [language]
+  );
+
+  const formatNumber = useCallback(
+    (num: number | null | undefined): string => {
+      return formatLocalizedNumber(num, language);
     },
     [language]
   );
@@ -134,10 +206,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       language,
       setLanguage,
       t,
+      localizeDistrict,
+      formatDate,
+      formatNumber,
       supportedLanguages: SUPPORTED_LANGUAGES,
       currentLanguageMeta,
     }),
-    [language, setLanguage, t, currentLanguageMeta]
+    [language, setLanguage, t, localizeDistrict, formatDate, formatNumber, currentLanguageMeta]
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
@@ -151,6 +226,9 @@ export const useTranslation = (): LanguageContextValue => {
       language: globalCurrentLanguage,
       setLanguage: () => {},
       t: tStandalone,
+      localizeDistrict: (districtInput: any) => getLocalizedDistrictName(districtInput, globalCurrentLanguage),
+      formatDate: (dateInput: any, options?: any) => formatLocalizedDate(dateInput, globalCurrentLanguage, options),
+      formatNumber: (num: any) => formatLocalizedNumber(num, globalCurrentLanguage),
       supportedLanguages: SUPPORTED_LANGUAGES,
       currentLanguageMeta: SUPPORTED_LANGUAGES[0],
     };

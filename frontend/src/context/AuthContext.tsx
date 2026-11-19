@@ -33,7 +33,7 @@ export function normalizeRole(roleRaw?: string | null): NormalizedRole {
   if (upper === 'FW' || upper === 'FIELD_WORKER') return 'FW';
   if (upper === 'FARMER') return 'FARMER';
   if (upper === 'DAIRY_STAFF' || upper === 'COOPERATIVE' || upper === 'COOP') return 'COOP';
-  if (upper === 'SYS_ADMIN' || upper === 'ADMIN') return 'SYS_ADMIN';
+  if (upper === 'SYS_ADMIN' || upper === 'ADMIN' || upper === 'SUPER_ADMIN') return 'SYS_ADMIN';
   return 'UNKNOWN';
 }
 

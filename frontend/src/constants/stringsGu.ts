@@ -4,7 +4,12 @@
  * Implements dynamic reactive translation across Gujarati (Default), English, and Hindi.
  * Backward-compatible with all existing components accessing STRINGS_GU.
  */
-import { tStandalone } from '../i18n';
+import { tStandalone, useTranslation } from '../i18n';
+
+export function useStrings() {
+  useTranslation();
+  return STRINGS_GU;
+}
 
 export const STRINGS_GU = {
   get app() {
@@ -89,6 +94,12 @@ export const STRINGS_GU = {
       get admin() {
         return {
           get overview() { return tStandalone('nav.admin.overview'); },
+          get geography() { return tStandalone('nav.admin.geography'); },
+          get map() { return tStandalone('nav.admin.map'); },
+          get daho() { return tStandalone('nav.admin.daho'); },
+          get assignments() { return tStandalone('nav.admin.assignments'); },
+          get oversight() { return tStandalone('nav.admin.oversight'); },
+          get roles() { return tStandalone('nav.admin.roles'); },
           get users() { return tStandalone('nav.admin.users'); },
           get devices() { return tStandalone('nav.admin.devices'); },
           get auditLogs() { return tStandalone('nav.admin.auditLogs'); },

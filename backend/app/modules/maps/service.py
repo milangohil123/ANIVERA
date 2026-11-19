@@ -9,7 +9,7 @@ Enforces:
 - Counts only for vaccination coverage; no invented percentage bands or outbreak radii.
 """
 import uuid
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from sqlalchemy import case, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +41,10 @@ class MapService:
         try:
             scope = await self.authz.get_user_scope(current_user)
 
-            if current_user.role == "DAHO":
+            if current_user.role in ("SUPER_ADMIN", "SYS_ADMIN"):
+                # State-level administrators have statewide visibility
+                v_stmt = select(Village).where(Village.active == True).order_by(Village.name_gu)
+            elif current_user.role == "DAHO":
                 if not scope.assigned_district_ids:
                     return MapLayersResponse(
                         mappedVillages=[],
@@ -283,4 +286,235 @@ class MapService:
                 surveillanceLayer={},
                 vaccinationLayer={}
             )
+
+    async def get_gujarat_state_geojson(self) -> Dict[str, Any]:
+        """Return official Gujarat state district boundaries GeoJSON enriched with live database properties."""
+        import json
+        import os
+        from app.models.geography import CustomJurisdiction, District, Taluka, Village
+        from app.modules.authentication.models import DahoDistrictAssignment, User
+
+        data_path = os.path.join(os.path.dirname(__file__), "data", "gujarat_districts.geojson")
+        if not os.path.exists(data_path):
+            return {"type": "FeatureCollection", "features": []}
+
+        with open(data_path, "r", encoding="utf-8") as f:
+            gj = json.load(f)
+
+        # 1. Fetch all active districts & active DAHO assignments first
+        dist_stmt = select(District).where(District.active == True)
+        districts = list((await self.db.execute(dist_stmt)).scalars().all())
+
+        asgn_stmt = (
+            select(DahoDistrictAssignment, User)
+            .join(User, User.id == DahoDistrictAssignment.daho_user_id)
+            .where(DahoDistrictAssignment.ended_at.is_(None))
+        )
+        asgn_rows = (await self.db.execute(asgn_stmt)).all()
+        asgn_by_dist = {a[0].district_id: (a[0], a[1]) for a in asgn_rows}
+
+        # 2. Fetch Taluka and Village counts per district
+        t_counts_stmt = select(Taluka.district_id, func.count(Taluka.id)).group_by(Taluka.district_id)
+        t_counts = dict((await self.db.execute(t_counts_stmt)).all())
+
+        v_counts_stmt = select(Village.district_id, func.count(Village.id)).where(Village.active == True).group_by(Village.district_id)
+        v_counts = dict((await self.db.execute(v_counts_stmt)).all())
+
+        db_by_name = {}
+        for d in districts:
+            k = d.name_en.strip().lower()
+            if k not in db_by_name:
+                db_by_name[k] = d
+            else:
+                # Prefer canonical district with actual talukas / villages
+                curr_cnt = t_counts.get(db_by_name[k].id, 0)
+                new_cnt = t_counts.get(d.id, 0)
+                if new_cnt > curr_cnt or (new_cnt == curr_cnt and d.code.upper() in [k.upper(), k.upper().replace(" ", "_")]):
+                    db_by_name[k] = d
+
+        # 4. Fetch active custom jurisdictions
+        cj_stmt = select(CustomJurisdiction).where(CustomJurisdiction.status == "ACTIVE")
+        custom_jurs = {cj.district_id: cj for cj in (await self.db.execute(cj_stmt)).scalars().all()}
+
+        # 5. Enrich GeoJSON features
+        for feature in gj.get("features", []):
+            p = feature.get("properties", {})
+            dname = (p.get("district") or p.get("name") or p.get("DISTRICT") or "").strip().lower()
+            d_rec = db_by_name.get(dname)
+            if d_rec:
+                asgn_info = asgn_by_dist.get(d_rec.id)
+                t_cnt = t_counts.get(d_rec.id, 0)
+                v_cnt = v_counts.get(d_rec.id, 0)
+                cj = custom_jurs.get(d_rec.id)
+
+                p["district_id"] = str(d_rec.id)
+                p["code"] = d_rec.code
+                p["name_en"] = d_rec.name_en
+                p["name_gu"] = d_rec.name_gu
+                p["name_hi"] = p.get("name_hi") or d_rec.name_en
+                p["status"] = "ASSIGNED" if asgn_info else "UNASSIGNED"
+                p["taluka_count"] = t_cnt
+                p["village_count"] = v_cnt
+                p["has_custom_boundary"] = bool(cj)
+                p["custom_boundary_version"] = cj.version if cj else None
+
+                if asgn_info:
+                    asgn, daho_u = asgn_info
+                    p["daho_id"] = str(daho_u.id)
+                    p["daho_name"] = daho_u.full_name
+                    p["daho_username"] = daho_u.username
+                    p["daho_status"] = daho_u.status
+                    p["assigned_at"] = asgn.assigned_at.isoformat() if asgn.assigned_at else ""
+                else:
+                    p["daho_id"] = None
+                    p["daho_name"] = None
+                    p["daho_username"] = None
+                    p["daho_status"] = None
+                    p["assigned_at"] = None
+
+        return gj
+
+    async def get_district_talukas_geojson(self, district_id: Optional[uuid.UUID] = None) -> Dict[str, Any]:
+        """Return official Taluka boundary polygons inside the specified District (or statewide if district_id is None) as a GeoJSON FeatureCollection."""
+        from app.models.geography import District, Taluka, Village
+
+        if district_id:
+            t_stmt = select(Taluka, District.name_en.label("district_name")).join(District, Taluka.district_id == District.id).where(Taluka.district_id == district_id).order_by(Taluka.name_en)
+            v_counts_stmt = (
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.district_id == district_id, Village.active == True)
+                .group_by(Village.taluka_id)
+            )
+            v_ver_stmt = (
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.district_id == district_id, Village.active == True, Village.coord_status == "VERIFIED")
+                .group_by(Village.taluka_id)
+            )
+        else:
+            t_stmt = select(Taluka, District.name_en.label("district_name")).join(District, Taluka.district_id == District.id).where(Taluka.boundary_geojson.isnot(None)).order_by(Taluka.name_en)
+            v_counts_stmt = (
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.active == True)
+                .group_by(Village.taluka_id)
+            )
+            v_ver_stmt = (
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.active == True, Village.coord_status == "VERIFIED")
+                .group_by(Village.taluka_id)
+            )
+
+        taluka_rows = list((await self.db.execute(t_stmt)).all())
+        v_counts = dict((await self.db.execute(v_counts_stmt)).all())
+        v_ver_counts = dict((await self.db.execute(v_ver_stmt)).all())
+
+        features = []
+        for t, d_name in taluka_rows:
+            if not t.boundary_geojson:
+                continue
+            v_cnt = v_counts.get(t.id, 0)
+            v_ver = v_ver_counts.get(t.id, 0)
+            features.append({
+                "type": "Feature",
+                "id": str(t.id),
+                "geometry": t.boundary_geojson,
+                "properties": {
+                    "taluka_id": str(t.id),
+                    "district_id": str(t.district_id),
+                    "district_name": d_name,
+                    "code": t.code,
+                    "name_en": t.name_en,
+                    "name_gu": t.name_gu,
+                    "village_count": v_cnt,
+                    "verified_village_count": v_ver,
+                    "has_boundary": True,
+                }
+            })
+
+        return {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
+    async def get_district_villages_geojson(self, district_id: uuid.UUID) -> Dict[str, Any]:
+        """Return official Village boundary polygons inside the specified District as a GeoJSON FeatureCollection."""
+        from app.models.geography import District, Taluka, Village
+
+        v_stmt = (
+            select(Village, Taluka.name_en.label("taluka_name"), District.name_en.label("district_name"))
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .join(District, Village.district_id == District.id)
+            .where(Village.district_id == district_id, Village.active == True, Village.boundary_geojson.isnot(None))
+            .order_by(Village.name_en)
+        )
+        village_rows = list((await self.db.execute(v_stmt)).all())
+
+        features = []
+        for v, t_name, d_name in village_rows:
+            features.append({
+                "type": "Feature",
+                "id": str(v.id),
+                "geometry": v.boundary_geojson,
+                "properties": {
+                    "village_id": str(v.id),
+                    "taluka_id": str(v.taluka_id),
+                    "taluka_name": t_name,
+                    "district_id": str(v.district_id),
+                    "district_name": d_name,
+                    "code": v.code,
+                    "name_en": v.name_en,
+                    "name_gu": v.name_gu,
+                    "census_code": v.census_code,
+                    "latitude": float(v.latitude) if v.latitude is not None else None,
+                    "longitude": float(v.longitude) if v.longitude is not None else None,
+                    "coord_status": v.coord_status,
+                    "has_boundary": True,
+                }
+            })
+
+        return {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
+    async def get_taluka_villages_geojson(self, taluka_id: uuid.UUID) -> Dict[str, Any]:
+        """Return official Village boundary polygons inside the specified Taluka as a GeoJSON FeatureCollection."""
+        from app.models.geography import District, Taluka, Village
+
+        v_stmt = (
+            select(Village, Taluka.name_en.label("taluka_name"), District.name_en.label("district_name"))
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .join(District, Village.district_id == District.id)
+            .where(Village.taluka_id == taluka_id, Village.active == True, Village.boundary_geojson.isnot(None))
+            .order_by(Village.name_en)
+        )
+        village_rows = list((await self.db.execute(v_stmt)).all())
+
+        features = []
+        for v, t_name, d_name in village_rows:
+            features.append({
+                "type": "Feature",
+                "id": str(v.id),
+                "geometry": v.boundary_geojson,
+                "properties": {
+                    "village_id": str(v.id),
+                    "taluka_id": str(v.taluka_id),
+                    "taluka_name": t_name,
+                    "district_id": str(v.district_id),
+                    "district_name": d_name,
+                    "code": v.code,
+                    "name_en": v.name_en,
+                    "name_gu": v.name_gu,
+                    "census_code": v.census_code,
+                    "latitude": float(v.latitude) if v.latitude is not None else None,
+                    "longitude": float(v.longitude) if v.longitude is not None else None,
+                    "coord_status": v.coord_status,
+                    "has_boundary": True,
+                }
+            })
+
+        return {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
 

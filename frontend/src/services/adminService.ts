@@ -14,6 +14,7 @@ export interface DistrictSummary {
   code: string;
   name_en: string;
   name_gu: string;
+  name_hi?: string;
   active: boolean;
   taluka_count: number;
   village_count: number;
@@ -33,6 +34,7 @@ export interface DistrictItem {
   code: string;
   name_gu: string;
   name_en: string;
+  name_hi?: string;
   active: boolean;
 }
 
@@ -490,6 +492,178 @@ export const adminService = {
       const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
       throw new Error(err.detail || `ગામ સોંપણી સમાપ્ત કરવામાં નિષ્ફળ: HTTP ${res.status}`);
     }
+  },
+
+  // ============================================================================
+  // SUPER_ADMIN State-Level Administration Methods
+  // ============================================================================
+  async getSuperAdminOverview(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/overview`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `સુપર એડમિન ડેશબોર્ડ ડેટા મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async createDahoAccount(apiBaseUrl: string, payload: {
+    full_name: string;
+    username: string;
+    email?: string;
+    mobile_e164: string;
+    designation?: string;
+    organisation?: string;
+    district_id?: string;
+    password?: string;
+  }): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/daho-accounts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `DAHO એકાઉન્ટ બનાવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async reassignDistrict(apiBaseUrl: string, districtId: string, newDahoUserId: string, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/reassign`, {
+      method: 'POST',
+      body: JSON.stringify({ new_daho_user_id: newDahoUserId, reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `જિલ્લા પુનઃસોંપણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async releaseDistrict(apiBaseUrl: string, districtId: string, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/release`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `જિલ્લા મુક્તિ નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getDistrictHierarchy(apiBaseUrl: string, districtId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/hierarchy`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `જિલ્લા વહીવટી માળખું મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async saveCustomJurisdiction(apiBaseUrl: string, districtId: string, boundaryGeojson: any, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/custom-boundary`, {
+      method: 'POST',
+      body: JSON.stringify({ boundary_geojson: boundaryGeojson, reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `કસ્ટમ કાર્યક્ષેત્ર સેવ કરવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async validateGeodataImport(apiBaseUrl: string, payload: {
+    source_name: string;
+    dataset_version?: string;
+    features: any[];
+  }): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/geography/validate-import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ભૌગોલિક ડેટાસેટ ચકાસણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async commitGeodataImport(apiBaseUrl: string, payload: {
+    district_id: string;
+    source_name?: string;
+    dataset_version?: string;
+    talukas?: any[];
+    relink_existing_names?: boolean;
+    features?: any[];
+  }): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/geography/commit-import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ભૌગોલિક ડેટા આયાત સેવ કરવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async seedOfficialHierarchy(apiBaseUrl: string, districtId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/seed-official-hierarchy`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `સત્તાવાર વહીવટી માળખું સિંક કરવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getGujaratStateMap(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/maps/state/gujarat`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ગુજરાત રાજ્ય નકશો મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getDistrictTalukasGeoJson(apiBaseUrl: string, districtId?: string): Promise<any> {
+    const url = districtId
+      ? `/api/v1/maps/talukas-geojson?district_id=${districtId}`
+      : `/api/v1/maps/talukas-geojson`;
+    const res = await authFetch(apiBaseUrl, url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `તાલુકા પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getDistrictVillagesGeoJson(apiBaseUrl: string, districtId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/maps/districts/${districtId}/villages-geojson`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `જિલ્લા ગામ પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getTalukaVillagesGeoJson(apiBaseUrl: string, talukaId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/maps/talukas/${talukaId}/villages-geojson`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ગામ પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async getGeographicQualityAudit(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/geodata/quality-audit`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ભૌગોલિક ડેટા ગુણવત્તા ઓડિટ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
   },
 };
 

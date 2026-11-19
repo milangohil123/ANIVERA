@@ -118,8 +118,17 @@ class AuthorizationRepository:
                 "animal.read", "farmer.read", "aggregate.view", "audit.read",
                 "export.run", "map.view", "vaccinator.approve", "event.create", "event.read"
             },
+            "SUPER_ADMIN": {
+                "user.manage", "audit.read", "health.read", "technical.manage",
+                "geography.manage", "district.manage", "taluka.manage", "village.manage",
+                "daho.manage", "assignment.manage", "custom_jurisdiction.manage",
+                "campaign.view", "vaccination.read", "disease.read", "aggregate.view", "map.view"
+            },
             "SYS_ADMIN": {
-                "user.manage", "audit.read", "health.read", "technical.manage"
+                "user.manage", "audit.read", "health.read", "technical.manage",
+                "geography.manage", "district.manage", "taluka.manage", "village.manage",
+                "daho.manage", "assignment.manage", "custom_jurisdiction.manage",
+                "campaign.view", "vaccination.read", "disease.read", "aggregate.view", "map.view"
             },
             "FARMER": {
                 "own.read", "animal.read", "vaccination.read", "disease.report"
@@ -143,7 +152,7 @@ class AuthorizationRepository:
 
     async def get_assigned_districts(self, user_id: uuid.UUID, role: Optional[str] = None) -> Set[uuid.UUID]:
         """Fetch active district IDs assigned to a DAHO user or resolved from assigned villages for a VO."""
-        if role in ("SYS_ADMIN", "ADMIN", "FARMER"):
+        if role in ("SUPER_ADMIN", "SYS_ADMIN", "ADMIN", "FARMER"):
             return set()
         try:
             assigned: Set[uuid.UUID] = set()

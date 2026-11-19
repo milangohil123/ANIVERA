@@ -313,7 +313,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="મેનુ શોધો (Search)..."
+                placeholder={t('common.searchPlaceholder') || 'Search menu...'}
                 className="w-full bg-transparent text-xs text-[#E5E7EB] placeholder:text-neutral-500 focus:outline-none pl-2 pr-1"
               />
               {searchQuery && (
@@ -335,12 +335,12 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                   setTimeout(() => searchInputRef.current?.focus(), 150);
                 }}
                 className="w-10 h-10 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-neutral-800/80 transition-colors"
-                title="શોધો (Search)"
+                title={t('common.search') || 'Search'}
               >
                 <Search className="w-4 h-4" />
               </button>
               <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                શોધો (Search)
+                {t('common.search') || 'Search'}
               </div>
             </div>
           )}
@@ -350,13 +350,13 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-2.5 py-2 space-y-1">
           {searchQuery && filteredNavItems.length === 0 ? (
             <div className="p-4 text-center text-neutral-400 text-xs">
-              કોઈ મેનુ મળ્યું નથી.
+              {t('common.noData') || 'No menu found.'}
             </div>
           ) : (
             <>
-              {renderNavSection('OPERATIONS', operationsItems)}
-              {renderNavSection('RECORDS & TOOLS', recordsItems)}
-              {renderNavSection('SYSTEM & PROFILE', adminItems)}
+              {renderNavSection(t('nav.sections.operations') || 'OPERATIONS', operationsItems)}
+              {renderNavSection(t('nav.sections.records') || 'RECORDS & TOOLS', recordsItems)}
+              {renderNavSection(t('nav.sections.system') || 'SYSTEM & PROFILE', adminItems)}
             </>
           )}
         </div>
@@ -379,7 +379,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
             >
               <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                 <HelpCircle className="w-[18px] h-[18px] shrink-0 text-[#9CA3AF] group-hover:text-white" />
-                {!isCollapsed && <span className="truncate">સહાય (Support & Help)</span>}
+                {!isCollapsed && <span className="truncate">{t('common.help') || 'Support & Help'}</span>}
               </div>
               {!isCollapsed && (
                 <span className="text-[10px] font-mono text-neutral-400">1800-BOTAD</span>
@@ -388,7 +388,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
 
             {isCollapsed && (
               <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                સહાય (Support: 1800-BOTAD)
+                {t('common.help') || 'Support & Help'} (1800-BOTAD)
               </div>
             )}
           </div>
@@ -400,12 +400,12 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                 type="button"
                 onClick={toggleCollapse}
                 className="flex items-center justify-center w-11 h-11 mx-auto rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800/60 transition-colors"
-                title="સાઇડબાર વિસ્તૃત કરો (Expand: >)"
+                title="Expand sidebar (>)"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
               <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                સાઇડબાર વિસ્તૃત કરો (&gt;)
+                Expand (&gt;)
               </div>
             </div>
           )}
@@ -429,7 +429,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                   {displayName}
                 </p>
                 <p className="text-[10px] text-[#9CA3AF] truncate leading-tight mt-0.5">
-                  {roleLabel} • બોટાદ
+                  {roleLabel}
                 </p>
               </div>
             </div>
@@ -438,7 +438,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
               type="button"
               onClick={() => setIsLogoutOpen(true)}
               className="p-1.5 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer shrink-0 ml-1"
-              title={STRINGS_GU.actions.logout}
+              title={t('common.logout') || 'Logout'}
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -455,7 +455,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
             </button>
             <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
               <p className="font-bold">{displayName}</p>
-              <p className="text-[10px] text-neutral-400">{roleLabel} • લૉગ આઉટ કરો</p>
+              <p className="text-[10px] text-neutral-400">{roleLabel} • {t('common.logout') || 'Logout'}</p>
             </div>
           </div>
         )}

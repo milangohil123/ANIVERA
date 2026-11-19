@@ -1,7 +1,7 @@
 """FastAPI RESTful endpoints for Administrative Management module."""
 import uuid
-from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, Query, Request, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db_session
@@ -43,6 +43,22 @@ from app.modules.administration.schemas import (
     VillageUpdate,
 )
 from app.modules.administration.service import AdministrationService
+from app.modules.administration.super_admin_service import SuperAdminService
+from app.modules.administration.super_admin_schemas import (
+    AssignmentActionResponse,
+    CustomJurisdictionCreateRequest,
+    CustomJurisdictionResponse,
+    DahoAccountCreateRequest,
+    DahoAccountResponse,
+    DistrictHierarchyResponse,
+    DistrictReassignRequest,
+    DistrictReleaseRequest,
+    GeodataCommitRequest,
+    GeodataImportResult,
+    GeodataValidationReport,
+    SuperAdminOverviewResponse,
+    GeographicQualityAuditResponse,
+)
 
 router = APIRouter(prefix="", tags=["Administrative Management"])
 
@@ -527,4 +543,136 @@ async def assign_daho_district(
 ) -> DahoDistrictAssignResponse:
     service = AdministrationService(db)
     return await service.assign_daho_to_district(payload.daho_user_id, payload.district_id, current_user, _extract_ip(request))
+
+
+# ==============================================================================
+# 9. SUPER_ADMIN State-Level Administration Endpoints
+# ==============================================================================
+@router.get("/super-admin/geodata/quality-audit", response_model=GeographicQualityAuditResponse, summary="Statewide & Jamnagar Geographic Data Quality Audit")
+async def get_geographic_quality_audit(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> GeographicQualityAuditResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.get_geographic_quality_audit()
+
+
+@router.get("/super-admin/overview", response_model=SuperAdminOverviewResponse, summary="Super Admin State-level administrative KPIs & overview")
+async def get_super_admin_overview(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> SuperAdminOverviewResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.get_overview()
+
+
+@router.post("/super-admin/daho-accounts", response_model=DahoAccountResponse, status_code=status.HTTP_201_CREATED, summary="Create DAHO administrative account with district assignment")
+async def create_daho_account(
+    payload: DahoAccountCreateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> DahoAccountResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.create_daho_account(payload, current_user, _extract_ip(request))
+
+
+@router.post("/districts/{district_id}/reassign", response_model=AssignmentActionResponse, summary="Safely reassign district to another DAHO with downstream preservation")
+async def reassign_district(
+    district_id: uuid.UUID,
+    payload: DistrictReassignRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> AssignmentActionResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.reassign_district(district_id, payload.new_daho_user_id, payload.reason, current_user, _extract_ip(request))
+
+
+@router.post("/districts/{district_id}/release", response_model=AssignmentActionResponse, summary="Release active DAHO assignment for a district")
+async def release_district(
+    district_id: uuid.UUID,
+    payload: DistrictReleaseRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> AssignmentActionResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.release_district(district_id, payload.reason, current_user, _extract_ip(request))
+
+
+@router.get("/districts/{district_id}/hierarchy", response_model=DistrictHierarchyResponse, summary="Get full district hierarchy (Talukas -> Villages) & assignment history")
+async def get_district_hierarchy(
+    district_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> DistrictHierarchyResponse:
+    service = SuperAdminService(db)
+    return await service.get_district_hierarchy(district_id)
+
+
+@router.post("/districts/{district_id}/custom-boundary", response_model=CustomJurisdictionResponse, status_code=status.HTTP_201_CREATED, summary="Save versioned custom operational jurisdiction")
+async def save_custom_jurisdiction(
+    district_id: uuid.UUID,
+    payload: CustomJurisdictionCreateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> CustomJurisdictionResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.save_custom_jurisdiction(district_id, payload, current_user, _extract_ip(request))
+
+
+@router.post("/geography/validate-import", response_model=GeodataValidationReport, summary="Validate imported GIS geographic dataset before commit")
+async def validate_geodata_import(
+    payload: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> GeodataValidationReport:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    features = payload.get("features", [])
+    source_name = payload.get("source_name", "Official Administrative Source")
+    dataset_version = payload.get("dataset_version", "1.0")
+    return await service.validate_geodata_import(features, source_name, dataset_version)
+
+
+@router.post("/geography/commit-import", response_model=GeodataImportResult, status_code=status.HTTP_201_CREATED, summary="Commit verified geographic dataset (Talukas & Villages) to database")
+async def commit_geodata_import(
+    payload: GeodataCommitRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> GeodataImportResult:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.commit_geodata_import(payload, current_user, _extract_ip(request))
+
+
+@router.post("/districts/{district_id}/seed-official-hierarchy", response_model=GeodataImportResult, status_code=status.HTTP_200_OK, summary="Seed / synchronize official district geographic master data")
+async def seed_official_district_hierarchy(
+    district_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> GeodataImportResult:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.seed_official_district_hierarchy(district_id, current_user, _extract_ip(request))
+
 

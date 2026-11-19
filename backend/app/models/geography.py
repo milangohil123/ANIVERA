@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
@@ -66,6 +67,7 @@ class Taluka(Base):
     code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name_gu: Mapped[str] = mapped_column(Text, nullable=False)
     name_en: Mapped[str] = mapped_column(Text, nullable=False)
+    boundary_geojson: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     district: Mapped["District"] = relationship("District", back_populates="talukas")
@@ -106,6 +108,7 @@ class Village(Base):
         UUID(as_uuid=True),
         nullable=True
     )
+    boundary_geojson: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_pilot: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -123,6 +126,46 @@ class Village(Base):
     # Relationships
     district: Mapped["District"] = relationship("District", back_populates="villages")
     taluka: Mapped["Taluka"] = relationship("Taluka", back_populates="villages")
+
+
+class CustomJurisdiction(Base):
+    """Operational/custom jurisdiction boundary versioning matching 'custom_jurisdictions' table."""
+    __tablename__ = "custom_jurisdictions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    district_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("districts.id"),
+        nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    boundary_geojson: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="ACTIVE", nullable=False)
+    affected_taluka_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    affected_village_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+
+    district: Mapped["District"] = relationship("District")
 
 
 # Backward compatibility re-export for modules referencing Species through geography

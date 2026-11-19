@@ -53,6 +53,12 @@ import { CoopVillageProgressView } from './views/coop/CoopVillageProgressView';
 import { CoopCampsView } from './views/coop/CoopCampsView';
 import { CoopProfileView } from './views/coop/CoopProfileView';
 import { AdminDashboard } from './views/admin/AdminDashboard';
+import { AdminStateMapView } from './views/admin/AdminStateMapView';
+import { AdminGeographyView } from './views/admin/AdminGeographyView';
+import { AdminDahoView } from './views/admin/AdminDahoView';
+import { AdminAssignmentsView } from './views/admin/AdminAssignmentsView';
+import { AdminOperationalOversightView } from './views/admin/AdminOperationalOversightView';
+import { AdminRoleOversightView } from './views/admin/AdminRoleOversightView';
 import { AdminUsersView } from './views/admin/AdminUsersView';
 import { AdminDevicesView } from './views/admin/AdminDevicesView';
 import { AdminAuditLogsView } from './views/admin/AdminAuditLogsView';
@@ -194,7 +200,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="profile" element={<CoopProfileView />} />
       </Route>
 
-      {/* SYS_ADMIN Protected Tree */}
+      {/* SYS_ADMIN / SUPER_ADMIN Protected Tree */}
       <Route
         path="/admin"
         element={
@@ -205,6 +211,12 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/admin/overview" replace />} />
         <Route path="overview" element={<AdminDashboard />} />
+        <Route path="map" element={<AdminStateMapView />} />
+        <Route path="geography" element={<AdminGeographyView />} />
+        <Route path="daho" element={<AdminDahoView />} />
+        <Route path="assignments" element={<AdminAssignmentsView />} />
+        <Route path="oversight" element={<AdminOperationalOversightView />} />
+        <Route path="roles" element={<AdminRoleOversightView />} />
         <Route path="users" element={<AdminUsersView />} />
         <Route path="devices" element={<AdminDevicesView />} />
         <Route path="audit-logs" element={<AdminAuditLogsView />} />
