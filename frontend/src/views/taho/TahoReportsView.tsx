@@ -15,6 +15,7 @@ import {
   Users,
   Syringe,
   Activity,
+  ChevronRight,
 } from 'lucide-react';
 
 export const TahoReportsView: React.FC = () => {
@@ -91,6 +92,15 @@ export const TahoReportsView: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-12 font-body text-slate-800 animate-fade-in print:p-0">
+      {/* 0. Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-xs text-[#64748B] print:hidden">
+        <span>નોંધ અને સાધનો</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span>તાલુકા પશુપાલન અધિકારી (TAHO)</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span className="text-[#0F172A] font-medium">રિપોર્ટ્સ અને પૃથ્થકરણ</span>
+      </div>
+
       {/* 1. Header Toolbar (Hidden during print) */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs print:hidden">
         <div>

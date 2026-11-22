@@ -85,22 +85,52 @@ export const NotificationsView: React.FC = () => {
     if (n.relatedType === 'disease_report') {
       if (session?.user.role === 'VET_OFFICER' || session?.user.role === 'VO') {
         navigate('/vo/reports');
+      } else if (session?.user.role === 'TAHO') {
+        navigate('/taho/surveillance');
+      } else if (session?.user.role === 'DAHO') {
+        navigate('/daho/surveillance');
       } else {
         navigate('/fw/dashboard');
       }
     } else if (n.relatedType === 'camp') {
-      navigate('/camps');
+      if (session?.user.role === 'TAHO') {
+        navigate('/taho/campaigns');
+      } else if (session?.user.role === 'DAHO') {
+        navigate('/daho/camps');
+      } else if (
+        session?.user.role === 'DAIRY_STAFF' ||
+        session?.user.role === 'COOP' ||
+        session?.user.role === 'COOPERATIVE'
+      ) {
+        navigate('/coop/campaigns');
+      } else {
+        navigate('/camps');
+      }
     } else if (n.relatedType === 'campaign') {
       if (session?.user.role === 'FIELD_WORKER' || session?.user.role === 'FW') {
         navigate('/fw/pending');
       } else if (session?.user.role === 'VET_OFFICER' || session?.user.role === 'VO') {
         navigate('/vo/campaigns');
+      } else if (session?.user.role === 'DAHO') {
+        navigate('/daho/campaigns');
+      } else if (session?.user.role === 'TAHO') {
+        navigate('/taho/campaigns');
+      } else if (
+        session?.user.role === 'DAIRY_STAFF' ||
+        session?.user.role === 'COOP' ||
+        session?.user.role === 'COOPERATIVE'
+      ) {
+        navigate('/coop/campaigns');
       } else {
         navigate('/farmer/animals');
       }
     } else if (n.relatedType === 'village') {
       if (session?.user.role === 'VET_OFFICER' || session?.user.role === 'VO') {
         navigate('/vo/dashboard');
+      } else if (session?.user.role === 'TAHO') {
+        navigate('/taho/maps');
+      } else if (session?.user.role === 'DAHO') {
+        navigate('/daho/maps');
       } else if (session?.user.role === 'FARMER') {
         navigate('/farmer/dashboard');
       }
@@ -176,21 +206,19 @@ export const NotificationsView: React.FC = () => {
       <div className="flex gap-2 mb-4 border-b border-gray-200 pb-2 text-xs font-semibold">
         <button
           onClick={() => setFilter('ALL')}
-          className={`px-3 py-1.5 rounded-lg transition-colors ${
-            filter === 'ALL'
-              ? 'bg-emerald-800 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg transition-colors ${filter === 'ALL'
+            ? 'bg-emerald-800 text-white'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           બધી ({notifications.length})
         </button>
         <button
           onClick={() => setFilter('UNREAD')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-            filter === 'UNREAD'
-              ? 'bg-emerald-800 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
+          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${filter === 'UNREAD'
+            ? 'bg-emerald-800 text-white'
+            : 'text-gray-600 hover:bg-gray-100'
+            }`}
         >
           <span>વણવાંચેલી</span>
           {unreadCount > 0 && (
@@ -225,16 +253,14 @@ export const NotificationsView: React.FC = () => {
             <div
               key={n.id}
               onClick={() => handleItemClick(n)}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                n.status === 'UNREAD'
-                  ? 'bg-emerald-50/40 border-emerald-300 hover:bg-emerald-50/70 shadow-xs'
-                  : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
-              }`}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start gap-3.5 ${n.status === 'UNREAD'
+                ? 'bg-emerald-50/40 border-emerald-300 hover:bg-emerald-50/70 shadow-xs'
+                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
+                }`}
             >
               <div
-                className={`p-2.5 rounded-xl flex-shrink-0 mt-0.5 ${
-                  n.status === 'UNREAD' ? 'bg-white shadow-xs' : 'bg-gray-100'
-                }`}
+                className={`p-2.5 rounded-xl flex-shrink-0 mt-0.5 ${n.status === 'UNREAD' ? 'bg-white shadow-xs' : 'bg-gray-100'
+                  }`}
               >
                 {getIcon(n.kind)}
               </div>
@@ -242,11 +268,10 @@ export const NotificationsView: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <h3
-                    className={`text-sm truncate ${
-                      n.status === 'UNREAD'
-                        ? 'font-bold text-gray-900'
-                        : 'font-medium text-gray-700'
-                    }`}
+                    className={`text-sm truncate ${n.status === 'UNREAD'
+                      ? 'font-bold text-gray-900'
+                      : 'font-medium text-gray-700'
+                      }`}
                   >
                     {n.titleGu || n.kind}
                   </h3>

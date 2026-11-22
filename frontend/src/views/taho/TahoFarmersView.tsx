@@ -60,6 +60,15 @@ export const TahoFarmersView: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-12 font-body text-slate-800 animate-fade-in">
+      {/* 0. Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
+        <span>નોંધ અને સાધનો</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span>તાલુકા પશુપાલન અધિકારી (TAHO)</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span className="text-[#0F172A] font-medium">પશુપાલક ડિરેક્ટરી • {data.total || 0} ખેડૂતો</span>
+      </div>
+
       {/* 1. Header Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <div>

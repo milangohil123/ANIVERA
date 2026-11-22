@@ -37,12 +37,17 @@ class CampaignRepository:
     async def list_campaigns(
         self,
         allowed_village_ids: Optional[Set[uuid.UUID]] = None,
+        allowed_taluka_ids: Optional[Set[uuid.UUID]] = None,
+        allowed_district_ids: Optional[Set[uuid.UUID]] = None,
         status_filter: Optional[str] = None,
         offset: int = 0,
         limit: int = 50,
-        worker_user_id: Optional[uuid.UUID] = None
+        worker_user_id: Optional[uuid.UUID] = None,
+        created_by: Optional[uuid.UUID] = None,
     ) -> List[Campaign]:
-        """List campaigns scoped to accessible villages or worker assignments."""
+        """List campaigns scoped to accessible villages, talukas, districts, worker assignments, or creator."""
+        from app.models.geography import Village
+
         stmt = select(Campaign)
 
         conditions = []
@@ -51,6 +56,46 @@ class CampaignRepository:
                 Campaign.id.in_(
                     select(CampaignVillage.campaign_id).where(
                         CampaignVillage.village_id.in_(allowed_village_ids)
+                    )
+                )
+            )
+
+        if allowed_taluka_ids:
+            # 1. Any campaign having villages in the allowed talukas
+            conditions.append(
+                Campaign.id.in_(
+                    select(CampaignVillage.campaign_id)
+                    .join(Village, Village.id == CampaignVillage.village_id)
+                    .where(Village.taluka_id.in_(allowed_taluka_ids))
+                )
+            )
+            # 2. Any campaign created by TAHO assigned to allowed talukas
+            from app.modules.authentication.models import TahoTalukaAssignment
+            conditions.append(
+                Campaign.created_by.in_(
+                    select(TahoTalukaAssignment.taho_user_id).where(
+                        TahoTalukaAssignment.taluka_id.in_(allowed_taluka_ids),
+                        TahoTalukaAssignment.ended_at.is_(None)
+                    )
+                )
+            )
+
+        if allowed_district_ids:
+            # 1. Any campaign having villages in the allowed districts
+            conditions.append(
+                Campaign.id.in_(
+                    select(CampaignVillage.campaign_id)
+                    .join(Village, Village.id == CampaignVillage.village_id)
+                    .where(Village.district_id.in_(allowed_district_ids))
+                )
+            )
+            # 2. Any campaign created by DAHO assigned to allowed districts
+            from app.modules.authentication.models import DahoDistrictAssignment
+            conditions.append(
+                Campaign.created_by.in_(
+                    select(DahoDistrictAssignment.daho_user_id).where(
+                        DahoDistrictAssignment.district_id.in_(allowed_district_ids),
+                        DahoDistrictAssignment.ended_at.is_(None)
                     )
                 )
             )
@@ -65,9 +110,21 @@ class CampaignRepository:
                 )
             )
 
+        if created_by:
+            conditions.append(Campaign.created_by == created_by)
+
+        # If any scoping filter was passed (even empty)
+        has_filter = (
+            allowed_village_ids is not None
+            or allowed_taluka_ids is not None
+            or allowed_district_ids is not None
+            or worker_user_id is not None
+            or created_by is not None
+        )
+
         if conditions:
             stmt = stmt.where(or_(*conditions))
-        elif allowed_village_ids is not None and len(allowed_village_ids) == 0 and not worker_user_id:
+        elif has_filter:
             return []
 
         if status_filter:

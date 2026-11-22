@@ -16,6 +16,7 @@ import {
   KeyRound,
   CheckCircle2,
   Calendar,
+  ChevronRight,
 } from 'lucide-react';
 
 export const TahoProfileView: React.FC = () => {
@@ -37,6 +38,15 @@ export const TahoProfileView: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto pb-12 font-body text-slate-800 animate-fade-in">
+      {/* 0. Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
+        <span>વહીવટ</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span>તાલુકા પશુપાલન અધિકારી (TAHO)</span>
+        <ChevronRight className="w-3 h-3 text-slate-400" />
+        <span className="text-[#0F172A] font-medium">પ્રોફાઇલ અને કાર્યક્ષેત્ર વિગતો</span>
+      </div>
+
       {/* 1. Header Banner */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div className="flex items-center gap-3">

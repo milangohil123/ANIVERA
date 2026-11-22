@@ -168,6 +168,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="farmers" element={<TahoFarmersView />} />
         <Route path="surveillance" element={<TahoSurveillanceView />} />
         <Route path="reports" element={<TahoReportsView />} />
+        <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<TahoProfileView />} />
       </Route>
 
@@ -288,6 +289,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="devices" element={<AdminDevicesView />} />
         <Route path="audit-logs" element={<AdminAuditLogsView />} />
         <Route path="system-health" element={<AdminSystemHealthView />} />
+        <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<AdminProfileView />} />
       </Route>
 

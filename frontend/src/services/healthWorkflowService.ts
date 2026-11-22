@@ -307,10 +307,28 @@ export const healthWorkflowService = {
     return res.json();
   },
 
-  async decideTahoSchedule(apiBaseUrl: string, scheduleId: string, payload: { action: string; review_notes?: string }): Promise<any> {
+  async decideTahoSchedule(
+    apiBaseUrl: string,
+    scheduleId: string,
+    payload: {
+      action?: string;
+      decision?: string;
+      review_notes?: string;
+      approved_start_date?: string;
+      approved_execution_start?: string;
+    }
+  ): Promise<any> {
+    const rawAction = payload.action || payload.decision || 'APPROVE';
+    const action =
+      rawAction === 'APPROVED' ? 'APPROVE' : rawAction === 'REJECTED' ? 'REJECT' : rawAction === 'NEEDS_REVISION' ? 'REQUEST_CHANGES' : rawAction;
+    const backendPayload = {
+      action,
+      review_notes: payload.review_notes,
+      approved_execution_start: payload.approved_execution_start || payload.approved_start_date,
+    };
     const res = await authFetch(apiBaseUrl, `/api/v1/health-cases/taho/schedules/${scheduleId}/decide`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(backendPayload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'નિર્ણય નોંધવામાં નિષ્ફળ' }));

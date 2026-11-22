@@ -20,20 +20,14 @@ import {
   Search,
   CheckCircle2,
   Clock,
-  Calendar,
-  Megaphone,
   MapPin,
   ChevronRight,
-  ArrowRight,
   User,
   PawPrint,
-  Building2,
   Plus,
   AlertTriangle,
   X,
   Bell,
-  Check,
-  FileCheck,
 } from 'lucide-react';
 
 const VACCINE_CATALOG = [
@@ -207,11 +201,6 @@ export const CoopVaccinationsView: React.FC = () => {
       return tag.includes(q) || code.includes(q) || farmer.includes(q) || vax.includes(q) || dis.includes(q) || vil.includes(q);
     });
   }, [records, searchQuery]);
-
-  // Aggregate metrics
-  const totalDoses = records.length;
-  const uniqueAnimals = new Set(records.map((r) => r.animal_id || r.animal_code)).size;
-  const uniqueVillages = new Set(records.map((r) => r.village_name).filter(Boolean)).size;
 
   const activeSchedulesCount = schedules.filter((s) => s.status === 'APPROVED_ACTIVE').length;
   const pendingSchedulesCount = schedules.filter((s) => s.status === 'SUBMITTED').length;
@@ -594,7 +583,11 @@ export const CoopVaccinationsView: React.FC = () => {
             </div>
           </div>
 
-          {filteredRecords.length === 0 ? (
+          {isLoading ? (
+            <StateView state="loading" title="રસીકરણ ટેલિમેટ્રી લોડ થઈ રહી છે..." />
+          ) : errorMsg ? (
+            <StateView state="error" title="ડેટા લોડ કરવામાં ક્ષતિ" description={errorMsg} />
+          ) : filteredRecords.length === 0 ? (
             <div className="p-12 text-center text-slate-500 space-y-2">
               <Syringe className="w-12 h-12 text-slate-300 mx-auto" />
               <p className="font-semibold text-slate-700">કોઈ રસીકરણ રેકોર્ડ મળ્યો નથી.</p>

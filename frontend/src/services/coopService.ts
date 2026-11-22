@@ -317,6 +317,7 @@ export interface CoopDashboardAnalytics {
     active_campaigns: number;
     linked_villages: number;
     suspected_disease_cases: number;
+    total_camps?: number;
   };
   charts: {
     monthly_trend: Array<{ month: string; doses: number }>;
@@ -636,9 +637,9 @@ export const coopService = {
       const analytics = await this.getDashboardAnalytics(apiBaseUrl);
       if (analytics?.charts?.village_coverage) {
         return analytics.charts.village_coverage.map((vc, i) => {
-          const vl = analytics.charts.village_livestock?.[i]?.animals || 80;
-          const vf = analytics.charts.village_farmers?.[i]?.farmers || 20;
-          const cov = vc.coverage_pct || 70;
+          const vl = analytics.charts.village_livestock?.[i]?.animals || 0;
+          const vf = analytics.charts.village_farmers?.[i]?.farmers || 0;
+          const cov = typeof vc.coverage_pct === 'number' ? vc.coverage_pct : 0;
           return {
             village_id: `v-${i}`,
             village_name: vc.village,

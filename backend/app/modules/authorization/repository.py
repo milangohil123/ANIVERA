@@ -121,7 +121,7 @@ class AuthorizationRepository:
             "TAHO": {
                 "taluka.manage", "taho.dashboard.view", "village.manage", "user.manage",
                 "veterinary_officer.manage", "field_worker.manage",
-                "campaign.view", "campaign.manage",
+                "campaign.view", "campaign.manage", "campaign.configure", "campaign.assign_workers",
                 "camp.manage", "camp.view",
                 "inventory.read",
                 "disease.read", "disease.review",
@@ -141,13 +141,13 @@ class AuthorizationRepository:
                 "campaign.view", "vaccination.read", "disease.read", "aggregate.view", "map.view"
             },
             "FARMER": {
-                "own.read", "animal.read", "vaccination.read", "disease.report"
+                "own.read", "animal.read", "vaccination.read", "disease.report", "campaign.view"
             },
             "DAIRY_STAFF": {
-                "aggregate.view", "camp.view", "camp.propose"
+                "aggregate.view", "camp.view", "camp.propose", "campaign.view"
             },
             "COOPERATIVE": {
-                "aggregate.view", "camp.view", "camp.propose"
+                "aggregate.view", "camp.view", "camp.propose", "campaign.view"
             }
         }
         norm = "FW" if role == "FIELD_WORKER" else "VO" if role == "VET_OFFICER" else role
@@ -208,6 +208,31 @@ class AuthorizationRepository:
                     if row[0]:
                         assigned.add(row[0])
 
+            # 3b. Dairy Cooperative: district of cooperative or its operational villages
+            if role in ("DAIRY_STAFF", "COOP", "COOPERATIVE"):
+                c_ids, v_ids = await self.get_cooperative_scope(user_id)
+                if c_ids:
+                    from app.modules.administration.models import Cooperative
+                    cd_res = await self.db.execute(
+                        select(Cooperative.district_id).where(
+                            Cooperative.id.in_(c_ids),
+                            Cooperative.district_id.isnot(None)
+                        )
+                    )
+                    for row in cd_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
+                if v_ids:
+                    vd_res = await self.db.execute(
+                        select(Village.district_id).where(
+                            Village.id.in_(v_ids),
+                            Village.district_id.isnot(None)
+                        )
+                    )
+                    for row in vd_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
+
             # 4. Fallback for DAHO / VO if no explicit assignment exists in DB
             if not assigned and role in ("DAHO", "VET_OFFICER", "VO"):
                 dist_res = await self.db.execute(select(District.id))
@@ -240,6 +265,29 @@ class AuthorizationRepository:
                     for row in res.fetchall():
                         if row[0]:
                             assigned.add(row[0])
+            elif role in ("DAIRY_STAFF", "COOP", "COOPERATIVE"):
+                c_ids, v_ids = await self.get_cooperative_scope(user_id)
+                if c_ids:
+                    from app.modules.administration.models import Cooperative
+                    ct_res = await self.db.execute(
+                        select(Cooperative.taluka_id).where(
+                            Cooperative.id.in_(c_ids),
+                            Cooperative.taluka_id.isnot(None)
+                        )
+                    )
+                    for row in ct_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
+                if v_ids:
+                    vt_res = await self.db.execute(
+                        select(Village.taluka_id).where(
+                            Village.id.in_(v_ids),
+                            Village.taluka_id.isnot(None)
+                        )
+                    )
+                    for row in vt_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
             return assigned
         except Exception:
             return set()
@@ -261,8 +309,11 @@ class AuthorizationRepository:
         - Veterinary Officer (VO): ONLY the exact villages officially assigned to this VO by DAHO.
         - Field Worker (FW): The exact villages officially assigned to this FW by an authorized VO.
         """
-        if role in ("SYS_ADMIN", "ADMIN", "FARMER", "DAIRY_STAFF", "COOPERATIVE"):
+        if role in ("SYS_ADMIN", "ADMIN", "FARMER"):
             return set()
+        if role in ("DAIRY_STAFF", "COOP", "COOPERATIVE"):
+            _, v_ids = await self.get_cooperative_scope(user_id)
+            return v_ids
         try:
             # 1. Authoritative active village assignments
             stmt = select(UserVillageAssignment.village_id).where(
@@ -377,23 +428,51 @@ class AuthorizationRepository:
         Returns:
             Tuple of (assigned_cooperative_ids, served_village_ids)
         """
-        coop_stmt = select(CooperativeStaffAssignment.cooperative_id).where(
-            CooperativeStaffAssignment.user_id == user_id,
-            CooperativeStaffAssignment.ended_at.is_(None)
-        )
-        coop_res = await self.db.execute(coop_stmt)
-        coop_ids = {row[0] for row in coop_res.fetchall()}
-
-        village_ids: Set[uuid.UUID] = set()
-        if coop_ids:
-            v_stmt = select(CooperativeVillage.village_id).where(
-                CooperativeVillage.cooperative_id.in_(coop_ids)
+        coop_ids: Set[uuid.UUID] = set()
+        try:
+            # 1. Staff assignments
+            coop_stmt = select(CooperativeStaffAssignment.cooperative_id).where(
+                CooperativeStaffAssignment.user_id == user_id,
+                CooperativeStaffAssignment.ended_at.is_(None)
             )
-            v_res = await self.db.execute(v_stmt)
-            for row in v_res.fetchall():
-                village_ids.add(row[0])
+            coop_res = await self.db.execute(coop_stmt)
+            for row in coop_res.fetchall():
+                if row[0]:
+                    coop_ids.add(row[0])
 
-        return coop_ids, village_ids
+            # 2. Directly linked or created cooperatives
+            from app.modules.administration.models import Cooperative
+            direct_stmt = select(Cooperative.id).where(
+                or_(Cooperative.user_id == user_id, Cooperative.created_by == user_id)
+            )
+            direct_res = await self.db.execute(direct_stmt)
+            for row in direct_res.fetchall():
+                if row[0]:
+                    coop_ids.add(row[0])
+
+            village_ids: Set[uuid.UUID] = set()
+            if coop_ids:
+                v_stmt = select(CooperativeVillage.village_id).where(
+                    CooperativeVillage.cooperative_id.in_(coop_ids)
+                )
+                v_res = await self.db.execute(v_stmt)
+                for row in v_res.fetchall():
+                    if row[0]:
+                        village_ids.add(row[0])
+
+                # Primary home village of cooperative
+                home_stmt = select(Cooperative.village_id).where(
+                    Cooperative.id.in_(coop_ids),
+                    Cooperative.village_id.isnot(None)
+                )
+                home_res = await self.db.execute(home_stmt)
+                for row in home_res.fetchall():
+                    if row[0]:
+                        village_ids.add(row[0])
+
+            return coop_ids, village_ids
+        except Exception:
+            return set(), set()
 
     async def has_approved_vaccinator_authorization(self, user_id: uuid.UUID) -> bool:
         """Verify whether a user possesses an APPROVED, unexpired vaccinator clinical authorization.

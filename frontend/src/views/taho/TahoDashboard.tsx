@@ -5,6 +5,7 @@ import { adminService } from '../../services/adminService';
 import { GujaratStateMap } from '../../components/maps/GujaratStateMap';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
+import { KpiCard } from '../../components/common/KpiCard';
 import { StatusChip } from '../../components/common/StatusChip';
 import { transliterateToGujarati } from '../../utils/transliterateGujarati';
 import {
@@ -25,6 +26,7 @@ import {
   Trash2,
   ShieldAlert,
   ArrowUpRight,
+  ArrowRight,
   BarChart3,
   Calendar,
 } from 'lucide-react';
@@ -153,51 +155,92 @@ export const TahoDashboard: React.FC = () => {
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-12 font-body text-slate-800 animate-fade-in">
-      {/* 1. Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-700" />
-            <h1 className="text-lg sm:text-xl font-bold font-heading text-slate-900">
+      {/* ---------------------------------------------------------------------- */}
+      {/* 1. BREADCRUMBS & TOP PAGE HEADER (Exact Enterprise Reference Design)   */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
+          <span>કામગીરી</span>
+          <ChevronRight className="w-3 h-3 text-slate-400" />
+          <span>તાલુકા પશુપાલન અધિકારી (TAHO)</span>
+          <ChevronRight className="w-3 h-3 text-slate-400" />
+          <span className="text-[#0F172A] font-medium">
+            {talukaNameGu} તાલુકો ({districtNameGu} જિલ્લો) • {overview.total_villages} કાર્યક્ષેત્ર ગામો
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-0.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#0F172A] font-heading tracking-tight">
               {talukaNameGu} તાલુકા વહીવટી ડેશબોર્ડ (TAHO)
             </h1>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-[#135D43]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#135D43]" />
+              <span>તાલુકા વહીવટ સક્રિય</span>
+            </span>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-[#135D43] border border-emerald-200 font-bold">
               {overview.taluka_code}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            જિલ્લો: <strong>{districtNameGu} ({overview.district_name_en})</strong> • તાલુકા પશુપાલન અધિકારી:{' '}
-            <span className="font-semibold text-slate-700">{profile?.full_name || session?.user?.fullName}</span>
-          </p>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={loadData}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#135D43]" />
+              <span>તાજું કરો</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/taho/maps')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#E8EEFC] text-xs font-semibold text-[#135D43] hover:bg-[#D8E4FA] shadow-xs transition-colors"
+            >
+              <MapPin className="w-3.5 h-3.5 text-[#135D43]" />
+              <span>GIS ભૌગોલિક નકશો</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/taho/campaigns')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#135D43] text-white text-xs font-semibold hover:bg-[#0F4C37] shadow-xs transition-colors"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-white mr-1" />
+              <span>+ નવી ઝુંબેશ</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 2. TALUKA GOVERNANCE BANNER (Exact Reference Image Design)              */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="bg-[#E8EEFC] border border-[#BFDBFE] rounded-xl p-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-800 shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-white border border-[#BFDBFE] flex items-center justify-center shrink-0 text-[#0284C7] shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-[#0284C7]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-slate-900 font-heading">
+                {talukaNameGu} તાલુકા સત્તાવાર વહીવટી કાર્યક્ષેત્ર
+              </span>
+              <span className="text-[10px] font-semibold px-2 py-0.2 rounded bg-white text-slate-700 border border-[#CBD5E1]">
+                તાલુકા કક્ષાએ મંજૂર
+              </span>
+            </div>
+            <p className="text-[11px] text-[#64748B] mt-0.5 truncate">
+              જિલ્લો: {districtNameGu} ({overview.district_name_en}) • તાલુકા પશુપાલન અધિકારી: {profile?.full_name || session?.user?.fullName} • {overview.total_villages} કાર્યક્ષેત્ર ગામો • સક્રિય VO: {kpis.active_vos ?? 0} • સક્રિય FW: {kpis.active_fws ?? 0} • પશુધન રક્ષણ અને રોગ નિયંત્રણ કાર્યક્રમ હેઠળ સક્રિય.
+            </p>
+          </div>
         </div>
 
-        {/* Demo Dataset Controls & Refresh */}
-        <div className="flex items-center flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSeedDemo}
-            isLoading={isSeedingDemo}
-            leftIcon={<Sparkles className="w-3.5 h-3.5 text-emerald-600" />}
-            title="ડેમો ટેસ્ટિંગ માટે ૨ રેકોર્ડ્સ લોડ કરો"
-          >
-            ડેમો ડેટા લોડ કરો
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleResetDemo}
-            isLoading={isResettingDemo}
-            leftIcon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
-            className="text-red-600 hover:bg-red-50"
-            title="ડેમો રેકોર્ડ્સ રીસેટ કરો"
-          >
-            ડેમો રીસેટ
-          </Button>
-          <Button variant="outline" size="sm" onClick={loadData} leftIcon={<RotateCcw className="w-3.5 h-3.5" />}>
-            રીફ્રેશ
-          </Button>
-        </div>
+        <button
+          onClick={() => navigate('/taho/maps')}
+          className="text-xs font-semibold text-[#0284C7] hover:underline shrink-0 flex items-center gap-1 self-start sm:self-auto"
+        >
+          <span>કાર્યક્ષેત્ર GIS વિશ્લેષણ</span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
       </div>
 
       {actionMessage && (
@@ -258,139 +301,111 @@ export const TahoDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 3. 11 Real Database Operational KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">કુલ ગામો</span>
-            <Layers className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.total_villages ?? overview.total_villages ?? 0}
-          </div>
-          <span className="text-[10px] text-emerald-700 font-medium">GIS સીમાઓ ઉપલબ્ધ</span>
-        </Card>
+      {/* ---------------------------------------------------------------------- */}
+      {/* 3. ROW 1: 5 ADMINISTRATIVE BASELINE KPIS (Exact Reference Design)       */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard
+          label="કુલ ગામો"
+          value={isLoading ? '...' : String(kpis.total_villages ?? overview.total_villages ?? 0)}
+          subtext="GIS સીમાઓ ઉપલબ્ધ"
+          icon={<Layers className="w-4 h-4 text-[#135D43]" />}
+          iconVariant="emerald"
+          onClick={() => navigate('/taho/maps')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">વેટરનરી ઓફિસર</span>
-            <Users className="w-4 h-4 text-sky-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.active_vos ?? overview.active_vos ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">સક્રિય VO સ્ટાફ</span>
-        </Card>
+        <KpiCard
+          label="વેટરનરી ઓફિસર"
+          value={isLoading ? '...' : String(kpis.active_vos ?? overview.active_vos ?? 0)}
+          subtext="સક્રિય VO સ્ટાફ"
+          icon={<Users className="w-4 h-4 text-sky-600" />}
+          iconVariant="blue"
+          onClick={() => navigate('/taho/staff')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">ફીલ્ડ વર્કર્સ</span>
-            <Users className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.active_fws ?? overview.active_fws ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">સક્રિય FW સ્ટાફ</span>
-        </Card>
+        <KpiCard
+          label="ફીલ્ડ વર્કર્સ"
+          value={isLoading ? '...' : String(kpis.active_fws ?? overview.active_fws ?? 0)}
+          subtext="સક્રિય FW સ્ટાફ"
+          icon={<Users className="w-4 h-4 text-[#176B5B]" />}
+          iconVariant="teal"
+          onClick={() => navigate('/taho/staff')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">નોંધાયેલ ખેડૂતો</span>
-            <Users className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.total_farmers ?? overview.total_farmers ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">પશુપાલક પરિવારો</span>
-        </Card>
+        <KpiCard
+          label="નોંધાયેલ ખેડૂતો"
+          value={isLoading ? '...' : String(kpis.total_farmers ?? overview.total_farmers ?? 0)}
+          subtext="પશુપાલક પરિવારો"
+          icon={<Users className="w-4 h-4 text-amber-600" />}
+          iconVariant="amber"
+          onClick={() => navigate('/taho/farmers')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">પશુધન સંખ્યા</span>
-            <PawPrint className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.total_animals ?? overview.total_animals ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">ટેગ થયેલ પશુઓ</span>
-        </Card>
+        <KpiCard
+          label="પશુધન સંખ્યા"
+          value={isLoading ? '...' : String(kpis.total_animals ?? overview.total_animals ?? 0)}
+          subtext="ટેગ થયેલ પશુઓ"
+          icon={<PawPrint className="w-4 h-4 text-[#135D43]" />}
+          iconVariant="emerald"
+          onClick={() => navigate('/taho/animals')}
+        />
+      </div>
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">પૂર્ણ રસીકરણ</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-emerald-700 mt-1">
-            {kpis.completed_vaccinations ?? overview.total_vaccinations ?? 0}
-          </div>
-          <span className="text-[10px] text-emerald-600 font-medium">સફળતાપૂર્વક અપાયેલ</span>
-        </Card>
+      {/* ---------------------------------------------------------------------- */}
+      {/* 4. ROW 2: 5 OPERATIONAL VACCINATION & HEALTH KPIS                       */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard
+          label="સંપૂર્ણ રસીકરણ થયેલ"
+          value={isLoading ? '...' : String(kpis.completed_vaccinations ?? overview.total_vaccinations ?? 0)}
+          valueColor="text-emerald-700"
+          subtext="સફળતાપૂર્વક અપાયેલ"
+          icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+          iconVariant="emerald"
+          onClick={() => navigate('/taho/vaccinations')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">બાકી રસીકરણ</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-xl font-bold font-heading text-amber-600 mt-1">
-            {kpis.pending_vaccinations ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">પ્રક્રિયામાં</span>
-        </Card>
+        <KpiCard
+          label="બાકી / મુદત વીતી ગયેલ"
+          value={isLoading ? '...' : String(kpis.pending_vaccinations ?? 0)}
+          valueColor={(kpis.overdue_vaccinations ?? 0) > 0 ? 'text-[#DC2626]' : 'text-amber-700'}
+          subtext="કતાર જુઓ →"
+          badgeText={`${kpis.overdue_vaccinations ?? 0} મુદતવીતી`}
+          badgeVariant={(kpis.overdue_vaccinations ?? 0) > 0 ? 'red' : 'slate'}
+          icon={<Clock className="w-4 h-4 text-red-600" />}
+          iconVariant="red"
+          onClick={() => navigate('/taho/vaccinations')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">મુદતવીતી (Overdue)</span>
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-          </div>
-          <div className="text-xl font-bold font-heading text-red-600 mt-1">
-            {kpis.overdue_vaccinations ?? 0}
-          </div>
-          <span className="text-[10px] text-red-500 font-medium">સમયમર્યાદા બહાર</span>
-        </Card>
+        <KpiCard
+          label="સક્રિય રસીકરણ ઝુંબેશો"
+          value={isLoading ? '...' : String(kpis.active_campaigns ?? 0)}
+          subtext="તાલુકા અભિયાન"
+          icon={<Megaphone className="w-4 h-4 text-sky-600" />}
+          iconVariant="blue"
+          onClick={() => navigate('/taho/campaigns')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">સક્રિય ઝુંબેશો</span>
-            <Megaphone className="w-4 h-4 text-sky-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.active_campaigns ?? 0}
-          </div>
-          <span className="text-[10px] text-sky-700">તાલુકા અભિયાન</span>
-        </Card>
+        <KpiCard
+          label="રોગ સર્વેક્ષણ કેસ"
+          value={isLoading ? '...' : String(kpis.disease_reports ?? 0)}
+          subtext={`${kpis.disease_reports ?? 0} સક્રિય કેસ`}
+          badgeText={(kpis.active_alerts ?? 0) > 0 ? `${kpis.active_alerts} એલર્ટ` : undefined}
+          badgeVariant={(kpis.active_alerts ?? 0) > 0 ? 'red' : undefined}
+          icon={<Activity className="w-4 h-4 text-purple-600" />}
+          iconVariant="blue"
+          onClick={() => navigate('/taho/surveillance')}
+        />
 
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">રોગ રિપોર્ટ્સ</span>
-            <Activity className="w-4 h-4 text-purple-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-slate-900 mt-1">
-            {kpis.disease_reports ?? 0}
-          </div>
-          <span className="text-[10px] text-slate-400">સર્વેલન્સ કેસો</span>
-        </Card>
-
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">રોગ ચેતવણીઓ</span>
-            <ShieldAlert className="w-4 h-4 text-red-600" />
-          </div>
-          <div className="text-xl font-bold font-heading text-red-600 mt-1">
-            {kpis.active_alerts ?? 0}
-          </div>
-          <span className="text-[10px] text-red-600 font-medium">ક્લસ્ટર / સર્જ એલર્ટ</span>
-        </Card>
-
-        <Card className="p-3 bg-white border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500 font-medium">સરેરાશ કવરેજ</span>
-            <TrendingUp className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div className="text-xl font-bold font-heading text-emerald-700 mt-1">
-            {kpis.overall_coverage_pct ?? 0}%
-          </div>
-          <span className="text-[10px] text-emerald-600 font-medium">તાલુકા પ્રગતિ</span>
-        </Card>
+        <KpiCard
+          label="સરેરાશ કવરેજ દર"
+          value={isLoading ? '...' : `${kpis.overall_coverage_pct ?? 0}%`}
+          valueColor="text-[#176B5B]"
+          subtext="તાલુકા પ્રગતિ"
+          icon={<TrendingUp className="w-4 h-4 text-[#176B5B]" />}
+          iconVariant="teal"
+          onClick={() => navigate('/taho/campaigns')}
+        />
       </div>
 
       {/* 4. Quick Module Navigation Shortcuts */}
@@ -584,91 +599,116 @@ export const TahoDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 6. Operational Visualizations & Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Village Coverage Breakdown */}
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-emerald-700" />
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                ગામ મુજબ રસીકરણ કવરેજ (Village Coverage)
-              </h3>
+      {/* ---------------------------------------------------------------------- */}
+      {/* 6. ANALYTICS CHARTS SECTION WITH UNIFORM SECTION HEADER                */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+        <div className="p-3.5 sm:p-4 border-b border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#F8FAFC]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#E6F3EF] border border-[#176B5B]/20 flex items-center justify-center text-[#176B5B] shrink-0 shadow-2xs">
+              <BarChart3 className="w-4 h-4" />
             </div>
-            <span className="text-[10px] text-slate-400">ટોચના ગામો</span>
-          </div>
-
-          <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-            {villageCoverage.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">હજુ સુધી કોઈ રસીકરણ નોંધાયેલ નથી.</p>
-            ) : (
-              villageCoverage.slice(0, 8).map((vc: any, idx: number) => {
-                const pct = vc.coverage_pct || 0;
-                const barColor = pct >= 70 ? 'bg-emerald-600' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500';
-                return (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-800">
-                        {vc.village_name_gu || transliterateToGujarati(vc.village_name_en)}
-                      </span>
-                      <span className="font-mono text-slate-600 text-[11px]">
-                        {vc.vaccinated_count} / {vc.target_animals} ({pct}%)
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                      <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
-
-        {/* Species & Vaccine Distribution */}
-        <Card className="p-4 bg-white border border-slate-200 shadow-xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <div className="flex items-center gap-2">
-              <PawPrint className="w-4 h-4 text-emerald-700" />
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                પ્રાણી પ્રજાતિ & રસી વિતરણ (Species & Vaccines)
-              </h3>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-[#0F172A] font-heading">
+                  તાલુકા રસીકરણ અને પશુધન પૃથ્થકરણ (Operational Analytics)
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-[#135D43]">
+                  વિશ્લેષણ ચાર્ટ્સ
+                </span>
+              </div>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                તાલુકા હેઠળના ગામોની માસિક પ્રગતિ, પ્રજાતિ વિતરણ અને કામગીરીનું વિશ્લેષણ
+              </p>
             </div>
-            <span className="text-[10px] text-slate-400">તાલુકા આંકડા</span>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            {/* Species */}
-            <div className="space-y-2">
-              <div className="text-[11px] font-bold text-slate-500 uppercase">પશુધન પ્રજાતિ</div>
-              {speciesDist.length === 0 ? (
-                <p className="text-xs text-slate-400 py-3">ડેટા ઉપલબ્ધ નથી</p>
+        <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Village Coverage Breakdown */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-[#135D43]" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  ગામ મુજબ રસીકરણ કવરેજ (Village Coverage)
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-400">ટોચના ગામો</span>
+            </div>
+
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {villageCoverage.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">હજુ સુધી કોઈ રસીકરણ નોંધાયેલ નથી.</p>
               ) : (
-                speciesDist.map((sp: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-slate-50 border border-slate-100">
-                    <span className="font-medium text-slate-700">{sp.species_name_gu || sp.species_code}</span>
-                    <span className="font-mono font-bold text-slate-900">{sp.count}</span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Vaccines */}
-            <div className="space-y-2">
-              <div className="text-[11px] font-bold text-slate-500 uppercase">રસી મુજબ પૂર્ણ ડોઝ</div>
-              {vaccineDist.length === 0 ? (
-                <p className="text-xs text-slate-400 py-3">ડેટા ઉપલબ્ધ નથી</p>
-              ) : (
-                vaccineDist.map((vx: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-emerald-50/50 border border-emerald-100">
-                    <span className="font-medium text-emerald-900">{vx.vaccine_name_gu || vx.disease_code}</span>
-                    <span className="font-mono font-bold text-emerald-700">{vx.doses_administered}</span>
-                  </div>
-                ))
+                villageCoverage.slice(0, 8).map((vc: any, idx: number) => {
+                  const pct = vc.coverage_pct || 0;
+                  const barColor = pct >= 70 ? 'bg-[#135D43]' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500';
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-slate-800">
+                          {vc.village_name_gu || transliterateToGujarati(vc.village_name_en)}
+                        </span>
+                        <span className="font-mono text-slate-600 text-[11px]">
+                          {vc.vaccinated_count} / {vc.target_animals} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
-        </Card>
+
+          {/* Species & Vaccine Distribution */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <PawPrint className="w-4 h-4 text-[#135D43]" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  પ્રાણી પ્રજાતિ & રસી વિતરણ (Species & Vaccines)
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-400">તાલુકા આંકડા</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              {/* Species */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold text-slate-500 uppercase">પશુધન પ્રજાતિ</div>
+                {speciesDist.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3">ડેટા ઉપલબ્ધ નથી</p>
+                ) : (
+                  speciesDist.map((sp: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-slate-50 border border-slate-100">
+                      <span className="font-medium text-slate-700">{sp.species_name_gu || sp.species_code}</span>
+                      <span className="font-mono font-bold text-slate-900">{sp.count}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Vaccines */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold text-slate-500 uppercase">રસી મુજબ પૂર્ણ ડોઝ</div>
+                {vaccineDist.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3">ડેટા ઉપલબ્ધ નથી</p>
+                ) : (
+                  vaccineDist.map((vx: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-emerald-50/50 border border-emerald-100">
+                      <span className="font-medium text-emerald-900">{vx.vaccine_name_gu || vx.disease_code}</span>
+                      <span className="font-mono font-bold text-emerald-700">{vx.doses_administered}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

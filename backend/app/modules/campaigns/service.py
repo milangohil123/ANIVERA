@@ -284,12 +284,111 @@ class CampaignService:
         if prog_pairs:
             await self.repo.set_campaign_programmes(campaign.id, prog_pairs)
 
-        # Multi-stakeholder campaign notifications (VO, Farmers, Gram Panchayat, Dairy Cooperative)
+        # Multi-stakeholder campaign notifications (TAHO, VO, FW, Farmers, Gram Panchayat, Dairy Cooperative)
         notif_service = NotificationService(self.db)
         sp_codes = list({sp for sp, _ in prog_pairs})
         sp_rows = (await self.db.execute(select(Species).where(Species.code.in_(sp_codes)))).scalars().all()
         species_names_gu = [s.name_gu for s in sp_rows]
         d_code = payload.disease_code or (prog_pairs[0][1] if prog_pairs else "FMD")
+
+        # 1. Resolve & notify all TAHOs in the campaign's district / talukas
+        taluka_ids_stmt = select(Village.taluka_id).where(Village.id.in_(target_vids)).distinct()
+        camp_taluka_ids = set((await self.db.execute(taluka_ids_stmt)).scalars().all())
+        scope = await self.authz_service.get_user_scope(current_user)
+        target_district_id = next(iter(scope.assigned_district_ids), None)
+        if target_district_id:
+            dt_stmt = select(Taluka.id).where(Taluka.district_id == target_district_id)
+            camp_taluka_ids.update((await self.db.execute(dt_stmt)).scalars().all())
+
+        from app.modules.authentication.models import TahoTalukaAssignment, DahoDistrictAssignment
+        if camp_taluka_ids:
+            taho_users_stmt = (
+                select(User)
+                .join(TahoTalukaAssignment, TahoTalukaAssignment.taho_user_id == User.id)
+                .where(
+                    TahoTalukaAssignment.taluka_id.in_(camp_taluka_ids),
+                    TahoTalukaAssignment.ended_at.is_(None),
+                    User.role == "TAHO",
+                    func.upper(User.status) == "ACTIVE"
+                )
+            )
+            notified_tahos = set()
+            for tu in (await self.db.execute(taho_users_stmt)).scalars().all():
+                if tu.id not in notified_tahos:
+                    notified_tahos.add(tu.id)
+                    await notif_service.notify(
+                        recipient_user_id=tu.id,
+                        kind="CAMPAIGN_TAHO_ALERT",
+                        message_key="CAMPAIGN_TAHO_ALERT",
+                        params={
+                            "campaign_id": str(campaign.id),
+                            "campaign_code": campaign.code,
+                            "campaign_name": campaign.name,
+                            "disease_code": d_code,
+                            "daho_name": current_user.full_name or current_user.username or "DAHO",
+                        },
+                        related_type="campaign",
+                        related_id=str(campaign.id)
+                    )
+
+        # 2. Process explicit VO & FW assignments if provided
+        assigned_staff_ids = list(payload.assigned_vo_ids or []) + list(payload.assigned_fw_ids or [])
+        for staff_id in assigned_staff_ids:
+            staff_user = await self.db.get(User, staff_id)
+            if not staff_user or staff_user.status != "ACTIVE":
+                continue
+            for v_id in target_vids:
+                existing_assign = await self.repo.get_active_assignment(campaign.id, v_id, staff_user.id)
+                if not existing_assign:
+                    await self.repo.create_assignment(
+                        campaign_id=campaign.id,
+                        village_id=v_id,
+                        worker_user_id=staff_user.id,
+                        assigned_by=current_user.id
+                    )
+
+        # 3. Deduplicated District Dairy Cooperative notification
+        from app.modules.administration.models import Cooperative
+        from app.modules.authorization.models import CooperativeStaffAssignment
+        coop_conditions = []
+        if target_district_id:
+            coop_conditions.append(Cooperative.district_id == target_district_id)
+        if camp_taluka_ids:
+            coop_conditions.append(Cooperative.taluka_id.in_(camp_taluka_ids))
+        if target_vids:
+            coop_conditions.append(Cooperative.village_id.in_(target_vids))
+
+        if coop_conditions:
+            coop_staff_stmt = (
+                select(CooperativeStaffAssignment.user_id)
+                .join(Cooperative, Cooperative.id == CooperativeStaffAssignment.cooperative_id)
+                .where(
+                    or_(*coop_conditions),
+                    CooperativeStaffAssignment.ended_at.is_(None)
+                )
+            )
+            coop_user_ids = set((await self.db.execute(coop_staff_stmt)).scalars().all())
+            direct_coop_stmt = select(Cooperative.user_id).where(
+                or_(*coop_conditions),
+                Cooperative.user_id.isnot(None),
+                Cooperative.status == "ACTIVE"
+            )
+            coop_user_ids.update((await self.db.execute(direct_coop_stmt)).scalars().all())
+
+            for c_uid in coop_user_ids:
+                await notif_service.notify(
+                    recipient_user_id=c_uid,
+                    kind="CAMPAIGN_COOP_ANNOUNCEMENT",
+                    message_key="CAMPAIGN_COOP_ANNOUNCEMENT",
+                    params={
+                        "campaign_id": str(campaign.id),
+                        "campaign_name": campaign.name,
+                        "disease_code": d_code,
+                        "village_name": "જિલ્લા/તાલુકા વિસ્તાર"
+                    },
+                    related_type="campaign",
+                    related_id=str(campaign.id)
+                )
 
         for v_id in target_vids:
             # 1. Ensure VO assignment record if authorized VO exists
@@ -628,19 +727,40 @@ class CampaignService:
         )
 
         allowed_villages: Optional[Set[uuid.UUID]] = None
-        if current_user.role in ("FIELD_WORKER", "FW"):
+        allowed_talukas: Optional[Set[uuid.UUID]] = None
+        allowed_districts: Optional[Set[uuid.UUID]] = None
+
+        if current_user.role in ("SYS_ADMIN",):
+            pass  # Unrestricted statewide visibility
+        elif current_user.role in ("DAHO",):
+            allowed_districts = scope.assigned_district_ids
+        elif current_user.role in ("TAHO",):
+            allowed_talukas = scope.assigned_taluka_ids
+        elif current_user.role in ("FIELD_WORKER", "FW"):
             allowed_villages = scope.assigned_village_ids
         elif current_user.role in ("VET_OFFICER", "VO"):
             allowed_villages = scope.assigned_village_ids
-        elif current_user.role == "DAIRY_STAFF":
+        elif current_user.role in ("DAIRY_STAFF", "COOP", "COOPERATIVE"):
             allowed_villages = scope.cooperative_village_ids
+            allowed_talukas = getattr(scope, "assigned_taluka_ids", set()) or set()
+            allowed_districts = getattr(scope, "assigned_district_ids", set()) or set()
+        elif current_user.role == "FARMER":
+            from app.modules.farmers.models import Farmer, FarmerAccountProvisioning
+            f_stmt = select(Farmer.village_id).join(
+                FarmerAccountProvisioning, FarmerAccountProvisioning.farmer_id == Farmer.id
+            ).where(FarmerAccountProvisioning.user_id == current_user.id)
+            f_res = await self.db.execute(f_stmt)
+            allowed_villages = {r[0] for r in f_res.fetchall() if r[0]}
 
         campaigns = await self.repo.list_campaigns(
             allowed_village_ids=allowed_villages,
+            allowed_taluka_ids=allowed_talukas,
+            allowed_district_ids=allowed_districts,
             status_filter=status_filter,
             offset=offset,
             limit=limit,
-            worker_user_id=current_user.id if current_user.role in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO") else None
+            worker_user_id=current_user.id if current_user.role in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO") else None,
+            created_by=current_user.id if current_user.role in ("DAHO", "TAHO") else None
         )
         res_list = []
         for c in campaigns:
@@ -652,8 +772,34 @@ class CampaignService:
                 progs = await self.repo.get_campaign_programmes(c.id)
                 if progs:
                     item.disease_code = progs[0].programme_code
+                    disease_map = {
+                        "FMD": "FMD (ખુરપકા-મોંહપકા)",
+                        "HS": "HS (ગળસૂંઠો)",
+                        "BQ": "BQ (ગાઠીયો તાવ)",
+                        "BRUCELLOSIS": "બ્રુસેલોસિસ (Brucellosis)",
+                        "PPR": "PPR (બકરી પ્લેગ)",
+                        "LSD": "LSD (લમ્પી સ્કીન ડીસીઝ)"
+                    }
+                    item.disease_name = disease_map.get(progs[0].programme_code, progs[0].programme_code)
+                    sp_list = list(dict.fromkeys([p.species_code for p in progs]))
+                    sp_gu_map = {"CATTLE": "ગાય", "BUFFALO": "ભેંસ", "GOAT": "બકરી", "SHEEP": "ઘેટા"}
+                    item.target_species = " / ".join([sp_gu_map.get(s, s) for s in sp_list]) if sp_list else "ગાય / ભેંસ"
+                else:
+                    item.disease_name = "FMD (ખુરપકા-મોંહપકા)"
+                    item.target_species = "ગાય / ભેંસ"
+
+                from app.modules.vaccinations.models import AnimalEvent, VaccinationDetail
+                if t_cnt and t_cnt > 0:
+                    vax_cnt = await self.db.scalar(
+                        select(func.count(func.distinct(AnimalEvent.animal_id)))
+                        .join(VaccinationDetail, VaccinationDetail.event_id == AnimalEvent.event_id)
+                        .where(VaccinationDetail.campaign_id == c.id)
+                    ) or 0
+                    item.coverage_pct = round((vax_cnt / t_cnt) * 100, 1)
+                else:
+                    item.coverage_pct = 0.0
             except Exception:
-                pass
+                item.coverage_pct = 0.0
             res_list.append(item)
         return res_list
 

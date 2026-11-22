@@ -30,6 +30,8 @@ class CampaignCreate(BaseModel):
     target_animals_count: Optional[int] = Field(None, description="Planned target animal count by DAHO")
     programmes: List[CampaignProgrammeItem] = Field(default_factory=list, description="Species and programmes covered")
     notes: Optional[str] = Field(None, description="Additional notes / instructions")
+    assigned_vo_ids: List[uuid.UUID] = Field(default_factory=list, description="Optional VO user IDs to assign")
+    assigned_fw_ids: List[uuid.UUID] = Field(default_factory=list, description="Optional FW user IDs to assign")
 
 
 class CampaignUpdate(BaseModel):
@@ -64,6 +66,9 @@ class CampaignResponse(BaseModel):
     activated_at: Optional[datetime] = None
     target_animals_count: Optional[int] = None
     disease_code: Optional[str] = None
+    disease_name: Optional[str] = None
+    target_species: Optional[str] = None
+    coverage_pct: Optional[float] = None
 
 
 class CampaignDetailResponse(CampaignResponse):

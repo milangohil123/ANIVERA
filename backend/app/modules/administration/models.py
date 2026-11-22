@@ -211,3 +211,8 @@ class Cooperative(Base):
         nullable=False
     )
 
+
+# Re-export CooperativeMembership for backward compatibility
+from app.modules.authorization.models import CooperativeMembership  # noqa: F401
+
+

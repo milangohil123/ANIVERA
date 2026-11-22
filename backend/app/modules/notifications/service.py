@@ -99,6 +99,14 @@ GUJARATI_TEMPLATES: Dict[str, Dict[str, str]] = {
         "title": "ડેરી સહકારી મંડળી રસીકરણ ઝુંબેશ સૂચના",
         "body": "ગામ {village_name} માં રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ કરાઈ છે. પશુપાલકોને સહભાગી થવા અનુરોધ છે.",
     },
+    "CAMPAIGN_TAHO_ALERT": {
+        "title": "જિલ્લા રસીકરણ ઝુંબેશ જાહેરાત",
+        "body": "જિલ્લા પશુપાલન અધિકારી (DAHO) દ્વારા નવી રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ કરવામાં આવી છે.",
+    },
+    "CAMPAIGN_DAHO_ALERT": {
+        "title": "તાલુકા રસીકરણ ઝુંબેશ સૂચના",
+        "body": "તાલુકા {taluka_name} માં TAHO દ્વારા નવી રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ કરવામાં આવી છે.",
+    },
 }
 
 
@@ -210,7 +218,7 @@ class NotificationService:
             return None
 
         # Verify geographic scope if village boundary is specified
-        if scope_village_id and recipient.role not in ("DAHO", "SYS_ADMIN"):
+        if scope_village_id and recipient.role not in ("DAHO", "TAHO", "SYS_ADMIN", "DAIRY_STAFF", "COOP", "COOPERATIVE", "FARMER"):
             uva_res = await self.db.execute(
                 select(UserVillageAssignment).where(
                     UserVillageAssignment.user_id == recipient.id,
@@ -554,6 +562,36 @@ class NotificationService:
             )
             if vo_notif:
                 dispatched["vo"] = 1
+
+        # 1b. Resolve authorized FW(s) for this village
+        fw_stmt = (
+            select(User)
+            .join(UserVillageAssignment, UserVillageAssignment.user_id == User.id)
+            .where(
+                UserVillageAssignment.village_id == village_id,
+                UserVillageAssignment.ended_at.is_(None),
+                User.role.in_(["FIELD_WORKER", "FW"]),
+                func.upper(User.status) == "ACTIVE"
+            )
+        )
+        for fw_user in (await self.db.execute(fw_stmt)).scalars().all():
+            fwn = await self.notify(
+                recipient_user_id=fw_user.id,
+                kind="CAMPAIGN_STAFF_ALERT",
+                message_key="CAMPAIGN_STAFF_ALERT",
+                params={
+                    "campaign_id": str(campaign.id),
+                    "campaign_code": campaign.code,
+                    "campaign_name": campaign.name,
+                    "village_id": str(village_id),
+                    "village_name": v_name,
+                    "assigned_by": daho_user.full_name or daho_user.username or "Admin"
+                },
+                related_type="campaign",
+                related_id=str(campaign.id)
+            )
+            if fwn:
+                dispatched["fw"] = dispatched.get("fw", 0) + 1
 
         # 2. Farmers in Village
         farmer_recipient_ids: Set[uuid.UUID] = set()

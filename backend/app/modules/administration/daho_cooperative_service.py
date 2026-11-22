@@ -12,7 +12,7 @@ Handles:
 - Resettable [DEMO] demonstration dataset
 - Comprehensive audit trail recording
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 import uuid
@@ -1029,7 +1029,23 @@ class DahoCooperativeService:
                     partially_vaccinated_count += 1
 
         pending_vax_count = max(0, total_animals - len(vaccinated_animal_ids))
-        overdue_vax_count = round(pending_vax_count * 0.35)
+        overdue_vax_count = 0
+        if animal_ids:
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=180)).date()
+            overdue_vax_count = (await self.db.scalar(
+                select(func.count(func.distinct(Animal.id)))
+                .where(
+                    Animal.id.in_(animal_ids),
+                    Animal.id.notin_(
+                        select(AnimalEvent.animal_id).where(
+                            AnimalEvent.animal_id.in_(animal_ids),
+                            AnimalEvent.event_type == "VACCINATION",
+                            AnimalEvent.event_date >= cutoff_date
+                        )
+                    )
+                )
+            )) or 0
+
         overall_coverage_pct = round((len(vaccinated_animal_ids) / total_animals * 100), 1) if total_animals > 0 else 0.0
 
         # 4. Served Villages
@@ -1041,14 +1057,46 @@ class DahoCooperativeService:
 
         linked_villages_count = len(served_vil_ids)
 
-        # 5. Active campaigns
-        active_campaigns_count = 0
+        # 5. Active campaigns in cooperative geographical scope
+        camp_conditions = []
         if served_vil_ids:
+            camp_conditions.append(
+                Campaign.id.in_(
+                    select(CampaignVillage.campaign_id).where(
+                        CampaignVillage.village_id.in_(served_vil_ids)
+                    )
+                )
+            )
+        if coop.taluka_id:
+            camp_conditions.append(
+                Campaign.id.in_(
+                    select(CampaignVillage.campaign_id)
+                    .join(Village, Village.id == CampaignVillage.village_id)
+                    .where(Village.taluka_id == coop.taluka_id)
+                )
+            )
+        if coop.district_id:
+            camp_conditions.append(
+                Campaign.id.in_(
+                    select(CampaignVillage.campaign_id)
+                    .join(Village, Village.id == CampaignVillage.village_id)
+                    .where(Village.district_id == coop.district_id)
+                )
+            )
+            camp_conditions.append(
+                Campaign.created_by.in_(
+                    select(DahoDistrictAssignment.daho_user_id).where(
+                        DahoDistrictAssignment.district_id == coop.district_id,
+                        DahoDistrictAssignment.ended_at.is_(None)
+                    )
+                )
+            )
+
+        active_campaigns_count = 0
+        if camp_conditions:
             active_campaigns_count = await self.db.scalar(
-                select(func.count(func.distinct(Campaign.id)))
-                .join(CampaignVillage, Campaign.id == CampaignVillage.campaign_id)
-                .where(
-                    CampaignVillage.village_id.in_(served_vil_ids),
+                select(func.count(func.distinct(Campaign.id))).where(
+                    or_(*camp_conditions),
                     Campaign.status == "ACTIVE",
                 )
             ) or 0
@@ -1063,15 +1111,44 @@ class DahoCooperativeService:
                 )
             ) or 0
 
+        # 7. Animal Health Camps in served villages
+        camps_count = 0
+        if served_vil_ids:
+            camps_count = (await self.db.scalar(
+                select(func.count(Camp.id)).where(Camp.village_id.in_(served_vil_ids))
+            )) or 0
+
         # =====================================================================
-        # 8 Charts Data
+        # 8 Charts Data (100% Real Database Queries - Zero Mock Numbers)
         # =====================================================================
-        # Chart 1: Monthly Vaccination Trend (last 6 months)
-        months = ["જૂન", "જુલાઈ", "ઓગસ્ટ", "સપ્ટેમ્બર", "ઓક્ટોબર", "નવેમ્બર"]
-        monthly_trend = [
-            {"month": m, "doses": max(15, round(len(vaccinated_animal_ids) * (0.4 + idx * 0.12)))}
-            for idx, m in enumerate(months)
-        ]
+        # Chart 1: Monthly Vaccination Trend (last 6 calendar months)
+        now_dt = datetime.now(timezone.utc)
+        gu_month_names = {
+            1: "જાન્યુઆરી", 2: "ફેબ્રુઆરી", 3: "માર્ચ", 4: "એપ્રિલ",
+            5: "મે", 6: "જૂન", 7: "જુલાઈ", 8: "ઓગસ્ટ",
+            9: "સપ્ટેમ્બર", 10: "ઓક્ટોબર", 11: "નવેમ્બર", 12: "ડિસેમ્બર"
+        }
+        monthly_trend = []
+        for i in range(5, -1, -1):
+            m_year = now_dt.year
+            m_month = now_dt.month - i
+            while m_month <= 0:
+                m_month += 12
+                m_year -= 1
+            m_name = gu_month_names.get(m_month, f"મહિનો {m_month}")
+            m_start = date(m_year, m_month, 1)
+            m_end = date(m_year + 1, 1, 1) if m_month == 12 else date(m_year, m_month + 1, 1)
+            
+            d_cnt = 0
+            if animal_ids:
+                d_stmt = select(func.count(AnimalEvent.event_id)).where(
+                    AnimalEvent.event_type == "VACCINATION",
+                    AnimalEvent.animal_id.in_(animal_ids),
+                    AnimalEvent.event_date >= m_start,
+                    AnimalEvent.event_date < m_end,
+                )
+                d_cnt = (await self.db.scalar(d_stmt)) or 0
+            monthly_trend.append({"month": m_name, "doses": d_cnt})
 
         # Chart 2: Species Distribution
         species_counts: Dict[str, int] = {"CATTLE": 0, "BUFFALO": 0, "GOAT": 0, "SHEEP": 0}
@@ -1089,7 +1166,7 @@ class DahoCooperativeService:
         status_distribution = [
             {"name": "સંપૂર્ણ રસીકરણ (Fully Covered)", "value": fully_vaccinated_count, "color": "#16A34A"},
             {"name": "આંશિક રસીકરણ (Partial)", "value": partially_vaccinated_count, "color": "#EAB308"},
-            {"name": "બાકી (Pending)", "value": pending_vax_count - overdue_vax_count, "color": "#3B82F6"},
+            {"name": "બાકી (Pending)", "value": max(0, pending_vax_count - overdue_vax_count), "color": "#3B82F6"},
             {"name": "મુદતવીતી (Overdue)", "value": overdue_vax_count, "color": "#EF4444"},
         ]
 
@@ -1098,7 +1175,8 @@ class DahoCooperativeService:
         village_livestock_data = []
         village_coverage_data = []
 
-        for vid in served_vil_ids[:6]:
+        target_vils = served_vil_ids[:6] if served_vil_ids else ([coop.village_id] if coop.village_id else [])
+        for vid in target_vils:
             v = await self.db.get(Village, vid)
             v_name = v.name_gu or v.name_en if v else "ગામ"
             # count members in village
@@ -1139,26 +1217,70 @@ class DahoCooperativeService:
             village_livestock_data.append({"village": v_name, "animals": v_animals})
             village_coverage_data.append({"village": v_name, "coverage_pct": v_pct})
 
-        # Fallback if empty
-        if not village_farmers_data:
-            village_farmers_data = [{"village": "બોટાદ", "farmers": total_members or 24}]
-            village_livestock_data = [{"village": "બોટાદ", "animals": total_animals or 85}]
-            village_coverage_data = [{"village": "બોટાદ", "coverage_pct": overall_coverage_pct or 72.5}]
+        # Chart 7: Real Campaign Achievement
+        from app.modules.campaigns.models import CampaignAnimalTarget
+        campaign_progress_data = []
+        if camp_conditions:
+            c_res = await self.db.execute(
+                select(Campaign)
+                .where(
+                    or_(*camp_conditions),
+                    Campaign.status.in_(("ACTIVE", "COMPLETED"))
+                )
+                .order_by(Campaign.created_at.desc())
+                .limit(5)
+            )
+            for camp in c_res.scalars().all():
+                t_cnt = (await self.db.scalar(
+                    select(func.count(CampaignAnimalTarget.animal_id))
+                    .where(CampaignAnimalTarget.campaign_id == camp.id, CampaignAnimalTarget.excluded.is_(False))
+                )) or total_animals or 0
 
-        # Chart 7: Campaign Achievement
-        campaign_progress_data = [
-            {"campaign": "FMD રાઉન્ડ ૪", "target": total_animals or 100, "achieved": round((total_animals or 100) * 0.82)},
-            {"campaign": "HS + BQ ઝુંબેશ", "target": total_animals or 100, "achieved": round((total_animals or 100) * 0.74)},
-            {"campaign": "બ્રુસેલોસિસ વાછરડી રસીકરણ", "target": round((total_animals or 100) * 0.3), "achieved": round((total_animals or 100) * 0.25)},
-        ]
+                achieved_cnt = (await self.db.scalar(
+                    select(func.count(func.distinct(AnimalEvent.animal_id)))
+                    .join(VaccinationDetail, VaccinationDetail.event_id == AnimalEvent.event_id)
+                    .where(
+                        VaccinationDetail.campaign_id == camp.id,
+                        AnimalEvent.animal_id.in_(animal_ids) if animal_ids else True
+                    )
+                )) or 0
 
-        # Chart 8: Disease Surveillance Trend
-        disease_trend_data = [
-            {"week": "સપ્તાહ ૧", "suspected": 3, "verified": 1},
-            {"week": "સપ્તાહ ૨", "suspected": 5, "verified": 2},
-            {"week": "સપ્તાહ ૩", "suspected": 2, "verified": 0},
-            {"week": "સપ્તાહ ૪", "suspected": 1, "verified": 1},
-        ]
+                campaign_progress_data.append({
+                    "campaign": camp.name,
+                    "target": t_cnt,
+                    "achieved": achieved_cnt
+                })
+
+        # Chart 8: Real Disease Surveillance Trend (last 4 weeks)
+        disease_trend_data = []
+        week_labels = ["સપ્તાહ ૧", "સપ્તાહ ૨", "સપ્તાહ ૩", "સપ્તાહ ૪ (ચાલુ)"]
+        for w_idx in range(4):
+            w_start = now_dt - timedelta(days=(4 - w_idx) * 7)
+            w_end = now_dt - timedelta(days=(3 - w_idx) * 7)
+            susp_cnt = 0
+            ver_cnt = 0
+            if served_vil_ids:
+                susp_cnt = (await self.db.scalar(
+                    select(func.count(DiseaseReport.report_id)).where(
+                        DiseaseReport.village_id.in_(served_vil_ids),
+                        DiseaseReport.received_at >= w_start,
+                        DiseaseReport.received_at < w_end,
+                        DiseaseReport.status.in_(("SUBMITTED", "PENDING_REVIEW"))
+                    )
+                )) or 0
+                ver_cnt = (await self.db.scalar(
+                    select(func.count(DiseaseReport.report_id)).where(
+                        DiseaseReport.village_id.in_(served_vil_ids),
+                        DiseaseReport.received_at >= w_start,
+                        DiseaseReport.received_at < w_end,
+                        DiseaseReport.status.in_(("CONFIRMED", "INVESTIGATION_SCHEDULED"))
+                    )
+                )) or 0
+            disease_trend_data.append({
+                "week": week_labels[w_idx],
+                "suspected": susp_cnt,
+                "verified": ver_cnt
+            })
 
         return CoopDashboardAnalyticsResponse(
             cooperative={
@@ -1188,6 +1310,7 @@ class DahoCooperativeService:
                 "active_campaigns": active_campaigns_count,
                 "linked_villages": linked_villages_count,
                 "suspected_disease_cases": suspected_disease_count,
+                "total_camps": camps_count,
             },
             charts={
                 "monthly_trend": monthly_trend,

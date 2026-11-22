@@ -76,6 +76,7 @@ export const CoopDashboard: React.FC = () => {
     active_campaigns: 0,
     linked_villages: 0,
     suspected_disease_cases: 0,
+    total_camps: 0,
   };
 
   const charts = analytics?.charts || {
@@ -284,7 +285,7 @@ export const CoopDashboard: React.FC = () => {
 
         <KpiCard
           label="પશુ આરોગ્ય કેમ્પ"
-          value={isLoading ? '...' : "આયોજિત"}
+          value={isLoading ? '...' : `${kpis.total_camps ?? 0} કેમ્પ`}
           subtext="કેમ્પ યાદી જુઓ →"
           icon={<Tent className="w-4 h-4 text-amber-600" />}
           iconVariant="amber"
@@ -326,13 +327,13 @@ export const CoopDashboard: React.FC = () => {
             </div>
             <div className="h-44 flex items-end gap-3 pt-6 pb-2 px-2">
               {charts.monthly_trend.map((m, idx) => {
-                const maxVal = Math.max(...charts.monthly_trend.map((x) => x.doses), 50);
-                const barHeight = Math.max(12, Math.round((m.doses / maxVal) * 120));
+                const maxVal = Math.max(...charts.monthly_trend.map((x) => x.doses), 10);
+                const barHeight = m.doses > 0 ? Math.max(12, Math.round((m.doses / maxVal) * 120)) : 4;
                 return (
                   <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                    <span className="text-[10px] font-bold text-slate-700">{m.doses}</span>
+                    <span className={`text-[10px] font-bold ${m.doses > 0 ? 'text-slate-700' : 'text-slate-400'}`}>{m.doses}</span>
                     <div
-                      className="w-full bg-[#135D43] hover:bg-[#1c7a59] rounded-t transition-all"
+                      className={`w-full rounded-t transition-all ${m.doses > 0 ? 'bg-[#135D43] hover:bg-[#1c7a59]' : 'bg-slate-200'}`}
                       style={{ height: `${barHeight}px` }}
                     />
                     <span className="text-[10px] text-slate-500 font-medium">{m.month}</span>
@@ -388,18 +389,22 @@ export const CoopDashboard: React.FC = () => {
                 નકશો →
               </button>
             </div>
-            <div className="space-y-2">
-              {charts.village_farmers.slice(0, 5).map((vf, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate('/coop/maps')}
-                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
-                >
-                  <span className="text-slate-600">{vf.village}</span>
-                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{vf.farmers} ખેડૂત</span>
-                </div>
-              ))}
-            </div>
+            {charts.village_farmers.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">કોઈ કાર્યક્ષેત્ર ગામ લિંક થયેલ નથી</p>
+            ) : (
+              <div className="space-y-2">
+                {charts.village_farmers.slice(0, 5).map((vf, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => navigate('/coop/maps')}
+                    className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                  >
+                    <span className="text-slate-600">{vf.village}</span>
+                    <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{vf.farmers} ખેડૂત</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Chart 5: Village Livestock */}
@@ -410,18 +415,22 @@ export const CoopDashboard: React.FC = () => {
                 નકશો →
               </button>
             </div>
-            <div className="space-y-2">
-              {charts.village_livestock.slice(0, 5).map((vl, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate('/coop/maps')}
-                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
-                >
-                  <span className="text-slate-600">{vl.village}</span>
-                  <span className="font-bold text-[#135D43] bg-emerald-50 px-2 py-0.5 rounded">{vl.animals} પશુ</span>
-                </div>
-              ))}
-            </div>
+            {charts.village_livestock.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">કોઈ પશુધન નોંધાયેલ નથી</p>
+            ) : (
+              <div className="space-y-2">
+                {charts.village_livestock.slice(0, 5).map((vl, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => navigate('/coop/maps')}
+                    className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                  >
+                    <span className="text-slate-600">{vl.village}</span>
+                    <span className="font-bold text-[#135D43] bg-emerald-50 px-2 py-0.5 rounded">{vl.animals} પશુ</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Chart 6: Village Coverage % */}
@@ -432,39 +441,47 @@ export const CoopDashboard: React.FC = () => {
                 પ્રગતિ →
               </button>
             </div>
-            <div className="space-y-2">
-              {charts.village_coverage.slice(0, 5).map((vc, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate('/coop/village-progress')}
-                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
-                >
-                  <span className="text-slate-600">{vc.village}</span>
-                  <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{vc.coverage_pct}%</span>
-                </div>
-              ))}
-            </div>
+            {charts.village_coverage.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">કોઈ રસીકરણ કવરેજ ડેટા નથી</p>
+            ) : (
+              <div className="space-y-2">
+                {charts.village_coverage.slice(0, 5).map((vc, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => navigate('/coop/village-progress')}
+                    className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                  >
+                    <span className="text-slate-600">{vc.village}</span>
+                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{vc.coverage_pct}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Chart 7: Campaign Achievement */}
           <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
             <h4 className="font-bold text-slate-800 text-xs mb-3">ઝુંબેશ લક્ષ્યાંક સિદ્ધિ</h4>
-            <div className="space-y-2">
-              {charts.campaign_progress.slice(0, 3).map((cp, idx) => {
-                const pct = Math.round((cp.achieved / (cp.target || 1)) * 100);
-                return (
-                  <div key={idx} className="text-xs">
-                    <div className="flex justify-between text-slate-700 mb-1">
-                      <span className="truncate max-w-[120px]">{cp.campaign}</span>
-                      <span className="font-bold">{pct}%</span>
+            {charts.campaign_progress.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">કોઈ સક્રિય ઝુંબેશ લક્ષ્યાંક નથી</p>
+            ) : (
+              <div className="space-y-2">
+                {charts.campaign_progress.slice(0, 3).map((cp, idx) => {
+                  const pct = Math.round((cp.achieved / (cp.target || 1)) * 100);
+                  return (
+                    <div key={idx} className="text-xs">
+                      <div className="flex justify-between text-slate-700 mb-1">
+                        <span className="truncate max-w-[120px]">{cp.campaign}</span>
+                        <span className="font-bold">{pct}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { KpiCard } from '../../components/common/KpiCard';
-import { Button } from '../../components/common/Button';
 import { StateView } from '../../components/common/StateView';
 import {
   Megaphone,
@@ -17,8 +16,6 @@ import {
   ShieldCheck,
   TrendingUp,
   Target,
-  Clock,
-  Building2,
 } from 'lucide-react';
 
 export const CoopCampaignsView: React.FC = () => {
@@ -26,6 +23,7 @@ export const CoopCampaignsView: React.FC = () => {
   const { apiBaseUrl, session } = useAuth();
 
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [campsCount, setCampsCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -34,52 +32,31 @@ export const CoopCampaignsView: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/campaigns?limit=50`, {
-        headers: { Authorization: `Bearer ${session?.accessToken || ''}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const headers = { Authorization: `Bearer ${session?.accessToken || ''}` };
+      const [campRes, campsRes] = await Promise.all([
+        fetch(`${apiBaseUrl}/api/v1/campaigns?limit=50`, { headers }),
+        fetch(`${apiBaseUrl}/api/v1/camps?limit=100`, { headers }).catch(() => null),
+      ]);
+
+      if (campRes.ok) {
+        const data = await campRes.json();
         setCampaigns(data || []);
       } else {
-        // Fallback demo campaigns if empty or server not reachable
-        setCampaigns([
-          {
-            id: 'camp-1',
-            name: 'FMD (ખુરપકા-મોંહપકા) રસીકરણ તબક્કો-૪',
-            code: 'CAMP-FMD-2024-R4',
-            status: 'ACTIVE',
-            disease_name: 'FMD (Foot and Mouth Disease)',
-            start_date: '2024-10-01',
-            end_date: '2024-12-15',
-            coverage_pct: 82,
-            target_species: 'Cattle, Buffalo',
-          },
-          {
-            id: 'camp-2',
-            name: 'LSD (લમ્પી સ્કીન ડીસીઝ) બૂસ્ટર ઝુંબેશ',
-            code: 'CAMP-LSD-2024-B1',
-            status: 'ACTIVE',
-            disease_name: 'Lumpy Skin Disease',
-            start_date: '2024-11-01',
-            end_date: '2024-12-30',
-            coverage_pct: 74,
-            target_species: 'Cattle',
-          },
-          {
-            id: 'camp-3',
-            name: 'બ્રુસેલોસિસ (Brucellosis) વાછરડી રસીકરણ',
-            code: 'CAMP-BRU-2024-V2',
-            status: 'COMPLETED',
-            disease_name: 'Brucellosis',
-            start_date: '2024-06-01',
-            end_date: '2024-09-30',
-            coverage_pct: 95,
-            target_species: 'Calves (Female)',
-          },
-        ]);
+        const errData = await campRes.json().catch(() => null);
+        setErrorMsg(errData?.detail || 'ઝુંબેશો લોડ કરવામાં નિષ્ફળ');
+        setCampaigns([]);
+      }
+
+      if (campsRes && campsRes.ok) {
+        const cData = await campsRes.json();
+        setCampsCount(Array.isArray(cData) ? cData.length : 0);
+      } else {
+        setCampsCount(0);
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'ઝુંબેશો લોડ કરવામાં નિષ્ફળ');
+      setCampaigns([]);
+      setCampsCount(0);
     } finally {
       setIsLoading(false);
     }
@@ -95,13 +72,22 @@ export const CoopCampaignsView: React.FC = () => {
     return campaigns.filter((c) => {
       const name = (c.name || '').toLowerCase();
       const code = (c.code || '').toLowerCase();
-      const dis = (c.disease_name || '').toLowerCase();
+      const dis = (c.disease_name || c.disease_code || '').toLowerCase();
       return name.includes(q) || code.includes(q) || dis.includes(q);
     });
   }, [campaigns, searchQuery]);
 
   const activeCount = useMemo(() => campaigns.filter((c) => c.status === 'ACTIVE').length, [campaigns]);
   const completedCount = useMemo(() => campaigns.filter((c) => c.status === 'COMPLETED').length, [campaigns]);
+
+  const avgCoverage = useMemo(() => {
+    if (campaigns.length === 0) return 0;
+    const total = campaigns.reduce((acc, c) => {
+      const v = typeof c.coverage_pct === 'number' ? c.coverage_pct : (typeof c.progress_percent === 'number' ? c.progress_percent : 0);
+      return acc + v;
+    }, 0);
+    return Math.round((total / campaigns.length) * 10) / 10;
+  }, [campaigns]);
 
   if (isLoading && campaigns.length === 0) {
     return <StateView state="loading" message="રસીકરણ ઝુંબેશ માહિતી લોડ થઈ રહી છે..." />;
@@ -217,18 +203,18 @@ export const CoopCampaignsView: React.FC = () => {
 
         <KpiCard
           label="સરેરાશ કવરેજ સિદ્ધિ"
-          value={isLoading ? '...' : '78.4%'}
+          value={isLoading ? '...' : `${avgCoverage}%`}
           valueColor="text-[#176B5B]"
           subtext="મંડળી સભાસદ પશુઓ"
           icon={<TrendingUp className="w-4 h-4 text-[#176B5B]" />}
           iconVariant="emerald"
-          badgeText="પ્રગતિમાં"
-          badgeVariant="emerald"
+          badgeText={activeCount > 0 ? "પ્રગતિમાં" : (campaigns.length > 0 ? "સંપૂર્ણ" : "કોઈ ઝુંબેશ નથી")}
+          badgeVariant={activeCount > 0 ? "emerald" : "slate"}
         />
 
         <KpiCard
           label="સંકલિત પશુ કેમ્પો"
-          value={isLoading ? '...' : '12 કેમ્પ'}
+          value={isLoading ? '...' : `${campsCount} કેમ્પ`}
           subtext="કાર્યક્ષેત્ર ગામોમાં આયોજિત"
           icon={<Tent className="w-4 h-4 text-amber-600" />}
           iconVariant="amber"
@@ -237,12 +223,12 @@ export const CoopCampaignsView: React.FC = () => {
 
         <KpiCard
           label="સુરક્ષા પ્રમાણીકરણ"
-          value={isLoading ? '...' : '100%'}
+          value={isLoading ? '...' : (campaigns.length > 0 ? '100%' : '0%')}
           valueColor="text-[#135D43]"
-          subtext="ચકાસાયેલ રસી બેચ"
+          subtext={campaigns.length > 0 ? 'ચકાસાયેલ રસી બેચ' : 'કોઈ સક્રિય બેચ નથી'}
           icon={<ShieldCheck className="w-4 h-4 text-[#135D43]" />}
           iconVariant="emerald"
-          badgeText="સત્તાવાર"
+          badgeText={campaigns.length > 0 ? 'સત્તાવાર' : 'બાકી'}
           badgeVariant="emerald"
         />
       </div>
@@ -299,7 +285,7 @@ export const CoopCampaignsView: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredCampaigns.map((c) => {
                 const isAct = c.status === 'ACTIVE';
-                const cov = c.coverage_pct || (isAct ? 78 : 95);
+                const cov = typeof c.coverage_pct === 'number' ? c.coverage_pct : (typeof c.progress_percent === 'number' ? c.progress_percent : 0);
                 return (
                   <div
                     key={c.id || c.code}
@@ -308,11 +294,10 @@ export const CoopCampaignsView: React.FC = () => {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                            isAct
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-700 border border-slate-200'
-                          }`}
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isAct
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
                         >
                           {isAct ? 'ચાલુ અભિયાન (ACTIVE)' : 'પૂર્ણ (COMPLETED)'}
                         </span>

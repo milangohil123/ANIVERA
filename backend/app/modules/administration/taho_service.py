@@ -1683,11 +1683,40 @@ class TahoService:
             )).scalars().all())
 
         now_dt = datetime.now(timezone.utc)
+        disease_code = payload.get("disease_code", "FMD")
+
+        # Resolve active schedule version for DB constraint
+        from app.modules.campaigns.models import ScheduleVersion, CampaignProgramme, CampaignAssignment
+        from app.modules.authorization.models import VaccinatorAuthorization, CooperativeStaffAssignment
+        from app.modules.administration.models import Cooperative
+        from app.modules.authentication.models import DahoDistrictAssignment
+        from app.modules.notifications.service import NotificationService
+
+        sched_res = await self.db.execute(select(ScheduleVersion.id).limit(1))
+        sched_id = sched_res.scalar_one_or_none()
+        if not sched_id:
+            def_sched = ScheduleVersion(
+                id=uuid.uuid4(),
+                name="GUJARAT_ANIMAL_HUSBANDRY_STANDARD_2026",
+                status="APPROVED",
+                approved_by_name="ગુજરાત પશુપાલન નિયામક",
+                approval_reference="DAH/GUJ/SCHEDULE/2026/V01",
+                approved_at=now_dt,
+                effective_from=datetime.strptime(payload["start_date"], "%Y-%m-%d").date(),
+                created_by=taho_user.id
+            )
+            self.db.add(def_sched)
+            await self.db.flush()
+            sched_id = def_sched.id
+
         new_camp = Campaign(
             id=uuid.uuid4(),
             code=code,
             name=name,
             status="ACTIVE",
+            schedule_version_id=sched_id,
+            activated_by=taho_user.id,
+            activated_at=now_dt,
             start_date=start_date,
             end_date=end_date,
             created_by=taho_user.id,
@@ -1696,12 +1725,134 @@ class TahoService:
         self.db.add(new_camp)
         await self.db.flush()
 
+        # Add target villages
         for v in valid_villages:
             cv = CampaignVillage(
                 campaign_id=new_camp.id,
                 village_id=v.id
             )
             self.db.add(cv)
+
+        # Add programmes
+        for sp in ["CATTLE", "BUFFALO"]:
+            cp = CampaignProgramme(
+                campaign_id=new_camp.id,
+                species_code=sp,
+                programme_code=disease_code
+            )
+            self.db.add(cp)
+
+        notif_service = NotificationService(self.db)
+
+        # 1. Notify Parent District DAHO
+        daho_stmt = (
+            select(User)
+            .join(DahoDistrictAssignment, DahoDistrictAssignment.user_id == User.id)
+            .where(
+                DahoDistrictAssignment.district_id == taluka.district_id,
+                DahoDistrictAssignment.ended_at.is_(None),
+                User.role == "DAHO",
+                func.upper(User.status) == "ACTIVE"
+            )
+        )
+        for daho_user in (await self.db.execute(daho_stmt)).scalars().all():
+            await notif_service.notify(
+                recipient_user_id=daho_user.id,
+                kind="CAMPAIGN_DAHO_ALERT",
+                message_key="CAMPAIGN_DAHO_ALERT",
+                params={
+                    "campaign_id": str(new_camp.id),
+                    "campaign_code": new_camp.code,
+                    "campaign_name": new_camp.name,
+                    "disease_code": disease_code,
+                    "taluka_name": taluka.name_gu or taluka.name_en or "તાલુકો",
+                    "taho_name": taho_user.full_name or taho_user.username or "TAHO"
+                },
+                related_type="campaign",
+                related_id=str(new_camp.id)
+            )
+
+        # 2. Process explicit staff assignments (VO / FW)
+        assigned_staff_ids = list(payload.get("assigned_vo_ids", [])) + list(payload.get("assigned_fw_ids", []))
+        for staff_id in assigned_staff_ids:
+            try:
+                s_uuid = uuid.UUID(str(staff_id))
+            except Exception:
+                continue
+            st_user = await self.db.get(User, s_uuid)
+            if not st_user or st_user.status != "ACTIVE":
+                continue
+            for v in valid_villages:
+                c_assign = CampaignAssignment(
+                    id=uuid.uuid4(),
+                    campaign_id=new_camp.id,
+                    village_id=v.id,
+                    worker_user_id=st_user.id,
+                    assigned_by=taho_user.id,
+                    assigned_at=now_dt
+                )
+                self.db.add(c_assign)
+                uva_chk = await self.db.execute(
+                    select(UserVillageAssignment).where(
+                        UserVillageAssignment.user_id == st_user.id,
+                        UserVillageAssignment.village_id == v.id,
+                        UserVillageAssignment.ended_at.is_(None)
+                    )
+                )
+                if not uva_chk.scalars().first():
+                    self.db.add(UserVillageAssignment(
+                        id=uuid.uuid4(),
+                        user_id=st_user.id,
+                        village_id=v.id,
+                        assigned_by=taho_user.id
+                    ))
+
+        # 3. Notify Stakeholders in Campaign Villages (VO, FW, Farmers, GP)
+        valid_vids = [v.id for v in valid_villages]
+        for v in valid_villages:
+            await notif_service.dispatch_campaign_stakeholder_notifications(
+                campaign=new_camp,
+                village_id=v.id,
+                daho_user=taho_user,
+                disease_code=disease_code,
+                species_names_gu=["ગાય", "ભેંસ"]
+            )
+
+        # 4. Notify Eligible Dairy Cooperatives in Taluka
+        t_coop_conditions = [Cooperative.taluka_id == taluka.id]
+        if valid_vids:
+            t_coop_conditions.append(Cooperative.village_id.in_(valid_vids))
+
+        coop_stmt = (
+            select(CooperativeStaffAssignment.user_id)
+            .join(Cooperative, Cooperative.id == CooperativeStaffAssignment.cooperative_id)
+            .where(
+                or_(*t_coop_conditions),
+                CooperativeStaffAssignment.ended_at.is_(None)
+            )
+        )
+        coop_uids = set((await self.db.execute(coop_stmt)).scalars().all())
+        dir_coop = select(Cooperative.user_id).where(
+            or_(*t_coop_conditions),
+            Cooperative.user_id.isnot(None),
+            Cooperative.status == "ACTIVE"
+        )
+        coop_uids.update((await self.db.execute(dir_coop)).scalars().all())
+
+        for c_uid in coop_uids:
+            await notif_service.notify(
+                recipient_user_id=c_uid,
+                kind="CAMPAIGN_COOP_ANNOUNCEMENT",
+                message_key="CAMPAIGN_COOP_ANNOUNCEMENT",
+                params={
+                    "campaign_id": str(new_camp.id),
+                    "campaign_name": new_camp.name,
+                    "disease_code": disease_code,
+                    "village_name": taluka.name_gu or taluka.name_en or "તાલુકો"
+                },
+                related_type="campaign",
+                related_id=str(new_camp.id)
+            )
 
         audit = AuditEvent(
             actor_user_id=taho_user.id,
