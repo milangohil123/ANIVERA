@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import {
   DAHO_NAV_ITEMS,
+  TAHO_NAV_ITEMS,
   VO_NAV_ITEMS,
   FW_NAV_ITEMS,
   FARMER_NAV_ITEMS,
@@ -18,6 +19,22 @@ export const DahoLayoutWrapper: React.FC = () => {
   return (
     <WebSidebarLayout
       navItems={DAHO_NAV_ITEMS}
+      isOnline={syncStatus.isOnline}
+      isSyncing={syncStatus.isSyncing}
+      pendingCount={syncStatus.pendingCount}
+      failedCount={syncStatus.failedCount}
+      onTriggerSync={syncStatus.triggerSync}
+    />
+  );
+};
+
+export const TahoLayoutWrapper: React.FC = () => {
+  const { apiBaseUrl } = useAuth();
+  const syncStatus = useSyncStatus(apiBaseUrl);
+
+  return (
+    <WebSidebarLayout
+      navItems={TAHO_NAV_ITEMS}
       isOnline={syncStatus.isOnline}
       isSyncing={syncStatus.isSyncing}
       pendingCount={syncStatus.pendingCount}

@@ -2,7 +2,7 @@
 import re
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -92,11 +92,14 @@ class UserBasic(BaseModel):
     id: uuid.UUID
     full_name: str
     username: Optional[str] = None
+    email: Optional[str] = None
     mobile_e164: Optional[str] = None
     role: str
     designation: Optional[str] = None
     organisation: Optional[str] = None
     must_change_password: bool
+    assigned_districts_details: List[Dict[str, Any]] = Field(default_factory=list)
+    assigned_talukas_details: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TokenResponse(BaseModel):
@@ -118,6 +121,7 @@ class UserProfileResponse(BaseModel):
     id: uuid.UUID
     full_name: str
     username: Optional[str] = None
+    email: Optional[str] = None
     mobile_e164: Optional[str] = None
     role: str
     designation: Optional[str] = None
@@ -125,7 +129,10 @@ class UserProfileResponse(BaseModel):
     status: str
     must_change_password: bool
     assigned_villages: List[uuid.UUID] = Field(default_factory=list)
+    assigned_talukas: List[uuid.UUID] = Field(default_factory=list)
     assigned_districts: List[uuid.UUID] = Field(default_factory=list)
+    assigned_districts_details: List[Dict[str, Any]] = Field(default_factory=list)
+    assigned_talukas_details: List[Dict[str, Any]] = Field(default_factory=list)
     permissions: List[str] = Field(default_factory=list)
     offline_valid_until: datetime
 

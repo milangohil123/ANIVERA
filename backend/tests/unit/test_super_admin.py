@@ -70,17 +70,19 @@ async def test_create_daho_account_conflict(mock_actor_admin):
 
     # Mock execute results:
     # 1. username check -> None
-    # 2. mobile check -> None
-    # 3. district lookup -> mock_dist
-    # 4. active assignment lookup -> active_assignment
-    # 5. prev user lookup -> MagicMock(full_name="Dr. Prev")
+    # 2. email check -> None
+    # 3. mobile check -> None
+    # 4. district lookup -> mock_dist
+    # 5. active assignment lookup -> active_assignment
+    # 6. prev user lookup -> MagicMock(full_name="Dr. Prev")
     res_username = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+    res_email = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
     res_mobile = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
     res_dist = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_dist))
     res_asgn = MagicMock(scalar_one_or_none=MagicMock(return_value=active_assignment))
     res_prev_user = MagicMock(scalar_one_or_none=MagicMock(return_value=MagicMock(full_name="Dr. Prev DAHO")))
 
-    mock_db.execute.side_effect = [res_username, res_mobile, res_dist, res_asgn, res_prev_user]
+    mock_db.execute.side_effect = [res_username, res_email, res_mobile, res_dist, res_asgn, res_prev_user]
 
     req = DahoAccountCreateRequest(
         full_name="Dr. New DAHO",
@@ -493,5 +495,86 @@ async def test_get_taluka_villages_geojson():
     assert feat["properties"]["name_en"] == "Dhrol Village"
     assert feat["properties"]["census_code"] == "123456"
     assert feat["properties"]["coord_status"] == "VERIFIED"
+
+
+@pytest.mark.asyncio
+async def test_create_daho_multi_district_success(mock_actor_admin):
+    """Verify DAHO creation with multiple district assignments."""
+    mock_db = AsyncMock()
+    service = SuperAdminService(mock_db)
+
+    d1_id = uuid.uuid4()
+    d2_id = uuid.uuid4()
+
+    mock_d1 = District(id=d1_id, code="AHM", name_en="Ahmedabad", name_gu="અમદાવાદ", active=True)
+    mock_d2 = District(id=d2_id, code="GANDHI", name_en="Gandhinagar", name_gu="ગાંધીનગર", active=True)
+
+    # 1. username check -> None
+    # 2. email check -> None
+    # 3. mobile check -> None
+    # 4. d1 lookup -> mock_d1
+    # 5. d1 active asgn -> None
+    # 6. d2 lookup -> mock_d2
+    # 7. d2 active asgn -> None
+    res_none = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+    res_d1 = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_d1))
+    res_d2 = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_d2))
+
+    mock_db.execute.side_effect = [
+        res_none,  # username
+        res_none,  # email
+        res_none,  # mobile
+        res_d1,    # d1
+        res_none,  # d1 asgn check
+        res_d2,    # d2
+        res_none,  # d2 asgn check
+    ]
+
+    req = DahoAccountCreateRequest(
+        full_name="Dr. Multi District DAHO",
+        username="multi_daho",
+        email="multi_daho@gujarat.gov.in",
+        mobile_e164="+919876543219",
+        district_ids=[d1_id, d2_id],
+        password="ValidPassword@123"
+    )
+
+    resp = await service.create_daho_account(req, actor_user=mock_actor_admin)
+    assert resp.username == "multi_daho"
+    assert len(resp.assigned_district_ids) == 2
+    assert "Ahmedabad" in resp.assigned_district_names
+    assert "Gandhinagar" in resp.assigned_district_names
+
+
+@pytest.mark.asyncio
+async def test_assign_taho_to_taluka(mock_actor_admin):
+    """Verify assigning a TAHO to a taluka succeeds and ends prior taluka assignment."""
+    mock_db = AsyncMock()
+    service = SuperAdminService(mock_db)
+
+    taluka_id = uuid.uuid4()
+    taho_id = uuid.uuid4()
+
+    mock_taluka = Taluka(id=taluka_id, code="TAL_GAD", name_en="Gadhada", name_gu="ગઢડા")
+    mock_taho = User(id=taho_id, role="TAHO", full_name="Dr. TAHO Officer", username="taho_officer")
+
+    res_taluka = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_taluka))
+    res_taho = MagicMock(scalar_one_or_none=MagicMock(return_value=mock_taho))
+    res_prev_asgn = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+    res_other_asgn = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+
+    mock_db.execute.side_effect = [res_taluka, res_taho, res_prev_asgn, res_other_asgn]
+
+    resp = await service.assign_taho_to_taluka(
+        taluka_id=taluka_id,
+        taho_user_id=taho_id,
+        reason="Administrative posting",
+        actor_user=mock_actor_admin
+    )
+
+    assert resp["status"] == "SUCCESS"
+    assert resp["taluka_name"] == "Gadhada"
+    assert resp["taho_name"] == "Dr. TAHO Officer"
+
 
 

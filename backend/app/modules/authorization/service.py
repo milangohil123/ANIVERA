@@ -16,6 +16,7 @@ import logging
 import uuid
 from typing import List, Optional, Set
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.authentication.models import User
 from app.modules.authorization.repository import AuthorizationRepository
@@ -35,6 +36,7 @@ class AuthorizationService:
         """Resolve full operational security scope from trusted database records."""
         permissions = await self.repo.resolve_effective_permissions(user.id, user.role)
         districts = await self.repo.get_assigned_districts(user.id, user.role)
+        talukas = await self.repo.get_assigned_talukas(user.id, user.role)
         villages = await self.repo.get_assigned_villages(user.id, user.role)
         farmers = await self.repo.get_linked_farmer_ids(user.id)
         cooperatives, coop_villages = await self.repo.get_cooperative_scope(user.id)
@@ -46,6 +48,7 @@ class AuthorizationService:
             status=user.status,
             permissions=permissions,
             assigned_district_ids=districts,
+            assigned_taluka_ids=talukas,
             assigned_village_ids=villages,
             linked_farmer_ids=farmers,
             assigned_cooperative_ids=cooperatives,
@@ -191,6 +194,36 @@ class AuthorizationService:
 
         return scope
 
+    async def assert_taluka_scope(
+        self,
+        user: User,
+        taluka_id: uuid.UUID,
+        ip: Optional[str] = None
+    ) -> UserScope:
+        """Assert that the user is authorized to perform operations in the given taluka."""
+        scope = await self.get_user_scope(user)
+
+        taluka_district_id = await self.repo.get_taluka_district_id(taluka_id)
+        if not scope.can_access_taluka(taluka_id, taluka_district_id):
+            logger.warning("Taluka access denied for %s on taluka %s", user.id, taluka_id)
+            await self.repo.record_audit_event(
+                action="TALUKA_SCOPE_CHECK",
+                result="DENIED",
+                actor_user_id=user.id,
+                actor_role=user.role,
+                object_type="taluka",
+                object_id=str(taluka_id),
+                reason="TALUKA_SCOPE_UNAUTHORIZED",
+                ip=ip
+            )
+            await self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user lacks authority for this taluka"
+            )
+
+        return scope
+
     async def assert_village_scope(
         self,
         user: User,
@@ -241,6 +274,31 @@ class AuthorizationService:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: you are not assigned to this village"
+                )
+            return scope
+
+        # TAHO: access permitted if village belongs to TAHO's assigned taluka
+        if user.role == "TAHO":
+            from app.models.geography import Village
+            stmt = select(Village.taluka_id).where(Village.id == village_id)
+            village_taluka_id = (await self.db.execute(stmt)).scalar_one_or_none()
+            if not village_taluka_id or not scope.can_access_taluka(village_taluka_id):
+                logger.warning("TAHO %s tried accessing village %s outside assigned taluka", user.id, village_id)
+                await self.repo.record_audit_event(
+                    action="VILLAGE_SCOPE_CHECK",
+                    result="DENIED",
+                    actor_user_id=user.id,
+                    actor_role=user.role,
+                    object_type="village",
+                    object_id=str(village_id),
+                    village_id=village_id,
+                    reason="VILLAGE_OUTSIDE_ASSIGNED_TALUKA",
+                    ip=ip
+                )
+                await self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: village is outside your assigned taluka"
                 )
             return scope
 

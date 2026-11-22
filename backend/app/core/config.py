@@ -89,5 +89,16 @@ class Settings(BaseSettings):
     BHARAT_PASHUDHAN_MODE: str = os.getenv("BHARAT_PASHUDHAN_MODE", "DISABLED")
     SMS_PROVIDER_MODE: str = os.getenv("SMS_PROVIDER_MODE", "SIMULATED")
 
+    # Email & SMTP Configuration
+    SMTP_HOST: Optional[str] = os.getenv("SMTP_HOST", None)
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: Optional[str] = os.getenv("SMTP_USER", None)
+    SMTP_PASSWORD: Optional[str] = os.getenv("SMTP_PASSWORD", None)
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "no-reply@anivera.gujarat.gov.in")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "ANIVERA Gujarat Administration")
+    SMTP_TLS: bool = os.getenv("SMTP_TLS", "true").lower() in ("true", "1", "yes")
+    SMTP_SSL: bool = os.getenv("SMTP_SSL", "false").lower() in ("true", "1", "yes")
+    FRONTEND_APP_URL: str = os.getenv("FRONTEND_APP_URL", "http://localhost:5173")
+
 
 settings = Settings()

@@ -107,6 +107,7 @@ class DahoAccountCreateRequest(BaseModel):
     designation: Optional[str] = "જિલ્લા પશુપાલન અધિકારી (DAHO)"
     organisation: Optional[str] = "જિલ્લા પંચાયત પશુપાલન શાખા"
     district_id: Optional[uuid.UUID] = None
+    district_ids: Optional[List[uuid.UUID]] = None
     password: Optional[str] = None  # If omitted, a secure activation token is generated
 
 
@@ -120,7 +121,11 @@ class DahoAccountResponse(BaseModel):
     email: Optional[str] = None
     assigned_district_id: Optional[str] = None
     assigned_district_name: Optional[str] = None
+    assigned_district_ids: List[str] = Field(default_factory=list)
+    assigned_district_names: List[str] = Field(default_factory=list)
     notification_status: str  # SENT, SIMULATED, FAILED, PENDING
+    email_delivery_status: Optional[str] = None
+    email_delivery_error: Optional[str] = None
     activation_token: Optional[str] = None
     created_at: str
 
@@ -328,3 +333,88 @@ class GeographicQualityAuditResponse(BaseModel):
     statewide_summary: StatewideQualitySummary
     jamnagar_audit: JamnagarAuditDetail
     district_breakdown: List[DistrictSummaryItem] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------------------------
+# Email Logs Schemas
+# ------------------------------------------------------------------------------
+class EmailLogResponse(BaseModel):
+    id: str
+    recipient_email: str
+    recipient_user_id: Optional[str] = None
+    subject: str
+    body_preview: Optional[str] = None
+    status: str
+    provider: str
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class EmailLogsListResponse(BaseModel):
+    total: int
+    items: List[EmailLogResponse] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------------------------
+# TAHO Administrative Workflows & Taluka Jurisdiction Schemas
+# ------------------------------------------------------------------------------
+class TahoAccountCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=255)
+    username: str = Field(..., min_length=3, max_length=64)
+    email: Optional[str] = None
+    mobile_e164: str = Field(..., min_length=10, max_length=20)
+    designation: Optional[str] = "તાલુકા પશુપાલન અધિકારી (TAHO)"
+    organisation: Optional[str] = "તાલુકા પંચાયત પશુપાલન શાખા"
+    taluka_id: Optional[uuid.UUID] = None
+    password: Optional[str] = None
+
+
+class TahoAccountResponse(BaseModel):
+    user_id: str
+    username: str
+    full_name: str
+    email: Optional[str] = None
+    mobile_e164: str
+    role: str = "TAHO"
+    status: str
+    assigned_taluka_id: Optional[str] = None
+    assigned_taluka_name: Optional[str] = None
+    email_status: str
+    email_error: Optional[str] = None
+    activation_token: Optional[str] = None
+    created_at: str
+
+
+class TalukaAssignTahoRequest(BaseModel):
+    taho_user_id: uuid.UUID
+    reason: Optional[str] = "Administrative Taluka Assignment"
+
+
+class TalukaReleaseTahoRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=1000)
+
+
+class TahoSearchItem(BaseModel):
+    user_id: str
+    username: str
+    full_name: str
+    email: Optional[str] = None
+    mobile_e164: str
+    status: str
+    assigned_taluka_id: Optional[str] = None
+    assigned_taluka_name: Optional[str] = None
+    assigned_district_name: Optional[str] = None
+
+
+class DahoTalukaWithTaho(BaseModel):
+    taluka_id: str
+    district_id: str
+    district_name: str
+    code: str
+    name_en: str
+    name_gu: str
+    village_count: int
+    assigned_taho: Optional[Dict[str, Any]] = None
+

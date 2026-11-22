@@ -1,33 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { coopService, type CoopVillageProgressItem, type CoopCampItem } from '../../services/coopService';
-import { Card } from '../../components/common/Card';
-import { Button } from '../../components/common/Button';
-import { StateView } from '../../components/common/StateView';
+import { coopService, type CoopDashboardAnalytics } from '../../services/coopService';
 import { KpiCard } from '../../components/common/KpiCard';
+import { StateView } from '../../components/common/StateView';
 import {
-  LinearAreaChart,
-  LinearBarChart,
-  LinearRadialGauge,
-} from '../../components/charts/LinearCharts';
-import {
-  Calendar,
-  ChevronRight,
-  Info,
-  MapPin,
+  Building2,
+  Users,
   PawPrint,
   Syringe,
-  Layers,
+  Megaphone,
+  Activity,
+  AlertTriangle,
+  MapPin,
+  CheckCircle2,
+  Clock,
   RotateCcw,
+  ChevronRight,
+  TrendingUp,
+  BarChart3,
+  FileText,
+  ShieldCheck,
+  Tent,
+  ArrowRight,
+  Layers,
 } from 'lucide-react';
 
 export const CoopDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { apiBaseUrl, session } = useAuth();
+  const { apiBaseUrl } = useAuth();
 
-  const [villagesProgress, setVillagesProgress] = useState<CoopVillageProgressItem[]>([]);
-  const [camps, setCamps] = useState<CoopCampItem[]>([]);
+  const [analytics, setAnalytics] = useState<CoopDashboardAnalytics | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -35,14 +38,10 @@ export const CoopDashboard: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [vils, cmps] = await Promise.all([
-        coopService.getServedVillagesProgress(apiBaseUrl),
-        coopService.listCamps(apiBaseUrl),
-      ]);
-      setVillagesProgress(vils);
-      setCamps(cmps);
+      const data = await coopService.getDashboardAnalytics(apiBaseUrl);
+      setAnalytics(data);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'કંઈક ખોટું થયું. ફરી પ્રયાસ કરો.');
+      setErrorMsg(err?.message || 'ડેરી સહકારી ડેશબોર્ડ ડેટા લોડ કરવામાં નિષ્ફળ');
     } finally {
       setIsLoading(false);
     }
@@ -52,317 +51,421 @@ export const CoopDashboard: React.FC = () => {
     loadData();
   }, [apiBaseUrl]);
 
-  const totalAnimals = villagesProgress.reduce((sum, v) => sum + v.total_animals, 0);
-  const totalVaccinated = villagesProgress.reduce((sum, v) => sum + v.vaccinated_animals, 0);
-  const overallCoverage = totalAnimals > 0 ? Math.round((totalVaccinated / totalAnimals) * 100) : 0;
+  if (isLoading && !analytics) {
+    return <StateView state="loading" message="ડેરી સહકારી ડેશબોર્ડ લોડ થઈ રહ્યું છે..." />;
+  }
 
-  // Visual Analytics items
-  const villageBarItems = villagesProgress.slice(0, 4).map((v) => ({
-    label: v.village_name,
-    sublabel: `${v.vaccinated_animals} / ${v.total_animals} પશુ`,
-    value: v.vaccinated_animals,
-    target: v.total_animals,
-    color: '#135D43',
-  }));
+  if (errorMsg && !analytics) {
+    return (
+      <StateView
+        state="error"
+        message={errorMsg}
+        onRetry={loadData}
+      />
+    );
+  }
 
-  const weeklyProducerTrend = totalVaccinated > 0 ? [
-    { label: 'સોમ', value: Math.round(totalVaccinated * 0.15) },
-    { label: 'મંગળ', value: Math.round(totalVaccinated * 0.18) },
-    { label: 'બુધ', value: Math.round(totalVaccinated * 0.14) },
-    { label: 'ગુરુ', value: Math.round(totalVaccinated * 0.20) },
-    { label: 'શુક્ર', value: Math.round(totalVaccinated * 0.17) },
-    { label: 'શનિ', value: Math.round(totalVaccinated * 0.16) },
-    { label: 'રવિ', value: 0 },
-  ] : [
-    { label: 'સોમ', value: 0 },
-    { label: 'મંગળ', value: 0 },
-    { label: 'બુધ', value: 0 },
-    { label: 'ગુરુ', value: 0 },
-    { label: 'શુક્ર', value: 0 },
-    { label: 'શનિ', value: 0 },
-    { label: 'રવિ', value: 0 },
-  ];
+  const kpis = analytics?.kpis || {
+    total_member_farmers: 0,
+    total_animals: 0,
+    fully_vaccinated_animals: 0,
+    partially_vaccinated_animals: 0,
+    pending_vaccinations: 0,
+    overdue_vaccinations: 0,
+    overall_coverage_pct: 0,
+    active_campaigns: 0,
+    linked_villages: 0,
+    suspected_disease_cases: 0,
+  };
+
+  const charts = analytics?.charts || {
+    monthly_trend: [],
+    species_distribution: [],
+    status_distribution: [],
+    village_farmers: [],
+    village_livestock: [],
+    village_coverage: [],
+    campaign_progress: [],
+    disease_trends: [],
+  };
+
+  const coopInfo = analytics?.cooperative || {};
 
   return (
-    <div className="w-full space-y-4 pb-12 font-body text-[#172033] animate-fade-in">
+    <div className="w-full space-y-4 animate-fade-in pb-12 font-body text-[#172033]">
       {/* ---------------------------------------------------------------------- */}
-      {/* 1. Unified Hero Header Card (Linear Unified Theme)                     */}
+      {/* 1. BREADCRUMBS & TOP PAGE HEADER (Exact Reference Image Design)        */}
       {/* ---------------------------------------------------------------------- */}
-      <div className="relative overflow-hidden rounded-2xl bg-white border border-[#E2E8F0] p-4 sm:p-5 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-[#0F172A] font-heading tracking-tight">
-                {session?.user?.organisation || 'દૂધ ઉત્પાદક સહકારી મંડળી'}
-              </h1>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
-                <MapPin className="w-3 h-3 text-slate-500" />
-                {villagesProgress.length} ગામ કાર્યક્ષેત્ર • ડેરી સ્ટાફ પોર્ટલ
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-              દૂધ ઉત્પાદક પરિવારોના પશુધનનું રસીકરણ કવરેજ અને આરોગ્ય કેમ્પ મોનિટરિંગ
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadData}
-              isLoading={isLoading}
-              leftIcon={<RotateCcw className="w-3.5 h-3.5 text-[#135D43]" />}
-              className="text-xs py-1.5"
-            >
-              તાજું કરો
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/coop/maps')}
-              leftIcon={<MapPin className="w-3.5 h-3.5 text-[#135D43]" />}
-              className="text-xs py-1.5"
-            >
-              જીઓ-નકશો
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/coop/camps')}
-              className="text-xs py-1.5"
-            >
-              કેમ્પ આયોજન
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => navigate('/coop/village-progress')}
-              className="text-xs py-1.5"
-            >
-              ગામવાર પ્રગતિ
-            </Button>
-          </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
+          <span>કામગીરી</span>
+          <ChevronRight className="w-3 h-3 text-slate-400" />
+          <span>ડેરી સહકારી મંડળી</span>
+          <ChevronRight className="w-3 h-3 text-slate-400" />
+          <span className="text-[#0F172A] font-medium">
+            {coopInfo.name_gu || 'ડેરી સહકારી મંડળી'} • {kpis.linked_villages} કાર્યક્ષેત્ર ગામો
+          </span>
         </div>
 
-        {/* Integrated Authority Status Bar */}
-        <div className="mt-4 pt-3.5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#135D43] shrink-0" />
-            <span className="font-medium text-slate-700">
-              દૂધ સહકારી મંડળી એકત્રિત સમીક્ષા મોડ (COOP Aggregate Scope) સક્રિય છે.
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-0.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#0F172A] font-heading tracking-tight">
+              ડેરી ઝાંખી ({coopInfo.name_gu || 'મંડળી ડેશબોર્ડ'})
+            </h1>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-[#135D43]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#135D43]" />
+              <span>સહકારી વહીવટ સક્રિય</span>
             </span>
           </div>
 
-          <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80 self-start sm:self-auto shrink-0">
-            SCOPE: COOPERATIVE_AGGREGATE
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={loadData}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#135D43]" />
+              <span>તાજું કરો</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/coop/maps')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#E8EEFC] text-xs font-semibold text-[#135D43] hover:bg-[#D8E4FA] shadow-xs transition-colors"
+            >
+              <MapPin className="w-3.5 h-3.5 text-[#135D43]" />
+              <span>GIS ભૌગોલિક નકશો</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/coop/reports')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#135D43] text-white text-xs font-semibold hover:bg-[#0F4C37] shadow-xs transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5 text-white mr-1" />
+              <span>રિપોર્ટ્સ અને નિકાસ</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ---------------------------------------------------------------------- */}
-      {/* 2. Compact 4-KPI Single Row (Linear Style)                             */}
+      {/* 2. COOPERATIVE GOVERNANCE BANNER (Exact Reference Image Design)        */}
       {/* ---------------------------------------------------------------------- */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <KpiCard
-          label="જોડાયેલ ગામો"
-          value={isLoading ? '...' : villagesProgress.length}
-          subtext="અધિકૃત કાર્યક્ષેત્ર"
-          icon={<Layers className="w-3.5 h-3.5" />}
-          iconVariant="primary"
-          onClick={() => navigate('/coop/village-progress')}
-        />
+      <div className="bg-[#E8EEFC] border border-[#BFDBFE] rounded-xl p-3 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-800 shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-white border border-[#BFDBFE] flex items-center justify-center shrink-0 text-[#0284C7] shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-[#0284C7]" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-slate-900 font-heading">
+                {coopInfo.name_gu || 'ડેરી સહકારી મંડળી'} સત્તાવાર સહકારી કાર્યક્ષેત્ર
+              </span>
+              <span className="text-[10px] font-semibold px-2 py-0.2 rounded bg-white text-slate-700 border border-[#CBD5E1]">
+                ડેરી સહકારી કાર્યક્ષેત્ર
+              </span>
+              {coopInfo.is_demo && (
+                <span className="px-2 py-0.2 bg-amber-400 text-slate-900 text-[10px] rounded font-extrabold uppercase">
+                  DEMO
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-[#64748B] mt-0.5 truncate">
+              {coopInfo.name_gu} ({coopInfo.name_en || 'Dairy Cooperative'}) • કોડ: {coopInfo.code || 'COOP'} • {kpis.linked_villages} કાર્યક્ષેત્ર ગામડાં • નોંધાયેલ સભાસદો: {kpis.total_member_farmers} • સંલગ્ન પશુધન: {kpis.total_animals}. લાઈવ રસીકરણ અને દેખરેખ સક્રિય.
+            </p>
+          </div>
+        </div>
 
-        <KpiCard
-          label="કુલ પશુધન (Aggregate)"
-          value={isLoading ? '...' : totalAnimals.toLocaleString('gu-IN')}
-          subtext="ગામવાર ગણતરી"
-          icon={<PawPrint className="w-3.5 h-3.5" />}
-          iconVariant="blue"
-          onClick={() => navigate('/coop/village-progress')}
-        />
+        <button
+          onClick={() => navigate('/coop/maps')}
+          className="text-xs font-semibold text-[#0284C7] hover:underline shrink-0 flex items-center gap-1 self-start sm:self-auto"
+        >
+          <span>કાર્યક્ષેત્ર GIS વિશ્લેષણ</span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
 
+      {/* ---------------------------------------------------------------------- */}
+      {/* 3. 5 KPI CARDS IN ONE ROW (Exact DAHO Dashboard Reference Image)      */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
-          label="રસીકરણ કવરેજ"
-          value={isLoading ? '...' : `${overallCoverage}%`}
-          valueColor="text-emerald-700"
-          subtext={`${totalVaccinated.toLocaleString('gu-IN')} પશુ રક્ષિત`}
-          icon={<Syringe className="w-3.5 h-3.5" />}
+          label="કુલ નોંધાયેલ પશુધન"
+          value={isLoading ? '...' : String(kpis.total_animals)}
+          subtext={`${kpis.linked_villages} ગામ • ${kpis.total_member_farmers} સભાસદો`}
+          icon={<PawPrint className="w-4 h-4 text-[#135D43]" />}
           iconVariant="emerald"
-          trend={{ value: `${overallCoverage}% પૂર્ણ`, isUp: true }}
-          onClick={() => navigate('/coop/village-progress')}
+          onClick={() => navigate('/coop/animals')}
         />
 
         <KpiCard
-          label="પશુ ચિકિત્સા કેમ્પ"
-          value={isLoading ? '...' : camps.length}
-          subtext="સહકારી આયોજન"
-          icon={<Calendar className="w-3.5 h-3.5" />}
-          iconVariant="purple"
+          label="રસીકરણ કવરેજ દર"
+          value={isLoading ? '...' : `${kpis.overall_coverage_pct}%`}
+          valueColor="text-[#176B5B]"
+          subtext={`${kpis.fully_vaccinated_animals} સંપૂર્ણ • લક્ષ્ય ${kpis.total_animals}`}
+          icon={<Syringe className="w-4 h-4 text-[#176B5B]" />}
+          iconVariant="emerald"
+          onClick={() => navigate('/coop/vaccinations')}
+        />
+
+        <KpiCard
+          label="બાકી / મુદત વીતી ગયેલ"
+          value={isLoading ? '...' : String(kpis.pending_vaccinations)}
+          valueColor="text-[#DC2626]"
+          subtext="કતાર જુઓ →"
+          badgeText={`${kpis.overdue_vaccinations} મુદતવીતી`}
+          badgeVariant={kpis.overdue_vaccinations > 0 ? 'red' : 'slate'}
+          icon={<Clock className="w-4 h-4 text-red-600" />}
+          iconVariant="red"
+          onClick={() => navigate('/coop/vaccinations')}
+        />
+
+        <KpiCard
+          label="રોગ સર્વેક્ષણ કેસ"
+          value={isLoading ? '...' : String(kpis.suspected_disease_cases)}
+          subtext={`${kpis.suspected_disease_cases} સક્રિય કેસ`}
+          badgeText={kpis.suspected_disease_cases > 0 ? 'એલર્ટ' : undefined}
+          badgeVariant={kpis.suspected_disease_cases > 0 ? 'red' : undefined}
+          icon={<Activity className="w-4 h-4 text-sky-600" />}
+          iconVariant="blue"
+          onClick={() => navigate('/coop/surveillance')}
+        />
+
+        <KpiCard
+          label="સભ્ય પશુપાલકો"
+          value={isLoading ? '...' : String(kpis.total_member_farmers)}
+          subtext={`${kpis.linked_villages} કાર્યક્ષેત્ર ગામો`}
+          subtextIcon={<span className="w-1.5 h-1.5 rounded-full bg-[#176B5B] shrink-0" />}
+          icon={<Users className="w-4 h-4 text-[#176B5B]" />}
+          iconVariant="teal"
+          onClick={() => navigate('/coop/farmers')}
+        />
+      </div>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 4. SECOND ROW OF 5 IN-DEPTH OPERATIONAL KPIS                            */}
+      {/* ---------------------------------------------------------------------- */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard
+          label="સંપૂર્ણ રસીકરણ થયેલ"
+          value={isLoading ? '...' : String(kpis.fully_vaccinated_animals)}
+          valueColor="text-emerald-700"
+          subtext="બંને ડોઝ સુરક્ષિત"
+          icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+          iconVariant="emerald"
+          onClick={() => navigate('/coop/vaccinations')}
+        />
+
+        <KpiCard
+          label="આંશિક રસીકરણ થયેલ"
+          value={isLoading ? '...' : String(kpis.partially_vaccinated_animals)}
+          valueColor="text-amber-700"
+          subtext="૧ ડોઝ પૂર્ણ"
+          icon={<Clock className="w-4 h-4 text-amber-600" />}
+          iconVariant="amber"
+          onClick={() => navigate('/coop/vaccinations')}
+        />
+
+        <KpiCard
+          label="સક્રિય રસીકરણ ઝુંબેશો"
+          value={isLoading ? '...' : String(kpis.active_campaigns)}
+          subtext="કાર્યક્ષેત્રમાં અમલમાં"
+          icon={<Megaphone className="w-4 h-4 text-sky-600" />}
+          iconVariant="blue"
+          onClick={() => navigate('/coop/campaigns')}
+        />
+
+        <KpiCard
+          label="કાર્યક્ષેત્ર ગામો"
+          value={isLoading ? '...' : String(kpis.linked_villages)}
+          subtext="GIS નકશામાં જુઓ →"
+          icon={<MapPin className="w-4 h-4 text-[#135D43]" />}
+          iconVariant="teal"
+          onClick={() => navigate('/coop/maps')}
+        />
+
+        <KpiCard
+          label="પશુ આરોગ્ય કેમ્પ"
+          value={isLoading ? '...' : "આયોજિત"}
+          subtext="કેમ્પ યાદી જુઓ →"
+          icon={<Tent className="w-4 h-4 text-amber-600" />}
+          iconVariant="amber"
           onClick={() => navigate('/coop/camps')}
         />
       </div>
 
       {/* ---------------------------------------------------------------------- */}
-      {/* 2.5 Visual Analytics Section: Weekly Trend & Village Coverage          */}
+      {/* 5. ANALYTICS CHARTS SECTION WITH UNIFORM SECTION HEADER                 */}
       {/* ---------------------------------------------------------------------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Weekly Trend Graph (7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-xl border border-[#E2E8F0] p-4 sm:p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#135D43]" />
-                <h3 className="text-xs font-bold text-slate-900 font-heading">
-                  દૂધ ઉત્પાદક પશુ રસીકરણ વલણ (Weekly Vaccination Trend)
-                </h3>
-              </div>
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80">
-                ડેરી સપ્લાયર્સ
-              </span>
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+        <div className="p-3.5 sm:p-4 border-b border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#F8FAFC]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#E6F3EF] border border-[#176B5B]/20 flex items-center justify-center text-[#176B5B] shrink-0 shadow-2xs">
+              <BarChart3 className="w-4 h-4" />
             </div>
-
-            <p className="text-[11px] text-slate-500 mb-2">
-              સહકારી મંડળીના સભ્ય પરિવારોના પશુઓ માટે સાપ્તાહિક રસીકરણ દર
-            </p>
-
-            <LinearAreaChart
-              data={weeklyProducerTrend}
-              height={140}
-              color="#135D43"
-              unit="પશુ"
-              fillGradientId="coopWeeklyGrad"
-            />
-          </div>
-
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>સાપ્તાહિક નોંધ: <strong className="text-slate-800 font-mono">500 પશુઓ</strong></span>
-            <span>સરેરાશ: <strong className="text-slate-800 font-mono">71 પશુ/દિવસ</strong></span>
-          </div>
-        </div>
-
-        {/* Village Coverage & Radial Gauge (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-xl border border-[#E2E8F0] p-4 sm:p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                <h3 className="text-xs font-bold text-slate-900 font-heading">
-                  ગામવાર કવરેજ વિતરણ (Village Coverage)
-                </h3>
-              </div>
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80">
-                ટોચના ગામો
-              </span>
-            </div>
-
-            {villageBarItems.length > 0 ? (
-              <LinearBarChart items={villageBarItems} className="mt-1" />
-            ) : (
-              <p className="text-xs text-slate-400 py-4 text-center">કોઈ ગામ ડેટા ઉપલબ્ધ નથી</p>
-            )}
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <LinearRadialGauge
-                percentage={overallCoverage || 75}
-                size={54}
-                strokeWidth={5}
-                color="#135D43"
-              />
-              <div>
-                <p className="text-xs font-bold text-slate-900">{overallCoverage}% રક્ષિત હર્ડ</p>
-                <p className="text-[10px] text-slate-400">{totalVaccinated} / {totalAnimals} પશુ</p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => navigate('/coop/village-progress')}
-              className="text-xs font-semibold text-[#135D43] hover:underline"
-            >
-              ગામવાર વિગત →
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Village Aggregate Table Preview */}
-      <Card
-        header={
-          <div className="flex items-center justify-between w-full">
             <div>
-              <h3 className="text-sm font-bold text-[#1E293B] font-heading">
-                ગામવાર રસીકરણ પ્રગતિ (Aggregate Progress)
-              </h3>
-              <p className="text-[11px] text-[#64748B]">
-                સુરક્ષા નિયમ: ફક્ત એકત્રિત આંકડા — પશુપાલકની વ્યક્તિગત વિગત શામેલ નથી
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-[#0F172A] font-heading">
+                  રસીકરણ અને પશુધન પૃથ્થકરણ (Operational Analytics)
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-[#135D43]">
+                  ૮ વિશ્લેષણ ચાર્ટ્સ
+                </span>
+              </div>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                સભાસદ પશુધનની માસિક પ્રગતિ, પ્રજાતિ વિતરણ અને ગામવાર કામગીરીનું વિશ્લેષણ
               </p>
             </div>
-            <button
-              onClick={() => navigate('/coop/village-progress')}
-              className="text-xs text-[#135D43] font-semibold hover:underline flex items-center gap-1"
-            >
-              સંપૂર્ણ વિગત <ChevronRight className="w-3.5 h-3.5" />
-            </button>
           </div>
-        }
-      >
-        {isLoading ? (
-          <StateView state="loading" title="લોડ થઈ રહ્યું છે…" />
-        ) : errorMsg ? (
-          <StateView state="error" message={errorMsg} onRetry={loadData} />
-        ) : villagesProgress.length === 0 ? (
-          <StateView
-            state="empty"
-            title="કોઈ માહિતી નથી"
-            message="આ મંડળીના કાર્યક્ષેત્રમાં હજુ સુધી કોઈ ગામ ફાળવેલ નથી."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-[#F8FAFB] text-[#64748B] border-b border-[#E2E8F0] uppercase text-[10px]">
-                <tr>
-                  <th className="py-2.5 px-3">ગામનું નામ</th>
-                  <th className="py-2.5 px-3">ગામ કોડ</th>
-                  <th className="py-2.5 px-3">કુલ પશુઓ</th>
-                  <th className="py-2.5 px-3">રસીકરણ થયેલ</th>
-                  <th className="py-2.5 px-3">પ્રગતિ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
-                {villagesProgress.slice(0, 5).map((v) => (
-                  <tr key={v.village_id} className="hover:bg-gray-50/50">
-                    <td className="py-3 px-3 font-semibold text-[#1E293B]">{v.village_name}</td>
-                    <td className="py-3 px-3 font-mono text-[#64748B]">{v.village_code}</td>
-                    <td className="py-3 px-3 text-[#1E293B]">{v.total_animals}</td>
-                    <td className="py-3 px-3 text-[#065F46] font-semibold">{v.vaccinated_animals}</td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-[#135D43] h-2 rounded-full"
-                            style={{ width: `${Math.min(v.coverage_percent, 100)}%` }}
-                          />
-                        </div>
-                        <span className="font-semibold text-[11px] text-[#1E293B]">
-                          {v.coverage_percent}%
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+        </div>
 
-      {/* Scope Alert */}
-      <div className="p-3.5 bg-[#F0FDF4] border border-[#DCFCE7] rounded-2xl text-xs text-[#166534] flex items-start gap-2.5">
-        <Info className="w-4 h-4 text-[#135D43] shrink-0 mt-0.5" />
-        <div>
-          <strong className="block text-[#135D43]">કાર્યક્ષેત્ર નીતિ (Operational Scope):</strong>
-          મંડળી સ્ટાફ ફક્ત માન્ય સહકારી ગામોની પ્રગતિ જોઈ શકે છે. ક્રોસ-વિલેજ દરખાસ્તો મંજૂર નથી.
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Chart 1: Monthly Vaccination Trend */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 md:col-span-2 shadow-2xs">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-slate-800 text-xs">માસિક રસીકરણ વલણ (Monthly Trend)</h4>
+              <span className="text-[10px] text-slate-400">છેલ્લા ૬ મહિના</span>
+            </div>
+            <div className="h-44 flex items-end gap-3 pt-6 pb-2 px-2">
+              {charts.monthly_trend.map((m, idx) => {
+                const maxVal = Math.max(...charts.monthly_trend.map((x) => x.doses), 50);
+                const barHeight = Math.max(12, Math.round((m.doses / maxVal) * 120));
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                    <span className="text-[10px] font-bold text-slate-700">{m.doses}</span>
+                    <div
+                      className="w-full bg-[#135D43] hover:bg-[#1c7a59] rounded-t transition-all"
+                      style={{ height: `${barHeight}px` }}
+                    />
+                    <span className="text-[10px] text-slate-500 font-medium">{m.month}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Chart 2: Species Distribution */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <h4 className="font-bold text-slate-800 text-xs mb-3">પશુ જાતિ વિતરણ (Species)</h4>
+            <div className="space-y-2.5">
+              {charts.species_distribution.map((sp, idx) => {
+                const total = kpis.total_animals || 1;
+                const pct = Math.round((sp.count / total) * 100);
+                return (
+                  <div key={idx} className="text-xs">
+                    <div className="flex justify-between text-slate-700 mb-1">
+                      <span>{sp.species}</span>
+                      <span className="font-bold">{sp.count} ({pct}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                      <div className="h-2 rounded-full" style={{ width: `${pct}%`, backgroundColor: sp.color }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Chart 3: Vaccination Status Distribution */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <h4 className="font-bold text-slate-800 text-xs mb-3">રસીકરણ સ્થિતિ પ્રમાણ</h4>
+            <div className="space-y-2.5">
+              {charts.status_distribution.map((st, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs p-1.5 rounded bg-slate-50">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color }} />
+                    <span className="text-slate-700 truncate max-w-[130px]">{st.name}</span>
+                  </div>
+                  <strong className="text-slate-900">{st.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart 4: Village-wise Member Farmers */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-slate-800 text-xs">ગામ મુજબ સભાસદો</h4>
+              <button onClick={() => navigate('/coop/maps')} className="text-[10px] text-[#135D43] font-semibold hover:underline">
+                નકશો →
+              </button>
+            </div>
+            <div className="space-y-2">
+              {charts.village_farmers.slice(0, 5).map((vf, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => navigate('/coop/maps')}
+                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                >
+                  <span className="text-slate-600">{vf.village}</span>
+                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{vf.farmers} ખેડૂત</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart 5: Village Livestock */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-slate-800 text-xs">ગામ મુજબ સંલગ્ન પશુધન</h4>
+              <button onClick={() => navigate('/coop/maps')} className="text-[10px] text-[#135D43] font-semibold hover:underline">
+                નકશો →
+              </button>
+            </div>
+            <div className="space-y-2">
+              {charts.village_livestock.slice(0, 5).map((vl, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => navigate('/coop/maps')}
+                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                >
+                  <span className="text-slate-600">{vl.village}</span>
+                  <span className="font-bold text-[#135D43] bg-emerald-50 px-2 py-0.5 rounded">{vl.animals} પશુ</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart 6: Village Coverage % */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-slate-800 text-xs">ગામ કવરેજ સિદ્ધિ</h4>
+              <button onClick={() => navigate('/coop/village-progress')} className="text-[10px] text-[#135D43] font-semibold hover:underline">
+                પ્રગતિ →
+              </button>
+            </div>
+            <div className="space-y-2">
+              {charts.village_coverage.slice(0, 5).map((vc, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => navigate('/coop/village-progress')}
+                  className="flex items-center justify-between text-xs py-1 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded px-1"
+                >
+                  <span className="text-slate-600">{vc.village}</span>
+                  <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{vc.coverage_pct}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart 7: Campaign Achievement */}
+          <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <h4 className="font-bold text-slate-800 text-xs mb-3">ઝુંબેશ લક્ષ્યાંક સિદ્ધિ</h4>
+            <div className="space-y-2">
+              {charts.campaign_progress.slice(0, 3).map((cp, idx) => {
+                const pct = Math.round((cp.achieved / (cp.target || 1)) * 100);
+                return (
+                  <div key={idx} className="text-xs">
+                    <div className="flex justify-between text-slate-700 mb-1">
+                      <span className="truncate max-w-[120px]">{cp.campaign}</span>
+                      <span className="font-bold">{pct}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </div>

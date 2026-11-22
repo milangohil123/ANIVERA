@@ -169,6 +169,53 @@ class VaccinationService:
             reason=f"Recorded {payload.programme_code} vaccination for animal {animal.animal_code or str(animal.id)}",
             ip=client_ip
         )
+
+        # Check and advance active cooperative recurring vaccination cycle
+        try:
+            from app.modules.health_cases.models import AnimalVaccinationCycle, CooperativeVaccinationSchedule
+            from datetime import timedelta
+            cyc_res = await self.db.execute(
+                select(AnimalVaccinationCycle).where(
+                    AnimalVaccinationCycle.animal_id == payload.animal_id,
+                    AnimalVaccinationCycle.status.in_(["SCHEDULED", "DUE", "REMINDER_SENT"])
+                ).order_by(AnimalVaccinationCycle.due_date).limit(1)
+            )
+            active_cycle = cyc_res.scalar_one_or_none()
+            if active_cycle:
+                active_cycle.status = "COMPLETED"
+                active_cycle.completed_date = payload.event_date
+                active_cycle.completed_event_id = event.event_id
+
+                sched = await self.db.get(CooperativeVaccinationSchedule, active_cycle.schedule_id)
+                if sched and sched.status == "ACTIVE":
+                    interval_val = sched.recurrence_interval_value or 6
+                    if sched.recurrence_interval_unit == "WEEKS":
+                        next_delta = timedelta(weeks=interval_val)
+                    elif sched.recurrence_interval_unit == "DAYS":
+                        next_delta = timedelta(days=interval_val)
+                    else:
+                        next_delta = timedelta(days=interval_val * 30)
+
+                    next_due = payload.event_date + next_delta
+                    next_reminder = next_due - timedelta(days=sched.reminder_days_before or 15)
+
+                    next_cycle = AnimalVaccinationCycle(
+                        id=uuid.uuid4(),
+                        animal_id=payload.animal_id,
+                        schedule_id=sched.id,
+                        programme_code=sched.programme_code,
+                        cycle_number=active_cycle.cycle_number + 1,
+                        previous_vaccination_date=payload.event_date,
+                        last_verified_vaccination_date=payload.event_date,
+                        due_date=next_due,
+                        reminder_date=next_reminder,
+                        reminder_status="PENDING",
+                        status="SCHEDULED"
+                    )
+                    self.db.add(next_cycle)
+        except Exception as ex:
+            logger.warning("Could not auto-advance vaccination cycle: %s", ex)
+
         await self.db.commit()
 
         d = event.vaccination_detail

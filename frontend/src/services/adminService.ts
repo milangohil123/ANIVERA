@@ -144,6 +144,20 @@ export const adminService = {
     return res.json();
   },
 
+  async getActiveDistrict(apiBaseUrl: string): Promise<DistrictItem> {
+    const dists = await this.listDistricts(apiBaseUrl);
+    if (!dists || dists.length === 0) {
+      throw new Error('કોઈ સક્રિય જિલ્લો મળ્યો નથી');
+    }
+    const session = authService.getSession();
+    const storedId = (session?.user as any)?.assigned_district_ids?.[0] || localStorage.getItem('pashurakshak_active_district_id');
+    if (storedId) {
+      const match = dists.find((d) => d.id === storedId);
+      if (match) return match;
+    }
+    return dists[0];
+  },
+
   // 2. Talukas
   async listTalukas(apiBaseUrl: string, districtId?: string): Promise<TalukaItem[]> {
     const query = districtId ? `?district_id=${districtId}&limit=100` : '?limit=100';
@@ -627,16 +641,32 @@ export const adminService = {
     return res.json();
   },
 
+  async listDistrictsGeoJson(apiBaseUrl: string): Promise<any> {
+    return this.getGujaratStateMap(apiBaseUrl);
+  },
+
   async getDistrictTalukasGeoJson(apiBaseUrl: string, districtId?: string): Promise<any> {
     const url = districtId
       ? `/api/v1/maps/talukas-geojson?district_id=${districtId}`
       : `/api/v1/maps/talukas-geojson`;
-    const res = await authFetch(apiBaseUrl, url);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `તાલુકા પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    try {
+      const res = await authFetch(apiBaseUrl, url);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('API talukas fetch error, falling back to static cache:', e);
     }
-    return res.json();
+    // Fallback if statewide and API unreachable or unauthenticated
+    if (!districtId) {
+      try {
+        const localRes = await fetch('/data/gujarat_talukas.geojson');
+        if (localRes.ok) return await localRes.json();
+      } catch (err) {
+        console.warn('Static talukas fallback error:', err);
+      }
+    }
+    throw new Error('તાલુકા પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ');
   },
 
   async getDistrictVillagesGeoJson(apiBaseUrl: string, districtId: string): Promise<any> {
@@ -662,6 +692,346 @@ export const adminService = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
       throw new Error(err.detail || `ભૌગોલિક ડેટા ગુણવત્તા ઓડિટ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // ---------------------------------------------------------------------------
+  // Email Delivery Logs
+  // ---------------------------------------------------------------------------
+  async getEmailLogs(apiBaseUrl: string, limit = 50, offset = 0): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/email-logs?limit=${limit}&offset=${offset}`);
+    if (!res.ok) throw new Error('ઇમેઇલ લોગ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async retryEmailLog(apiBaseUrl: string, logId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/email-logs/${logId}/retry`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('ઇમેઇલ ફરી મોકલવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  // ---------------------------------------------------------------------------
+  // DAHO Multi-District & Taluka/TAHO Management
+  // ---------------------------------------------------------------------------
+  async getDahoAssignedDistricts(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/assigned-districts`);
+    if (!res.ok) throw new Error('નિયુક્ત જિલ્લાઓ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoDistrictOverview(apiBaseUrl: string, districtId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/district-overview?district_id=${districtId}`);
+    if (!res.ok) throw new Error('જિલ્લા વિહંગાવલોકન મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoAnimals(
+    apiBaseUrl: string,
+    districtId: string,
+    params?: { search?: string; species?: string; talukaId?: string; page?: number; pageSize?: number }
+  ): Promise<{ total: number; page: number; page_size: number; total_pages: number; items: any[] }> {
+    const q = new URLSearchParams();
+    q.set('district_id', districtId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.species) q.set('species', params.species);
+    if (params?.talukaId) q.set('taluka_id', params.talukaId);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.pageSize) q.set('page_size', String(params.pageSize));
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/animals?${q.toString()}`);
+    if (!res.ok) throw new Error('પશુ નોંધણી યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoFarmers(
+    apiBaseUrl: string,
+    districtId: string,
+    params?: { search?: string; talukaId?: string; page?: number; pageSize?: number }
+  ): Promise<{ total: number; page: number; page_size: number; total_pages: number; items: any[] }> {
+    const q = new URLSearchParams();
+    q.set('district_id', districtId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.talukaId) q.set('taluka_id', params.talukaId);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.pageSize) q.set('page_size', String(params.pageSize));
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/farmers?${q.toString()}`);
+    if (!res.ok) throw new Error('ખેડૂત યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoDiseaseAlerts(apiBaseUrl: string, districtId: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/disease-alerts?district_id=${districtId}`);
+    if (!res.ok) throw new Error('રોગ સર્વેલન્સ ચેતવણીઓ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoGisQuality(apiBaseUrl: string, districtId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/gis-quality?district_id=${districtId}`);
+    if (!res.ok) throw new Error('GIS ગુણવત્તા ઓડિટ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoVaccinationRecords(
+    apiBaseUrl: string,
+    districtId: string,
+    params?: { talukaId?: string; page?: number; pageSize?: number }
+  ): Promise<{ total: number; page: number; page_size: number; total_pages: number; items: any[] }> {
+    const q = new URLSearchParams();
+    q.set('district_id', districtId);
+    if (params?.talukaId) q.set('taluka_id', params.talukaId);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.pageSize) q.set('page_size', String(params.pageSize));
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/vaccination-records?${q.toString()}`);
+    if (!res.ok) throw new Error('રસીકરણ રેકોર્ડ્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getDahoTalukas(apiBaseUrl: string, districtId: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/talukas?district_id=${districtId}`);
+    if (!res.ok) throw new Error('તાલુકા માહિતી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async searchTahoAccounts(apiBaseUrl: string, q?: string, districtId?: string): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (districtId) params.set('district_id', districtId);
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/taho-search?${params.toString()}`);
+    if (!res.ok) throw new Error('TAHO શોધ નિષ્ફળ');
+    return res.json();
+  },
+
+  async createTahoAccount(apiBaseUrl: string, payload: any): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/taho-accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'TAHO બનાવવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'TAHO ખાતું બનાવવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async assignTahoToTaluka(apiBaseUrl: string, talukaId: string, tahoUserId: string, reason?: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/talukas/${talukaId}/assign-taho`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taho_user_id: tahoUserId, reason: reason || 'Administrative Assignment' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'સોંપણી નિષ્ફળ' }));
+      throw new Error(err.detail || 'તાલુકા સોંપણી નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async releaseTahoFromTaluka(apiBaseUrl: string, talukaId: string, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/talukas/${talukaId}/release-taho`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'મુક્ત કરવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'TAHO મુક્ત કરવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  // ---------------------------------------------------------------------------
+  // TAHO Operational Portal
+  // ---------------------------------------------------------------------------
+  async getTahoOverview(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/overview`);
+    if (!res.ok) throw new Error('TAHO વિહંગાવલોકન મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getTahoHierarchy(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/hierarchy`);
+    if (!res.ok) throw new Error('તાલુકા વહીવટી માળખું મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getTahoGisAnalytics(apiBaseUrl: string, params?: Record<string, any>): Promise<any> {
+    const q = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          q.set(key, String(val));
+        }
+      });
+    }
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/gis-analytics${qs}`);
+    if (!res.ok) throw new Error('GIS એનાલિટિક્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async getTahoVillageAnalytics(apiBaseUrl: string, villageId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/village-analytics?village_id=${villageId}`);
+    if (!res.ok) throw new Error('ગામ વિશ્લેષણ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async listTahoVos(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers`);
+    if (!res.ok) throw new Error('વેટરનરી અધિકારીઓની યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async createTahoVo(apiBaseUrl: string, payload: any): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'VO ખાતું બનાવવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'VO ખાતું બનાવવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async updateTahoVoStatus(apiBaseUrl: string, voId: string, status: string, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers/${voId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'સ્ટેટસ બદલવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'સ્ટેટસ બદલવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async listTahoFws(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/field-workers`);
+    if (!res.ok) throw new Error('ફીલ્ડ વર્કર્સની યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async createTahoFw(apiBaseUrl: string, payload: any): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/field-workers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'FW ખાતું બનાવવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'FW ખાતું બનાવવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async updateTahoFwStatus(apiBaseUrl: string, fwId: string, status: string, reason: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/field-workers/${fwId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, reason }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'સ્ટેટસ બદલવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'સ્ટેટસ બદલવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async listTahoCampaigns(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/campaigns`);
+    if (!res.ok) throw new Error('ઝુંબેશોની યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async createTahoCampaign(apiBaseUrl: string, payload: any): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/campaigns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'ઝુંબેશ બનાવવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'ઝુંબેશ બનાવવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async listTahoVaccinations(apiBaseUrl: string, params?: { village_id?: string; page?: number; page_size?: number }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.village_id) q.set('village_id', params.village_id);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.page_size) q.set('page_size', String(params.page_size));
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/vaccinations${qs}`);
+    if (!res.ok) throw new Error('રસીકરણ રેકોર્ડ્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async listTahoAnimals(apiBaseUrl: string, params?: { search?: string; species?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.species) q.set('species', params.species);
+    if (params?.village_id) q.set('village_id', params.village_id);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.page_size) q.set('page_size', String(params.page_size));
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/animals${qs}`);
+    if (!res.ok) throw new Error('પશુ રેકોર્ડ્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async listTahoFarmers(apiBaseUrl: string, params?: { search?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.search) q.set('search', params.search);
+    if (params?.village_id) q.set('village_id', params.village_id);
+    if (params?.page) q.set('page', String(params.page));
+    if (params?.page_size) q.set('page_size', String(params.page_size));
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/farmers${qs}`);
+    if (!res.ok) throw new Error('ખેડૂત રેકોર્ડ્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async listTahoSurveillance(apiBaseUrl: string, params?: { village_id?: string; disease_code?: string; status?: string }): Promise<any[]> {
+    const q = new URLSearchParams();
+    if (params?.village_id) q.set('village_id', params.village_id);
+    if (params?.disease_code) q.set('disease_code', params.disease_code);
+    if (params?.status) q.set('status', params.status);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/surveillance${qs}`);
+    if (!res.ok) throw new Error('રોગ સર્વેલન્સ રિપોર્ટ્સ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async listTahoDiseaseAlerts(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/disease-alerts`);
+    if (!res.ok) throw new Error('રોગ ચેતવણીઓ મેળવવામાં નિષ્ફળ');
+    return res.json();
+  },
+
+  async seedTahoDemoData(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/demo/seed`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'ડેમો ડેટા લોડ કરવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'ડેમો ડેટા લોડ કરવામાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  async resetTahoDemoData(apiBaseUrl: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/demo/reset`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'ડેમો ડેટા રીસેટ કરવામાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'ડેમો ડેટા રીસેટ કરવામાં નિષ્ફળ');
     }
     return res.json();
   },

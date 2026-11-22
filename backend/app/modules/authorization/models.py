@@ -107,6 +107,30 @@ class CooperativeVillage(Base):
     )
 
 
+class CooperativeMembership(Base):
+    """Membership of farmers in dairy/livestock cooperatives matching 'cooperative_memberships' table."""
+    __tablename__ = "cooperative_memberships"
+
+    cooperative_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cooperatives.id"),
+        primary_key=True
+    )
+    farmer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("farmers.id"),
+        primary_key=True
+    )
+    member_no: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    joined_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ended_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+
 class VaccinatorAuthorization(Base):
     """Vaccinator clinical credentials matching 'vaccinator_authorizations' table."""
     __tablename__ = "vaccinator_authorizations"

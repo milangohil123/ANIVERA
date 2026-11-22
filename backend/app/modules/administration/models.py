@@ -172,6 +172,34 @@ class Cooperative(Base):
         default="ACTIVE",
         nullable=False
     )
+    registration_no: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    contact_person: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    designation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mobile_e164: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    district_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("districts.id"),
+        nullable=True
+    )
+    taluka_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("talukas.id"),
+        nullable=True
+    )
+    village_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("villages.id"),
+        nullable=True
+    )
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    postal_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),

@@ -11,7 +11,7 @@ Executes asynchronous database queries for:
 """
 import uuid
 from datetime import date, datetime, timezone
-from typing import Optional, Set, Tuple
+from typing import Optional, Set, Tuple,Dict
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.geography import District, Village
@@ -108,7 +108,7 @@ class AuthorizationRepository:
                 "own.read", "aggregate.view", "offline.sync"
             },
             "DAHO": {
-                "district.setup.manage", "village.manage", "user.manage",
+                "district.setup.manage", "village.manage", "taluka.manage", "user.manage",
                 "gram_panchayat.manage", "cooperative.manage",
                 "veterinary_officer.manage", "field_worker.manage",
                 "campaign.manage", "campaign.configure", "campaign.view", "campaign.assign_workers",
@@ -117,6 +117,16 @@ class AuthorizationRepository:
                 "disease.read", "disease.confirm", "disease.review",
                 "animal.read", "farmer.read", "aggregate.view", "audit.read",
                 "export.run", "map.view", "vaccinator.approve", "event.create", "event.read"
+            },
+            "TAHO": {
+                "taluka.manage", "taho.dashboard.view", "village.manage", "user.manage",
+                "veterinary_officer.manage", "field_worker.manage",
+                "campaign.view", "campaign.manage",
+                "camp.manage", "camp.view",
+                "inventory.read",
+                "disease.read", "disease.review",
+                "animal.read", "farmer.read", "aggregate.view",
+                "map.view", "event.read"
             },
             "SUPER_ADMIN": {
                 "user.manage", "audit.read", "health.read", "technical.manage",
@@ -181,7 +191,24 @@ class AuthorizationRepository:
                     if row[0]:
                         assigned.add(row[0])
 
-            # 3. Fallback for DAHO / VO if no explicit assignment exists in DB
+            # 3. TAHO authorized district derived from active taluka assignment
+            if role in ("TAHO", None):
+                from app.modules.authentication.models import TahoTalukaAssignment
+                from app.models.geography import Taluka
+                taho_dist_stmt = (
+                    select(Taluka.district_id)
+                    .join(TahoTalukaAssignment, TahoTalukaAssignment.taluka_id == Taluka.id)
+                    .where(
+                        TahoTalukaAssignment.taho_user_id == user_id,
+                        TahoTalukaAssignment.ended_at.is_(None)
+                    )
+                )
+                taho_dist_res = await self.db.execute(taho_dist_stmt)
+                for row in taho_dist_res.fetchall():
+                    if row[0]:
+                        assigned.add(row[0])
+
+            # 4. Fallback for DAHO / VO if no explicit assignment exists in DB
             if not assigned and role in ("DAHO", "VET_OFFICER", "VO"):
                 dist_res = await self.db.execute(select(District.id))
                 assigned.update(row[0] for row in dist_res.fetchall())
@@ -189,6 +216,43 @@ class AuthorizationRepository:
             return assigned
         except Exception:
             return set()
+
+    async def get_assigned_talukas(self, user_id: uuid.UUID, role: Optional[str] = None) -> Set[uuid.UUID]:
+        """Fetch active taluka IDs assigned to a TAHO user or resolved from assigned districts for a DAHO."""
+        from app.modules.authentication.models import TahoTalukaAssignment
+        from app.models.geography import Taluka
+        assigned: Set[uuid.UUID] = set()
+        try:
+            if role in ("TAHO", None):
+                stmt = select(TahoTalukaAssignment.taluka_id).where(
+                    TahoTalukaAssignment.taho_user_id == user_id,
+                    TahoTalukaAssignment.ended_at.is_(None)
+                )
+                res = await self.db.execute(stmt)
+                for row in res.fetchall():
+                    if row[0]:
+                        assigned.add(row[0])
+            elif role in ("DAHO", None):
+                dists = await self.get_assigned_districts(user_id, role)
+                if dists:
+                    stmt = select(Taluka.id).where(Taluka.district_id.in_(dists))
+                    res = await self.db.execute(stmt)
+                    for row in res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
+            return assigned
+        except Exception:
+            return set()
+
+    async def get_taluka_district_id(self, taluka_id: uuid.UUID) -> Optional[uuid.UUID]:
+        """Retrieve the district ID for a given taluka."""
+        from app.models.geography import Taluka
+        try:
+            stmt = select(Taluka.district_id).where(Taluka.id == taluka_id)
+            res = await self.db.execute(stmt)
+            return res.scalar_one_or_none()
+        except Exception:
+            return None
 
     async def get_assigned_villages(self, user_id: uuid.UUID, role: Optional[str] = None) -> Set[uuid.UUID]:
         """Fetch active village IDs assigned to a field worker or veterinary officer.
@@ -207,6 +271,16 @@ class AuthorizationRepository:
             )
             res = await self.db.execute(stmt)
             assigned = {row[0] for row in res.fetchall()}
+
+            # 1b. TAHO: all villages within assigned talukas
+            if role in ("TAHO", None):
+                taho_talukas = await self.get_assigned_talukas(user_id, "TAHO")
+                if taho_talukas:
+                    t_v_stmt = select(Village.id).where(Village.taluka_id.in_(taho_talukas), Village.active == True)
+                    t_v_res = await self.db.execute(t_v_stmt)
+                    for row in t_v_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
 
             # 2. Campaign-level assignments for Field Workers
             if role in ("FIELD_WORKER", "FW", None):

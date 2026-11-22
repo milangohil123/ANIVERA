@@ -18,11 +18,13 @@ import { adminService } from '../../services/adminService';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { StatusChip } from '../common/StatusChip';
+import { transliterateToGujarati } from '../../utils/transliterateGujarati';
 
 const GUJARAT_CENTER = { lng: 71.55, lat: 22.35 };
 
 const FREE_OSM_STYLE: maplibregl.StyleSpecification = {
   version: 8,
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
     'osm-tiles': {
       type: 'raster',
@@ -41,6 +43,25 @@ const FREE_OSM_STYLE: maplibregl.StyleSpecification = {
     },
   ],
 };
+
+function getGeometryCentroid(geometry: any): [number, number] | null {
+  if (!geometry || !geometry.coordinates) return null;
+  let totalLng = 0, totalLat = 0, count = 0;
+  const extract = (c: any) => {
+    if (typeof c[0] === 'number') {
+      totalLng += c[0];
+      totalLat += c[1];
+      count++;
+    } else {
+      c.forEach(extract);
+    }
+  };
+  extract(geometry.coordinates);
+  if (count > 0) {
+    return [totalLng / count, totalLat / count];
+  }
+  return null;
+}
 
 function getGeometryBounds(geometry: any): maplibregl.LngLatBoundsLike | null {
   if (!geometry || !geometry.coordinates) return null;
@@ -140,6 +161,10 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<maplibregl.Map | null>(null);
+  const clickPopupRef = useRef<maplibregl.Popup | null>(null);
+  const talukaMarkersRef = useRef<{ marker: maplibregl.Marker; el: HTMLDivElement; talukaId: string }[]>([]);
+  const villageMarkersRef = useRef<{ marker: maplibregl.Marker; el: HTMLDivElement; villageId: string }[]>([]);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // Uncontrolled / Controlled View Level
   const [internalViewLevel, setInternalViewLevel] = useState<'DISTRICT' | 'TALUKA' | 'VILLAGE'>(
@@ -153,12 +178,22 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
   const effectiveViewLevel = controlledViewLevel || internalViewLevel;
 
   // Autonomous fallback data when parent doesn't provide sub-layers
+  const [internalDistrictsGeoJson, setInternalDistrictsGeoJson] = useState<any | null>(null);
   const [internalTalukasGeoJson, setInternalTalukasGeoJson] = useState<any | null>(null);
   const [internalVillagesGeoJson, setInternalVillagesGeoJson] = useState<any | null>(null);
   const [isInternalLoading, setIsInternalLoading] = useState<boolean>(false);
 
+  const effectiveDistrictsGeoJson = geoJsonData || internalDistrictsGeoJson;
   const effectiveTalukasGeoJson = talukasGeoJson || internalTalukasGeoJson;
   const effectiveVillagesGeoJson = villagesGeoJson || internalVillagesGeoJson;
+
+  useEffect(() => {
+    if (!geoJsonData) {
+      adminService.listDistrictsGeoJson(apiBaseUrl)
+        .then((data: any) => setInternalDistrictsGeoJson(data))
+        .catch((err: any) => console.warn('Auto-fetch districts GeoJSON note:', err));
+    }
+  }, [geoJsonData, apiBaseUrl]);
 
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ASSIGNED' | 'UNASSIGNED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -170,8 +205,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
   // Filter district features
   const filteredGeoJson = useMemo(() => {
-    if (!geoJsonData || !geoJsonData.features) return null;
-    let feats = geoJsonData.features;
+    if (!effectiveDistrictsGeoJson || !effectiveDistrictsGeoJson.features) return null;
+    let feats = effectiveDistrictsGeoJson.features;
 
     if (filterStatus !== 'ALL') {
       feats = feats.filter((f: any) => {
@@ -195,7 +230,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
       type: 'FeatureCollection',
       features: feats,
     };
-  }, [geoJsonData, filterStatus, searchQuery, effectiveViewLevel]);
+  }, [effectiveDistrictsGeoJson, filterStatus, searchQuery, effectiveViewLevel]);
 
   // Filter taluka features
   const filteredTalukasGeoJson = useMemo(() => {
@@ -243,6 +278,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
       if (map.getLayer('talukas-fill')) map.setLayoutProperty('talukas-fill', 'visibility', 'none');
       if (map.getLayer('talukas-borders')) map.setLayoutProperty('talukas-borders', 'visibility', 'none');
+      if (map.getLayer('talukas-labels')) map.setLayoutProperty('talukas-labels', 'visibility', 'none');
       if (map.getLayer('talukas-context-line')) map.setLayoutProperty('talukas-context-line', 'visibility', 'none');
 
       if (map.getLayer('villages-fill')) map.setLayoutProperty('villages-fill', 'visibility', 'none');
@@ -255,6 +291,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
       if (map.getLayer('talukas-fill')) map.setLayoutProperty('talukas-fill', 'visibility', 'visible');
       if (map.getLayer('talukas-borders')) map.setLayoutProperty('talukas-borders', 'visibility', 'visible');
+      if (map.getLayer('talukas-labels')) map.setLayoutProperty('talukas-labels', 'visibility', 'visible');
       if (map.getLayer('talukas-context-line')) map.setLayoutProperty('talukas-context-line', 'visibility', 'none');
 
       if (map.getLayer('villages-fill')) map.setLayoutProperty('villages-fill', 'visibility', 'none');
@@ -267,6 +304,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
       if (map.getLayer('talukas-fill')) map.setLayoutProperty('talukas-fill', 'visibility', 'none');
       if (map.getLayer('talukas-borders')) map.setLayoutProperty('talukas-borders', 'visibility', 'none');
+      if (map.getLayer('talukas-labels')) map.setLayoutProperty('talukas-labels', 'visibility', 'none');
       if (map.getLayer('talukas-context-line')) map.setLayoutProperty('talukas-context-line', 'visibility', 'visible');
 
       if (map.getLayer('villages-fill')) map.setLayoutProperty('villages-fill', 'visibility', 'visible');
@@ -308,13 +346,13 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
           'case',
           ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
           '#38BDF8',
-          '#BAE6FD',
+          '#0EA5E9',
         ]);
         map.setPaintProperty('talukas-fill', 'fill-opacity', [
           'case',
           ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
-          0.8,
-          0.45,
+          0.35,
+          0.06,
         ]);
       }
       if (map.getLayer('talukas-borders')) {
@@ -322,13 +360,21 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
           'case',
           ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
           '#2563EB',
-          '#0284C7',
+          '#1F2937',
         ]);
         map.setPaintProperty('talukas-borders', 'line-width', [
           'case',
           ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
-          3.5,
-          1.8,
+          4.0,
+          [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            6, 2.0,
+            8, 2.6,
+            10, 3.2,
+            12, 3.8,
+          ],
         ]);
       }
     } else if (lvl === 'VILLAGE') {
@@ -336,29 +382,41 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         map.setPaintProperty('villages-fill', 'fill-color', [
           'case',
           ['==', ['get', 'village_id'], selectedVillageId || ''],
-          '#F59E0B',
-          '#6EE7B7',
+          '#38BDF8',
+          ['has', 'fill_color'],
+          ['get', 'fill_color'],
+          ['has', 'fillColor'],
+          ['get', 'fillColor'],
+          '#FFFFFF',
         ]);
         map.setPaintProperty('villages-fill', 'fill-opacity', [
           'case',
           ['==', ['get', 'village_id'], selectedVillageId || ''],
           0.85,
-          0.55,
+          ['has', 'fill_opacity'],
+          ['get', 'fill_opacity'],
+          0.70,
         ]);
       }
       if (map.getLayer('villages-borders')) {
         map.setPaintProperty('villages-borders', 'line-color', [
           'case',
           ['==', ['get', 'village_id'], selectedVillageId || ''],
-          '#B45309',
-          '#047857',
+          '#1D4ED8',
+          ['has', 'border_color'],
+          ['get', 'border_color'],
+          '#0F172A',
         ]);
         map.setPaintProperty('villages-borders', 'line-width', [
           'case',
           ['==', ['get', 'village_id'], selectedVillageId || ''],
-          3.0,
+          3.5,
           1.2,
         ]);
+      }
+      if (map.getLayer('talukas-context-line')) {
+        map.setPaintProperty('talukas-context-line', 'line-color', '#0F172A');
+        map.setPaintProperty('talukas-context-line', 'line-width', 3.5);
       }
     }
   }, [selectedDistrictId, selectedTalukaId, selectedVillageId]);
@@ -368,8 +426,197 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
     updateLayerStyles(effectiveViewLevel);
   }, [selectedDistrictId, selectedTalukaId, selectedVillageId, effectiveViewLevel, updateLayerStyles]);
 
+  // Synchronize Taluka DOM Markers for crisp statewide small-font labels
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !effectiveTalukasGeoJson || !effectiveTalukasGeoJson.features) return;
+
+    // Clear previous markers
+    talukaMarkersRef.current.forEach(({ marker }) => marker.remove());
+    talukaMarkersRef.current = [];
+
+    const feats = effectiveTalukasGeoJson.features;
+    feats.forEach((f: any) => {
+      const p = f.properties || {};
+      const centroid: [number, number] | null = p.centroid || getGeometryCentroid(f.geometry);
+      if (!centroid) return;
+
+      const talukaName = p.name_gu || p.name_en || '';
+      const districtName = p.district_name_gu || p.district_name || p.district_name_en || '';
+      const isSelected = p.taluka_id === selectedTalukaId;
+
+      const el = document.createElement('div');
+      el.className = 'taluka-map-label';
+      el.style.display = effectiveViewLevel === 'TALUKA' ? 'flex' : 'none';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'center';
+      el.style.pointerEvents = 'none';
+      el.style.userSelect = 'none';
+      el.style.transform = 'translate(-50%, -50%)';
+
+      el.innerHTML = `
+        <div style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: ${isSelected ? '#2563EB' : 'rgba(255, 255, 255, 0.92)'};
+          color: ${isSelected ? '#FFFFFF' : '#0F172A'};
+          padding: 1px 4px;
+          border-radius: 4px;
+          border: 1px solid ${isSelected ? '#1D4ED8' : 'rgba(15, 23, 42, 0.2)'};
+          box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+          white-space: nowrap;
+          line-height: 1.15;
+          text-align: center;
+          transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
+          transition: transform 0.15s ease;
+        ">
+          <span style="font-size: 8.5px; font-weight: 700; letter-spacing: -0.2px;">${talukaName}</span>
+          ${districtName ? `<span style="font-size: 7px; font-weight: 600; opacity: 0.85; margin-top: 1px;">(${districtName})</span>` : ''}
+        </div>
+      `;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(centroid)
+        .addTo(map);
+
+      talukaMarkersRef.current.push({ marker, el, talukaId: p.taluka_id });
+    });
+
+    return () => {
+      talukaMarkersRef.current.forEach(({ marker }) => marker.remove());
+      talukaMarkersRef.current = [];
+    };
+  }, [effectiveTalukasGeoJson]);
+
+  // Update visibility and highlight of Taluka Markers
+  useEffect(() => {
+    talukaMarkersRef.current.forEach(({ el, talukaId }) => {
+      if (effectiveViewLevel === 'TALUKA') {
+        el.style.display = 'flex';
+        const isSelected = talukaId === selectedTalukaId;
+        const inner = el.firstElementChild as HTMLElement;
+        if (inner) {
+          inner.style.background = isSelected ? '#2563EB' : 'rgba(255, 255, 255, 0.92)';
+          inner.style.color = isSelected ? '#FFFFFF' : '#0F172A';
+          inner.style.border = isSelected ? '1px solid #1D4ED8' : '1px solid rgba(15, 23, 42, 0.2)';
+          inner.style.transform = isSelected ? 'scale(1.15)' : 'scale(1)';
+          el.style.zIndex = isSelected ? '10' : '1';
+        }
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }, [effectiveViewLevel, selectedTalukaId]);
+
+  // Synchronize Village DOM Markers for crisp taluka-level village labels (matching reference village map)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !effectiveVillagesGeoJson || !effectiveVillagesGeoJson.features) return;
+
+    // Clear previous village markers
+    villageMarkersRef.current.forEach(({ marker }) => marker.remove());
+    villageMarkersRef.current = [];
+
+    const feats = effectiveVillagesGeoJson.features;
+    feats.forEach((f: any) => {
+      const p = f.properties || {};
+      const centroid: [number, number] | null =
+        (p.longitude && p.latitude) ? [p.longitude, p.latitude] : getGeometryCentroid(f.geometry);
+      if (!centroid) return;
+
+      const rawName = p.name_gu || p.name_en || '';
+      const villageName = /[\u0A80-\u0AFF]/.test(rawName) ? rawName : (transliterateToGujarati(rawName) || rawName);
+      const isSelected = p.village_id === selectedVillageId;
+
+      const el = document.createElement('div');
+      el.className = 'village-map-label';
+      el.style.display = effectiveViewLevel === 'VILLAGE' ? 'flex' : 'none';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'center';
+      el.style.userSelect = 'none';
+      el.style.transform = 'translate(-50%, -50%)';
+      el.style.pointerEvents = 'auto';
+      el.style.cursor = 'pointer';
+
+      el.innerHTML = `
+        <div style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: ${isSelected ? '#2563EB' : 'transparent'};
+          color: ${isSelected ? '#FFFFFF' : '#0F172A'};
+          padding: ${isSelected ? '2px 6px' : '0px 2px'};
+          border-radius: 4px;
+          border: ${isSelected ? '1.5px solid #1D4ED8' : 'none'};
+          box-shadow: ${isSelected ? '0 2px 4px rgba(0,0,0,0.25)' : 'none'};
+          white-space: nowrap;
+          line-height: 1.15;
+          text-align: center;
+          transform: ${isSelected ? 'scale(1.2)' : 'scale(1)'};
+          transition: transform 0.15s ease;
+          font-family: 'Shruti', 'Nirmala UI', 'Gujarati Sangam MN', 'Noto Sans Gujarati', sans-serif;
+        ">
+          <span style="
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+            text-shadow: ${isSelected ? 'none' : '0 0 3px #FFFFFF, 0 0 2px #FFFFFF, 0 0 4px #FFFFFF, 0 0 1px #FFFFFF'};
+          ">${villageName}</span>
+          ${isSelected ? '' : '<span style="font-size: 7px; color: #0F172A; line-height: 1; margin-top: -1px; text-shadow: 0 0 2px #FFF;">•</span>'}
+        </div>
+      `;
+
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        onVillageSelect?.(p);
+      });
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(centroid)
+        .addTo(map);
+
+      villageMarkersRef.current.push({ marker, el, villageId: p.village_id });
+    });
+
+    return () => {
+      villageMarkersRef.current.forEach(({ marker }) => marker.remove());
+      villageMarkersRef.current = [];
+    };
+  }, [effectiveVillagesGeoJson]);
+
+  // Update visibility and highlight of Village Markers
+  useEffect(() => {
+    villageMarkersRef.current.forEach(({ el, villageId }) => {
+      if (effectiveViewLevel === 'VILLAGE') {
+        el.style.display = 'flex';
+        const isSelected = villageId === selectedVillageId;
+        const inner = el.firstElementChild as HTMLElement;
+        if (inner) {
+          inner.style.background = isSelected ? '#2563EB' : 'transparent';
+          inner.style.color = isSelected ? '#FFFFFF' : '#0F172A';
+          inner.style.border = isSelected ? '1.5px solid #1D4ED8' : 'none';
+          inner.style.boxShadow = isSelected ? '0 2px 4px rgba(0,0,0,0.25)' : 'none';
+          inner.style.padding = isSelected ? '2px 6px' : '0px 2px';
+          inner.style.borderRadius = '4px';
+          inner.style.transform = isSelected ? 'scale(1.2)' : 'scale(1)';
+          el.style.zIndex = isSelected ? '30' : '5';
+          const span = inner.querySelector('span');
+          if (span) {
+            span.style.textShadow = isSelected ? 'none' : '0 0 3px #FFFFFF, 0 0 2px #FFFFFF, 0 0 4px #FFFFFF, 0 0 1px #FFFFFF';
+          }
+        }
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }, [effectiveViewLevel, selectedVillageId]);
+
   // View Level Switching Logic
-  const handleSwitchLevel = useCallback(async (level: 'DISTRICT' | 'TALUKA' | 'VILLAGE', targetDistrictId?: string) => {
+  const handleSwitchLevel = useCallback(async (level: 'DISTRICT' | 'TALUKA' | 'VILLAGE', targetDistrictId?: string, overrideTalukaProps?: any) => {
+    if (clickPopupRef.current) clickPopupRef.current.remove();
+    setHoverPos(null);
+    setHoveredEntity(null);
     setInternalViewLevel(level);
     onViewLevelChange?.(level);
 
@@ -391,16 +638,10 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
     if (level === 'TALUKA') {
       setIsInternalLoading(true);
       try {
-        const distId = targetDistrictId || selectedDistrictId;
         let tData = effectiveTalukasGeoJson;
-        // Fetch talukas if not yet available or if target district differs
-        if (
-          !tData ||
-          !tData.features ||
-          tData.features.length === 0 ||
-          (distId && tData.features[0]?.properties?.district_id !== distId)
-        ) {
-          tData = await adminService.getDistrictTalukasGeoJson(apiBaseUrl, distId);
+        // Always ensure statewide Gujarat talukas are loaded
+        if (!tData || !tData.features || tData.features.length < 50) {
+          tData = await adminService.getDistrictTalukasGeoJson(apiBaseUrl);
           setInternalTalukasGeoJson(tData);
         }
 
@@ -412,9 +653,20 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         applyLayerVisibilities('TALUKA');
         updateLayerStyles('TALUKA');
 
-        if (tData?.features?.length > 0) {
-          const b = getFeatureCollectionBounds(tData);
-          if (b) map.fitBounds(b, { padding: 50, duration: 800 });
+        if (targetDistrictId && tData?.features) {
+          const distFeats = tData.features.filter((f: any) => f.properties?.district_id === targetDistrictId);
+          if (distFeats.length > 0) {
+            const b = getFeatureCollectionBounds({ type: 'FeatureCollection', features: distFeats });
+            if (b) map.fitBounds(b, { padding: 40, duration: 800 });
+          }
+        } else if (selectedTalukaProps?.geometry) {
+          const b = getGeometryBounds(selectedTalukaProps.geometry);
+          if (b) map.fitBounds(b, { padding: 40, maxZoom: 12, duration: 800 });
+        } else if (selectedDistrictProps?.geometry) {
+          const b = getGeometryBounds(selectedDistrictProps.geometry);
+          if (b) map.fitBounds(b, { padding: 40, duration: 800 });
+        } else {
+          map.flyTo({ center: [GUJARAT_CENTER.lng, GUJARAT_CENTER.lat], zoom: 6.8, duration: 800 });
         }
       } catch (err) {
         console.warn('Auto-fetch talukas note:', err);
@@ -427,17 +679,45 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
     if (level === 'VILLAGE') {
       setIsInternalLoading(true);
       try {
-        let vData = effectiveVillagesGeoJson;
+        let activeTalukaId = overrideTalukaProps?.taluka_id || selectedTalukaId;
+        let activeTalukaProps = overrideTalukaProps || selectedTalukaProps;
 
-        if (selectedTalukaId) {
-          // Chosen taluka: load its villages directly
+        // If no taluka selected, but district selected (or targetDistrictId): auto-pick first taluka of district
+        const activeDistrictId = targetDistrictId || selectedDistrictId;
+        let tData = effectiveTalukasGeoJson;
+        if (!activeTalukaId) {
+          if (!tData || !tData.features || tData.features.length === 0) {
+            tData = await adminService.getDistrictTalukasGeoJson(apiBaseUrl, activeDistrictId);
+            setInternalTalukasGeoJson(tData);
+          }
+          if (activeDistrictId && tData?.features) {
+            const distFeats = tData.features.filter((f: any) => f.properties?.district_id === activeDistrictId);
+            if (distFeats.length > 0) {
+              activeTalukaProps = distFeats[0].properties;
+              activeTalukaId = activeTalukaProps?.taluka_id;
+              onTalukaSelect?.(activeTalukaProps);
+            }
+          }
+          if (!activeTalukaId && tData?.features?.length) {
+            // Find Gadhada or first taluka
+            const gadhadaFeat = tData.features.find((f: any) =>
+              (f.properties?.name_en || '').toLowerCase().includes('gadhada')
+            );
+            activeTalukaProps = gadhadaFeat?.properties || tData.features[0].properties;
+            activeTalukaId = activeTalukaProps?.taluka_id;
+            onTalukaSelect?.(activeTalukaProps);
+          }
+        }
+
+        if (activeTalukaId) {
+          let vData = effectiveVillagesGeoJson;
           if (
             !vData ||
             !vData.features ||
             vData.features.length === 0 ||
-            vData.features[0]?.properties?.taluka_id !== selectedTalukaId
+            vData.features[0]?.properties?.taluka_id !== activeTalukaId
           ) {
-            vData = await adminService.getTalukaVillagesGeoJson(apiBaseUrl, selectedTalukaId);
+            vData = await adminService.getTalukaVillagesGeoJson(apiBaseUrl, activeTalukaId);
             setInternalVillagesGeoJson(vData);
           }
 
@@ -451,34 +731,11 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
           if (vData?.features?.length > 0) {
             const b = getFeatureCollectionBounds(vData);
-            if (b) map.fitBounds(b, { padding: 50, duration: 800 });
-          }
-        } else if (selectedDistrictId) {
-          // District chosen without a taluka: ensure talukas for this district are loaded so user can browse
-          let tData = effectiveTalukasGeoJson;
-          if (
-            !tData ||
-            !tData.features ||
-            tData.features.length === 0 ||
-            tData.features[0]?.properties?.district_id !== selectedDistrictId
-          ) {
-            tData = await adminService.getDistrictTalukasGeoJson(apiBaseUrl, selectedDistrictId);
-            setInternalTalukasGeoJson(tData);
-            const tSrc: any = map.getSource('district-talukas-source');
-            if (tSrc) tSrc.setData(tData);
-          }
-
-          // Show talukas so user can click to drill into village view
-          applyLayerVisibilities('TALUKA');
-          updateLayerStyles('TALUKA');
-          if (tData?.features?.length > 0) {
-            const b = getFeatureCollectionBounds(tData);
-            if (b) map.fitBounds(b, { padding: 50, duration: 800 });
+            if (b) map.fitBounds(b, { padding: 45, duration: 800 });
           }
         } else {
-          // Neither district nor taluka selected: fall back to district view
-          applyLayerVisibilities('DISTRICT');
-          updateLayerStyles('DISTRICT');
+          applyLayerVisibilities('TALUKA');
+          updateLayerStyles('TALUKA');
         }
       } catch (err) {
         console.warn('Auto-fetch villages note:', err);
@@ -497,6 +754,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
     selectedTalukaId,
     effectiveVillagesGeoJson,
     selectedDistrictProps,
+    selectedTalukaProps,
+    onTalukaSelect,
   ]);
 
   // Comprehensive Layer Setup Function
@@ -581,6 +840,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             type: 'DISTRICT',
             ...e.features[0].properties,
           });
+          setHoverPos({ x: e.point.x, y: e.point.y });
         }
       });
 
@@ -588,6 +848,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         if (isDrawingMode) return;
         map.getCanvas().style.cursor = '';
         setHoveredEntity(null);
+        setHoverPos(null);
       });
     }
 
@@ -612,26 +873,30 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             'case',
             ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
             '#38BDF8',
-            '#BAE6FD',
+            '#0EA5E9',
           ],
-          'fill-opacity': 0.45,
+          'fill-opacity': [
+            'case',
+            ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
+            0.35,
+            0.06,
+          ],
         },
       });
 
-      // 2.2 Taluka Context Line (Subtle dashed outline in Village View)
+      // 2.2 Taluka Context Line (Outer perimeter in Village View)
       map.addLayer({
         id: 'talukas-context-line',
         type: 'line',
         source: tSource,
         layout: { visibility: 'none' },
         paint: {
-          'line-color': '#0284C7',
-          'line-width': 1.8,
-          'line-dasharray': [4, 2],
+          'line-color': '#0F172A',
+          'line-width': 3.5,
         },
       });
 
-      // 2.3 Taluka Primary Borders (Solid sharp outlines in Taluka View)
+      // 2.3 Taluka Primary Borders (Thick dark/black outlines in Taluka View)
       map.addLayer({
         id: 'talukas-borders',
         type: 'line',
@@ -646,14 +911,51 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             'case',
             ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
             '#2563EB',
-            '#0284C7',
+            '#1F2937',
           ],
           'line-width': [
             'case',
             ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
-            3.5,
-            1.8,
+            4.0,
+            [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              6, 2.0,
+              8, 2.6,
+              10, 3.2,
+              12, 3.8,
+            ],
           ],
+        },
+      });
+
+      // 2.4 Taluka Names & Labels (Clear readable centered labels with white halo)
+      map.addLayer({
+        id: 'talukas-labels',
+        type: 'symbol',
+        source: tSource,
+        layout: {
+          visibility: 'none',
+          'text-field': ['coalesce', ['get', 'name_gu'], ['get', 'name_en'], ''],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            7, 10,
+            9, 11,
+            11, 13,
+            13, 15,
+          ],
+          'text-offset': [0, 0],
+          'text-anchor': 'center',
+          'text-max-width': 8,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#0F172A',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.0,
         },
       });
 
@@ -663,10 +965,73 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         if (e.features && e.features[0]) {
           const props = e.features[0].properties;
           onTalukaSelect?.(props);
-          const b = getGeometryBounds(e.features[0].geometry);
-          if (b) {
-            map.fitBounds(b, { padding: 40, maxZoom: 12, duration: 800 });
+
+          // If in Village View or clicked while viewing villages, auto-fetch and display village polygons
+          if (effectiveViewLevel === 'VILLAGE' && props.taluka_id) {
+            adminService.getTalukaVillagesGeoJson(apiBaseUrl, props.taluka_id).then((vData) => {
+              setInternalVillagesGeoJson(vData);
+              const vSrc: any = map.getSource('taluka-villages-source');
+              if (vSrc && vData) vSrc.setData(vData);
+              applyLayerVisibilities('VILLAGE');
+              updateLayerStyles('VILLAGE');
+              if (vData?.features?.length > 0) {
+                const b = getFeatureCollectionBounds(vData);
+                if (b) map.fitBounds(b, { padding: 45, duration: 800 });
+              }
+            }).catch(console.warn);
+          } else {
+            const b = getGeometryBounds(e.features[0].geometry);
+            if (b) {
+              map.fitBounds(b, { padding: 40, maxZoom: 12, duration: 800 });
+            }
           }
+
+          if (clickPopupRef.current) clickPopupRef.current.remove();
+          const tName = props.name_gu || transliterateToGujarati(props.name_en);
+          const tNameEn = props.name_en;
+          const dName = props.district_name_gu || props.district_name || props.district_name_en || '';
+          const vCount = props.village_count || 0;
+
+          const popupNode = document.createElement('div');
+          popupNode.style.fontFamily = 'inherit';
+          popupNode.style.padding = '4px 6px';
+          popupNode.style.minWidth = '180px';
+          popupNode.innerHTML = `
+            <div style="font-weight: 800; font-size: 13px; color: #0F172A; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+              <span>📍 ${tName}</span>
+              <span style="font-size: 10px; color: #64748B; font-weight: 500;">(${tNameEn})</span>
+            </div>
+            <div style="margin-top: 6px; font-size: 11.5px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="color: #64748B;">🏛️ જિલ્લો (District):</span>
+              <span style="font-weight: 700; color: #135D43; background: #E8F5E9; padding: 1px 6px; border-radius: 4px;">${dName}</span>
+            </div>
+            <div style="margin-top: 4px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; color: #475569;">
+              <span>🏷️ કોડ (Code):</span>
+              <span style="font-family: monospace; font-weight: 600; color: #0F172A;">${props.code || '-'}</span>
+            </div>
+            <div style="margin-top: 4px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; color: #475569;">
+              <span>🏘️ ગામો (Villages):</span>
+              <span style="font-weight: 700; color: #0284C7;">${vCount}</span>
+            </div>
+            <button id="btn-drill-villages" style="margin-top: 8px; width: 100%; background: #135D43; color: white; border: none; border-radius: 4px; padding: 5px 8px; font-weight: 700; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
+              <span>🏘️ ગામ સીમાઓ જુઓ (View Village Boundaries)</span>
+            </button>
+          `;
+
+          const drillBtn = popupNode.querySelector('#btn-drill-villages');
+          if (drillBtn) {
+            drillBtn.addEventListener('click', () => {
+              if (clickPopupRef.current) clickPopupRef.current.remove();
+              onTalukaSelect?.(props);
+              handleSwitchLevel('VILLAGE', props.district_id, props);
+            });
+          }
+
+          const popup = new maplibregl.Popup({ offset: 12, closeButton: true, className: 'taluka-click-popup' })
+            .setLngLat(e.lngLat)
+            .setDOMContent(popupNode)
+            .addTo(map);
+          clickPopupRef.current = popup;
         }
       });
 
@@ -678,6 +1043,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             type: 'TALUKA',
             ...e.features[0].properties,
           });
+          setHoverPos({ x: e.point.x, y: e.point.y });
         }
       });
 
@@ -685,6 +1051,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         if (isDrawingMode) return;
         map.getCanvas().style.cursor = '';
         setHoveredEntity(null);
+        setHoverPos(null);
       });
     }
 
@@ -708,10 +1075,21 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
           'fill-color': [
             'case',
             ['==', ['get', 'village_id'], selectedVillageId || ''],
-            '#F59E0B',
-            '#6EE7B7',
+            '#38BDF8',
+            ['has', 'fill_color'],
+            ['get', 'fill_color'],
+            ['has', 'fillColor'],
+            ['get', 'fillColor'],
+            '#FFFFFF',
           ],
-          'fill-opacity': 0.55,
+          'fill-opacity': [
+            'case',
+            ['==', ['get', 'village_id'], selectedVillageId || ''],
+            0.85,
+            ['has', 'fill_opacity'],
+            ['get', 'fill_opacity'],
+            0.70,
+          ],
         },
       });
 
@@ -729,13 +1107,15 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
           'line-color': [
             'case',
             ['==', ['get', 'village_id'], selectedVillageId || ''],
-            '#B45309',
-            '#047857',
+            '#1D4ED8',
+            ['has', 'border_color'],
+            ['get', 'border_color'],
+            '#0F172A',
           ],
           'line-width': [
             'case',
             ['==', ['get', 'village_id'], selectedVillageId || ''],
-            3.0,
+            3.5,
             1.2,
           ],
         },
@@ -762,6 +1142,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             type: 'VILLAGE',
             ...e.features[0].properties,
           });
+          setHoverPos({ x: e.point.x, y: e.point.y });
         }
       });
 
@@ -769,6 +1150,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         if (isDrawingMode) return;
         map.getCanvas().style.cursor = '';
         setHoveredEntity(null);
+        setHoverPos(null);
       });
     }
 
@@ -956,6 +1338,9 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
 
   // Reset view button handler
   const handleResetView = () => {
+    if (clickPopupRef.current) clickPopupRef.current.remove();
+    setHoverPos(null);
+    setHoveredEntity(null);
     handleSwitchLevel('DISTRICT');
     if (mapInstanceRef.current) {
       mapInstanceRef.current.flyTo({
@@ -1017,33 +1402,30 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             <button
               type="button"
               onClick={() => handleSwitchLevel('DISTRICT')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                effectiveViewLevel === 'DISTRICT'
-                  ? 'bg-white text-[#0F172A] shadow-xs font-bold'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
+              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${effectiveViewLevel === 'DISTRICT'
+                ? 'bg-white text-[#0F172A] shadow-xs font-bold'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
             >
               District View
             </button>
             <button
               type="button"
               onClick={() => handleSwitchLevel('TALUKA')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                effectiveViewLevel === 'TALUKA'
-                  ? 'bg-white text-[#0F172A] shadow-xs font-bold'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
+              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${effectiveViewLevel === 'TALUKA'
+                ? 'bg-white text-[#0F172A] shadow-xs font-bold'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
             >
               Taluka View
             </button>
             <button
               type="button"
               onClick={() => handleSwitchLevel('VILLAGE')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                effectiveViewLevel === 'VILLAGE'
-                  ? 'bg-white text-[#0F172A] shadow-xs font-bold'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
+              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${effectiveViewLevel === 'VILLAGE'
+                ? 'bg-white text-[#0F172A] shadow-xs font-bold'
+                : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
             >
               Village View
             </button>
@@ -1055,22 +1437,20 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
               <button
                 type="button"
                 onClick={() => setFilterStatus('ALL')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                  filterStatus === 'ALL'
-                    ? 'bg-white text-[#0F172A] shadow-xs font-bold'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${filterStatus === 'ALL'
+                  ? 'bg-white text-[#0F172A] shadow-xs font-bold'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+                  }`}
               >
                 {t('superAdmin.map.all')} ({formatNumber(geoJsonData?.features?.length || 0)})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterStatus('ASSIGNED')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 ${
-                  filterStatus === 'ASSIGNED'
-                    ? 'bg-[#E8F5E9] text-[#135D43] shadow-xs font-bold'
-                    : 'text-[#64748B] hover:text-[#135D43]'
-                }`}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 ${filterStatus === 'ASSIGNED'
+                  ? 'bg-[#E8F5E9] text-[#135D43] shadow-xs font-bold'
+                  : 'text-[#64748B] hover:text-[#135D43]'
+                  }`}
               >
                 <span className="w-2 h-2 rounded-full bg-[#135D43]" />
                 {t('superAdmin.map.assigned')}
@@ -1078,11 +1458,10 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
               <button
                 type="button"
                 onClick={() => setFilterStatus('UNASSIGNED')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 ${
-                  filterStatus === 'UNASSIGNED'
-                    ? 'bg-slate-200 text-slate-800 shadow-xs font-bold'
-                    : 'text-[#64748B] hover:text-slate-800'
-                }`}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 ${filterStatus === 'UNASSIGNED'
+                  ? 'bg-slate-200 text-slate-800 shadow-xs font-bold'
+                  : 'text-[#64748B] hover:text-slate-800'
+                  }`}
               >
                 <span className="w-2 h-2 rounded-full bg-slate-400" />
                 {t('superAdmin.map.unassigned')}
@@ -1101,8 +1480,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
                 effectiveViewLevel === 'VILLAGE'
                   ? 'Search village...'
                   : effectiveViewLevel === 'TALUKA'
-                  ? 'Search taluka...'
-                  : t('superAdmin.map.searchPlaceholder')
+                    ? 'Search taluka...'
+                    : t('superAdmin.map.searchPlaceholder')
               }
               className="pl-8 pr-3 py-1 text-xs border border-[#CBD5E1] rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-[#135D43] w-36 sm:w-44"
             />
@@ -1149,9 +1528,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         <button
           type="button"
           onClick={() => handleSwitchLevel('DISTRICT')}
-          className={`flex items-center gap-1 hover:text-[#135D43] transition-colors ${
-            effectiveViewLevel === 'DISTRICT' ? 'font-bold text-[#135D43]' : 'text-slate-600'
-          }`}
+          className={`flex items-center gap-1 hover:text-[#135D43] transition-colors ${effectiveViewLevel === 'DISTRICT' ? 'font-bold text-[#135D43]' : 'text-slate-600'
+            }`}
         >
           <Globe className="w-3.5 h-3.5 text-[#135D43]" />
           <span>Gujarat State</span>
@@ -1163,9 +1541,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             <button
               type="button"
               onClick={() => handleSwitchLevel('TALUKA')}
-              className={`hover:text-[#135D43] transition-colors ${
-                effectiveViewLevel === 'TALUKA' ? 'font-bold text-[#135D43]' : 'text-slate-600'
-              }`}
+              className={`hover:text-[#135D43] transition-colors ${effectiveViewLevel === 'TALUKA' ? 'font-bold text-[#135D43]' : 'text-slate-600'
+                }`}
             >
               {localizeDistrict(selectedDistrictProps)}
             </button>
@@ -1178,9 +1555,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             <button
               type="button"
               onClick={() => handleSwitchLevel('VILLAGE')}
-              className={`hover:text-[#135D43] transition-colors ${
-                effectiveViewLevel === 'VILLAGE' ? 'font-bold text-[#135D43]' : 'text-slate-600'
-              }`}
+              className={`hover:text-[#135D43] transition-colors ${effectiveViewLevel === 'VILLAGE' ? 'font-bold text-[#135D43]' : 'text-slate-600'
+                }`}
             >
               {selectedTalukaProps.name_gu || selectedTalukaProps.name_en}
             </button>
@@ -1203,35 +1579,39 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         )}
       </div>
 
-      {/* Guided Taluka Selection Banner in Village View (When District is chosen but Taluka not yet picked) */}
-      {effectiveViewLevel === 'VILLAGE' && !selectedTalukaId && selectedDistrictProps && (
-        <div className="bg-emerald-50/95 border-b border-emerald-200 px-3 py-2 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-[#135D43] shrink-0" />
-            <span className="text-[#0F172A] font-medium">
-              Select a Taluka from <strong>{localizeDistrict(selectedDistrictProps)}</strong> to load its village boundaries:
-            </span>
+      {/* Taluka Selector Strip in Village View */}
+      {effectiveViewLevel === 'VILLAGE' && effectiveTalukasGeoJson?.features?.length > 0 && (
+        <div className="bg-[#F8FAFC] border-b border-[#E2E8F0] px-3 py-1.5 flex items-center gap-2 overflow-x-auto text-xs z-10">
+          <span className="text-slate-600 font-bold shrink-0 flex items-center gap-1">
+            <Layers className="w-3.5 h-3.5 text-[#135D43]" />
+            <span>તાલુકો પસંદ કરો (Taluka):</span>
+          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(selectedDistrictId
+              ? effectiveTalukasGeoJson.features.filter((f: any) => f.properties?.district_id === selectedDistrictId)
+              : effectiveTalukasGeoJson.features.slice(0, 25)
+            ).map((f: any) => {
+              const tp = f.properties;
+              const isCurr = tp.taluka_id === selectedTalukaId;
+              return (
+                <button
+                  key={tp.taluka_id}
+                  type="button"
+                  onClick={() => {
+                    onTalukaSelect?.(tp);
+                    handleSwitchLevel('VILLAGE', tp.district_id, tp);
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all shrink-0 ${
+                    isCurr
+                      ? 'bg-[#135D43] text-white shadow-xs'
+                      : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+                  }`}
+                >
+                  {tp.name_gu || transliterateToGujarati(tp.name_en)}
+                </button>
+              );
+            })}
           </div>
-          {effectiveTalukasGeoJson?.features?.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {effectiveTalukasGeoJson.features.map((f: any) => {
-                const tp = f.properties;
-                return (
-                  <button
-                    key={tp.taluka_id}
-                    type="button"
-                    onClick={() => {
-                      onTalukaSelect?.(tp);
-                      handleSwitchLevel('VILLAGE');
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 transition-colors font-medium text-[11px] shadow-xs"
-                  >
-                    {tp.name_gu || tp.name_en} ({tp.village_count || 0})
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
 
@@ -1274,11 +1654,82 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
       )}
 
       {/* Map Canvas Container */}
-      <div className="relative w-full" style={{ height }}>
+      <div className="relative w-full overflow-hidden" style={{ height }}>
         <div ref={mapContainerRef} className="w-full h-full" />
 
-        {/* Hover Info Tooltip Badge */}
-        {hoveredEntity && (
+        {/* Taluka Header Card in Village View (Matching Image 2 Reference Layout) */}
+        {effectiveViewLevel === 'VILLAGE' && selectedTalukaProps && (
+          <div className="absolute top-3 left-3 z-30 bg-white/95 backdrop-blur-xs border-2 border-slate-800 rounded-lg p-2.5 shadow-md max-w-xs pointer-events-auto animate-fade-in font-body">
+            <div className="text-sm font-black text-slate-900 tracking-tight leading-tight">
+              {selectedTalukaProps.name_gu || transliterateToGujarati(selectedTalukaProps.name_en)} તાલુકો
+            </div>
+            <div className="text-xs font-bold text-slate-700 mt-1 leading-tight">
+              જિ. {selectedDistrictProps?.name_gu || selectedTalukaProps.district_name_gu || selectedTalukaProps.district_name || 'ગુજરાત'}
+            </div>
+            <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
+              કુલ ગામો: {formatNumber(effectiveVillagesGeoJson?.features?.length || selectedTalukaProps.village_count || 0)}
+            </div>
+          </div>
+        )}
+
+        {/* North Arrow icon matching Image 2 Reference */}
+        {effectiveViewLevel === 'VILLAGE' && (
+          <div
+            className="absolute top-3 right-14 z-30 w-9 h-9 rounded-full border-2 border-slate-700 bg-white/95 backdrop-blur-xs flex flex-col items-center justify-center shadow-md pointer-events-none"
+            title="North Arrow"
+          >
+            <span className="text-[9px] font-black text-slate-900 leading-none">N</span>
+            <span className="text-[11px] leading-none text-slate-900 font-black">▲</span>
+          </div>
+        )}
+
+        {/* Dynamic Floating Cursor Tooltip (Follows mouse on hover) */}
+        {hoveredEntity && hoverPos && (
+          <div
+            className="absolute z-40 pointer-events-none transform -translate-x-1/2 -translate-y-full transition-transform duration-75"
+            style={{ left: hoverPos.x, top: hoverPos.y - 12 }}
+          >
+            <div className="bg-[#0F172A]/95 text-white backdrop-blur-md px-3 py-2 rounded-xl shadow-2xl border border-slate-700/80 text-xs min-w-[170px] whitespace-nowrap animate-fade-in">
+              <div className="flex items-center gap-1.5 font-bold text-sky-400 text-sm">
+                <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>
+                  {hoveredEntity.type === 'DISTRICT'
+                    ? localizeDistrict(hoveredEntity)
+                    : hoveredEntity.name_gu || hoveredEntity.name_en}
+                </span>
+                {hoveredEntity.name_en && hoveredEntity.name_en !== hoveredEntity.name_gu && (
+                  <span className="text-slate-300 font-normal text-xs">({hoveredEntity.name_en})</span>
+                )}
+              </div>
+
+              {hoveredEntity.type === 'TALUKA' && (
+                <div className="mt-1 pt-1 border-t border-slate-700/80 flex items-center justify-between text-[11px] gap-3">
+                  <span className="text-slate-400">જિલ્લો (District):</span>
+                  <span className="font-bold text-emerald-400">
+                    {hoveredEntity.district_name_gu || hoveredEntity.district_name || hoveredEntity.district_name_en || '-'}
+                  </span>
+                </div>
+              )}
+
+              {hoveredEntity.code && (
+                <div className="flex items-center justify-between text-[10px] text-slate-300 mt-0.5 gap-3">
+                  <span className="text-slate-400">કોડ (Code):</span>
+                  <span className="font-mono text-slate-200">{hoveredEntity.code}</span>
+                </div>
+              )}
+
+              {hoveredEntity.village_count !== undefined && (
+                <div className="flex items-center justify-between text-[10px] text-slate-300 mt-0.5 gap-3">
+                  <span className="text-slate-400">ગામો (Villages):</span>
+                  <span className="font-bold text-sky-300">{formatNumber(hoveredEntity.village_count)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Hover Info Tooltip Badge (Fallback when mouse position is unavailable) */}
+        {hoveredEntity && !hoverPos && (
           <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-xs border border-[#CBD5E1] rounded-xl p-2.5 shadow-md z-20 pointer-events-none max-w-[calc(100%-24px)] sm:max-w-xs text-xs animate-fade-in break-words">
             <div className="flex items-center justify-between gap-3">
               <span className="font-bold text-[#0F172A] font-heading break-words">
@@ -1376,8 +1827,8 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
           {effectiveViewLevel === 'TALUKA' && (
             <>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="w-3 h-3 rounded-md border border-[#0284C7] bg-[#BAE6FD]" />
-                <span className="text-slate-700 font-medium">Taluka Polygon</span>
+                <span className="w-3 h-3 rounded-md border-2 border-[#1F2937] bg-[#0EA5E9]/10" />
+                <span className="text-slate-700 font-medium">Taluka Boundary (Statewide)</span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="w-3 h-3 rounded-md border-2 border-[#2563EB] bg-[#38BDF8]" />

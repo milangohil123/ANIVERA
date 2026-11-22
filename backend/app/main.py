@@ -8,6 +8,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import logger, setup_logging
 from app.db.session import close_db_connection
+from app.db.health_workflow_schema import ensure_health_workflow_schema
 
 
 @asynccontextmanager
@@ -16,6 +17,10 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("Starting %s backend service (v%s)...", settings.PROJECT_NAME, settings.VERSION)
     logger.info("Environment: %s | Debug: %s", settings.ENVIRONMENT, settings.DEBUG)
+    try:
+        await ensure_health_workflow_schema()
+    except Exception as e:
+        logger.warning("Startup schema check error: %s", e)
     yield
     logger.info("Shutting down %s backend service...", settings.PROJECT_NAME)
     await close_db_connection()

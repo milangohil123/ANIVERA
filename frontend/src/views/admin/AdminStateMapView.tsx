@@ -69,10 +69,12 @@ export const AdminStateMapView: React.FC = () => {
       try {
         const [h, tGeo] = await Promise.all([
           adminService.getDistrictHierarchy(apiBaseUrl, props.district_id).catch(() => null),
-          adminService.getDistrictTalukasGeoJson(apiBaseUrl, props.district_id).catch(() => null),
+          (!talukasGeoJson || talukasGeoJson.features?.length < 50)
+            ? adminService.getDistrictTalukasGeoJson(apiBaseUrl).catch(() => null)
+            : Promise.resolve(talukasGeoJson),
         ]);
         setHierarchyData(h);
-        setTalukasGeoJson(tGeo);
+        if (tGeo) setTalukasGeoJson(tGeo);
       } catch (err) {
         console.warn('District sub-data load error:', err);
       } finally {
@@ -81,13 +83,22 @@ export const AdminStateMapView: React.FC = () => {
       }
     } else {
       setHierarchyData(null);
-      setTalukasGeoJson(null);
     }
   };
 
   const handleTalukaSelect = async (props: any) => {
     setSelectedTaluka(props);
     setSelectedVillage(null);
+
+    // Identify and update parent district in hierarchy view
+    if (props.district_id && stateGeoJson?.features) {
+      const matchFeat = stateGeoJson.features.find(
+        (f: any) =>
+          f.properties?.district_id === props.district_id ||
+          (f.properties?.name_en && props.district_name && f.properties.name_en.toLowerCase() === props.district_name.toLowerCase())
+      );
+      if (matchFeat) setSelectedDistrict(matchFeat.properties);
+    }
 
     if (props.taluka_id) {
       setIsLoadingSubLayer(true);
@@ -110,15 +121,17 @@ export const AdminStateMapView: React.FC = () => {
 
   const handleViewLevelChange = async (level: 'DISTRICT' | 'TALUKA' | 'VILLAGE') => {
     setViewLevel(level);
-    if (level === 'TALUKA' && !talukasGeoJson) {
-      setIsLoadingSubLayer(true);
-      try {
-        const tGeo = await adminService.getDistrictTalukasGeoJson(apiBaseUrl, selectedDistrict?.district_id);
-        setTalukasGeoJson(tGeo);
-      } catch (e) {
-        console.warn(e);
-      } finally {
-        setIsLoadingSubLayer(false);
+    if (level === 'TALUKA') {
+      if (!talukasGeoJson || talukasGeoJson.features?.length < 50) {
+        setIsLoadingSubLayer(true);
+        try {
+          const tGeo = await adminService.getDistrictTalukasGeoJson(apiBaseUrl);
+          setTalukasGeoJson(tGeo);
+        } catch (e) {
+          console.warn(e);
+        } finally {
+          setIsLoadingSubLayer(false);
+        }
       }
     }
     if (level === 'VILLAGE') {
@@ -132,13 +145,25 @@ export const AdminStateMapView: React.FC = () => {
         } finally {
           setIsLoadingSubLayer(false);
         }
-      } else if (selectedDistrict?.district_id && !talukasGeoJson) {
+      } else if (selectedDistrict?.district_id) {
         setIsLoadingSubLayer(true);
         try {
-          const tGeo = await adminService.getDistrictTalukasGeoJson(apiBaseUrl, selectedDistrict.district_id);
-          setTalukasGeoJson(tGeo);
+          let tGeo = talukasGeoJson;
+          if (!tGeo || tGeo.features?.length < 10) {
+            tGeo = await adminService.getDistrictTalukasGeoJson(apiBaseUrl);
+            setTalukasGeoJson(tGeo);
+          }
+          const distTalukas = tGeo?.features?.filter(
+            (f: any) => f.properties?.district_id === selectedDistrict.district_id
+          );
+          const firstTaluka = distTalukas && distTalukas.length > 0 ? distTalukas[0].properties : null;
+          if (firstTaluka?.taluka_id) {
+            setSelectedTaluka(firstTaluka);
+            const vGeo = await adminService.getTalukaVillagesGeoJson(apiBaseUrl, firstTaluka.taluka_id);
+            setVillagesGeoJson(vGeo);
+          }
         } catch (e) {
-          console.warn(e);
+          console.warn('Map view villages fetch note:', e);
         } finally {
           setIsLoadingSubLayer(false);
         }

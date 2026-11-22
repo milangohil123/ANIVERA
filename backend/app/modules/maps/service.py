@@ -374,12 +374,38 @@ class MapService:
 
         return gj
 
+    @staticmethod
+    def _calc_centroid(geom: Optional[Dict[str, Any]]) -> Optional[List[float]]:
+        if not geom or not isinstance(geom, dict):
+            return None
+        coords = geom.get("coordinates", [])
+        pts = []
+        def _extract(c):
+            if len(c) >= 2 and isinstance(c[0], (int, float)) and isinstance(c[1], (int, float)):
+                pts.append((c[0], c[1]))
+            else:
+                for sub in c:
+                    _extract(sub)
+        _extract(coords)
+        if not pts:
+            return None
+        return [round(sum(p[0] for p in pts) / len(pts), 5), round(sum(p[1] for p in pts) / len(pts), 5)]
+
     async def get_district_talukas_geojson(self, district_id: Optional[uuid.UUID] = None) -> Dict[str, Any]:
         """Return official Taluka boundary polygons inside the specified District (or statewide if district_id is None) as a GeoJSON FeatureCollection."""
         from app.models.geography import District, Taluka, Village
 
         if district_id:
-            t_stmt = select(Taluka, District.name_en.label("district_name")).join(District, Taluka.district_id == District.id).where(Taluka.district_id == district_id).order_by(Taluka.name_en)
+            t_stmt = (
+                select(
+                    Taluka,
+                    District.name_en.label("district_name"),
+                    District.name_gu.label("district_name_gu")
+                )
+                .join(District, Taluka.district_id == District.id)
+                .where(Taluka.district_id == district_id)
+                .order_by(Taluka.name_en)
+            )
             v_counts_stmt = (
                 select(Village.taluka_id, func.count(Village.id))
                 .where(Village.district_id == district_id, Village.active == True)
@@ -391,7 +417,16 @@ class MapService:
                 .group_by(Village.taluka_id)
             )
         else:
-            t_stmt = select(Taluka, District.name_en.label("district_name")).join(District, Taluka.district_id == District.id).where(Taluka.boundary_geojson.isnot(None)).order_by(Taluka.name_en)
+            t_stmt = (
+                select(
+                    Taluka,
+                    District.name_en.label("district_name"),
+                    District.name_gu.label("district_name_gu")
+                )
+                .join(District, Taluka.district_id == District.id)
+                .where(Taluka.boundary_geojson.isnot(None))
+                .order_by(Taluka.name_en)
+            )
             v_counts_stmt = (
                 select(Village.taluka_id, func.count(Village.id))
                 .where(Village.active == True)
@@ -408,11 +443,19 @@ class MapService:
         v_ver_counts = dict((await self.db.execute(v_ver_stmt)).all())
 
         features = []
-        for t, d_name in taluka_rows:
+        for row in taluka_rows:
+            if len(row) >= 3:
+                t, d_name, d_name_gu = row[0], row[1], row[2]
+            elif len(row) == 2:
+                t, d_name, d_name_gu = row[0], row[1], ""
+            else:
+                t = row[0]
+                d_name, d_name_gu = "", ""
             if not t.boundary_geojson:
                 continue
             v_cnt = v_counts.get(t.id, 0)
             v_ver = v_ver_counts.get(t.id, 0)
+            centroid = self._calc_centroid(t.boundary_geojson)
             features.append({
                 "type": "Feature",
                 "id": str(t.id),
@@ -421,9 +464,12 @@ class MapService:
                     "taluka_id": str(t.id),
                     "district_id": str(t.district_id),
                     "district_name": d_name,
+                    "district_name_en": d_name,
+                    "district_name_gu": d_name_gu or d_name,
                     "code": t.code,
                     "name_en": t.name_en,
                     "name_gu": t.name_gu,
+                    "centroid": centroid,
                     "village_count": v_cnt,
                     "verified_village_count": v_ver,
                     "has_boundary": True,
@@ -440,7 +486,13 @@ class MapService:
         from app.models.geography import District, Taluka, Village
 
         v_stmt = (
-            select(Village, Taluka.name_en.label("taluka_name"), District.name_en.label("district_name"))
+            select(
+                Village,
+                Taluka.name_en.label("taluka_name"),
+                Taluka.name_gu.label("taluka_name_gu"),
+                District.name_en.label("district_name"),
+                District.name_gu.label("district_name_gu")
+            )
             .join(Taluka, Village.taluka_id == Taluka.id)
             .join(District, Village.district_id == District.id)
             .where(Village.district_id == district_id, Village.active == True, Village.boundary_geojson.isnot(None))
@@ -449,7 +501,20 @@ class MapService:
         village_rows = list((await self.db.execute(v_stmt)).all())
 
         features = []
-        for v, t_name, d_name in village_rows:
+        for row in village_rows:
+            if len(row) >= 5:
+                v, t_name, t_name_gu, d_name, d_name_gu = row[0], row[1], row[2], row[3], row[4]
+            elif len(row) >= 3:
+                v, t_name, d_name = row[0], row[1], row[2]
+                t_name_gu, d_name_gu = t_name, d_name
+            elif len(row) == 2:
+                v, t_name = row[0], row[1]
+                t_name_gu, d_name, d_name_gu = t_name, "", ""
+            else:
+                v = row[0]
+                t_name, t_name_gu, d_name, d_name_gu = "", "", "", ""
+
+            centroid = [float(v.longitude), float(v.latitude)] if (v.longitude is not None and v.latitude is not None) else self._calc_centroid(v.boundary_geojson)
             features.append({
                 "type": "Feature",
                 "id": str(v.id),
@@ -458,14 +523,19 @@ class MapService:
                     "village_id": str(v.id),
                     "taluka_id": str(v.taluka_id),
                     "taluka_name": t_name,
+                    "taluka_name_en": t_name,
+                    "taluka_name_gu": t_name_gu or t_name,
                     "district_id": str(v.district_id),
                     "district_name": d_name,
+                    "district_name_en": d_name,
+                    "district_name_gu": d_name_gu or d_name,
                     "code": v.code,
                     "name_en": v.name_en,
                     "name_gu": v.name_gu,
                     "census_code": v.census_code,
                     "latitude": float(v.latitude) if v.latitude is not None else None,
                     "longitude": float(v.longitude) if v.longitude is not None else None,
+                    "centroid": centroid,
                     "coord_status": v.coord_status,
                     "has_boundary": True,
                 }
@@ -481,7 +551,13 @@ class MapService:
         from app.models.geography import District, Taluka, Village
 
         v_stmt = (
-            select(Village, Taluka.name_en.label("taluka_name"), District.name_en.label("district_name"))
+            select(
+                Village,
+                Taluka.name_en.label("taluka_name"),
+                Taluka.name_gu.label("taluka_name_gu"),
+                District.name_en.label("district_name"),
+                District.name_gu.label("district_name_gu")
+            )
             .join(Taluka, Village.taluka_id == Taluka.id)
             .join(District, Village.district_id == District.id)
             .where(Village.taluka_id == taluka_id, Village.active == True, Village.boundary_geojson.isnot(None))
@@ -490,7 +566,20 @@ class MapService:
         village_rows = list((await self.db.execute(v_stmt)).all())
 
         features = []
-        for v, t_name, d_name in village_rows:
+        for row in village_rows:
+            if len(row) >= 5:
+                v, t_name, t_name_gu, d_name, d_name_gu = row[0], row[1], row[2], row[3], row[4]
+            elif len(row) >= 3:
+                v, t_name, d_name = row[0], row[1], row[2]
+                t_name_gu, d_name_gu = t_name, d_name
+            elif len(row) == 2:
+                v, t_name = row[0], row[1]
+                t_name_gu, d_name, d_name_gu = t_name, "", ""
+            else:
+                v = row[0]
+                t_name, t_name_gu, d_name, d_name_gu = "", "", "", ""
+
+            centroid = [float(v.longitude), float(v.latitude)] if (v.longitude is not None and v.latitude is not None) else self._calc_centroid(v.boundary_geojson)
             features.append({
                 "type": "Feature",
                 "id": str(v.id),
@@ -499,14 +588,19 @@ class MapService:
                     "village_id": str(v.id),
                     "taluka_id": str(v.taluka_id),
                     "taluka_name": t_name,
+                    "taluka_name_en": t_name,
+                    "taluka_name_gu": t_name_gu or t_name,
                     "district_id": str(v.district_id),
                     "district_name": d_name,
+                    "district_name_en": d_name,
+                    "district_name_gu": d_name_gu or d_name,
                     "code": v.code,
                     "name_en": v.name_en,
                     "name_gu": v.name_gu,
                     "census_code": v.census_code,
                     "latitude": float(v.latitude) if v.latitude is not None else None,
                     "longitude": float(v.longitude) if v.longitude is not None else None,
+                    "centroid": centroid,
                     "coord_status": v.coord_status,
                     "has_boundary": True,
                 }

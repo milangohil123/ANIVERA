@@ -27,12 +27,15 @@ from app.modules.authentication.models import (
     AuditEvent,
     DahoDistrictAssignment,
     Device,
+    TahoTalukaAssignment,
     User,
     UserVillageAssignment,
 )
 from app.modules.campaigns.models import Campaign, CampaignVillage
 from app.modules.disease_surveillance.models import DiseaseReport
 from app.modules.farmers.models import Farmer
+from app.modules.notifications.models import EmailLog
+from app.core.email_service import send_daho_activation_email, send_taho_activation_email, retry_email_delivery
 from app.modules.vaccinations.models import AnimalEvent
 from app.modules.administration.models import Cooperative, GramPanchayat
 from app.modules.administration.super_admin_schemas import (
@@ -497,7 +500,19 @@ class SuperAdminService:
                 detail=f"Username '{payload.username}' is already taken."
             )
 
-        # 2. Validate mobile number uniqueness
+        # 2. Validate email uniqueness if provided
+        email_clean = payload.email.strip().lower() if payload.email and payload.email.strip() else None
+        if email_clean:
+            existing_email = (await self.db.execute(
+                select(User).where(User.email == email_clean)
+            )).scalar_one_or_none()
+            if existing_email:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Email '{email_clean}' is already registered."
+                )
+
+        # 3. Validate mobile number uniqueness
         mobile_clean = payload.mobile_e164.strip()
         if not mobile_clean.startswith("+"):
             mobile_clean = "+91" + mobile_clean.lstrip("0")
@@ -511,37 +526,43 @@ class SuperAdminService:
                 detail=f"Mobile number '{mobile_clean}' is already registered."
             )
 
-        # 3. If district_id is provided, validate district exists & ensure NO active conflict
-        district_record = None
-        if payload.district_id:
-            district_record = (await self.db.execute(
-                select(District).where(District.id == payload.district_id, District.active == True)
+        # 4. Determine target districts (support single district_id or multiple district_ids)
+        target_district_ids: List[uuid.UUID] = []
+        if payload.district_ids:
+            target_district_ids = [d for d in payload.district_ids if d]
+        elif payload.district_id:
+            target_district_ids = [payload.district_id]
+
+        district_records: List[District] = []
+        for did in target_district_ids:
+            d_rec = (await self.db.execute(
+                select(District).where(District.id == did, District.active == True)
             )).scalar_one_or_none()
-            if not district_record:
+            if not d_rec:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Specified district does not exist or is inactive."
+                    detail=f"District {did} does not exist or is inactive."
                 )
 
             # Invariant: Single active DAHO per district (Prevent conflicting double assignment)
             existing_active_asgn = (await self.db.execute(
                 select(DahoDistrictAssignment).where(
-                    DahoDistrictAssignment.district_id == payload.district_id,
+                    DahoDistrictAssignment.district_id == did,
                     DahoDistrictAssignment.ended_at.is_(None)
                 )
             )).scalar_one_or_none()
             if existing_active_asgn:
-                # Retrieve existing DAHO details to give clear diagnostic feedback
                 prev_user = (await self.db.execute(
                     select(User).where(User.id == existing_active_asgn.daho_user_id)
                 )).scalar_one_or_none()
                 prev_name = prev_user.full_name if prev_user else str(existing_active_asgn.daho_user_id)
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"District '{district_record.name_en}' is already assigned to active DAHO '{prev_name}'. Please use the reassignment workflow to transfer jurisdiction."
+                    detail=f"District '{d_rec.name_en}' is already assigned to active DAHO '{prev_name}'. Please use the reassignment workflow to transfer jurisdiction."
                 )
+            district_records.append(d_rec)
 
-        # 4. Generate password hash or activation token
+        # 5. Generate password hash or activation token
         now_dt = datetime.now(timezone.utc)
         activation_token = secrets.token_urlsafe(32)
         initial_pw = payload.password if payload.password else f"DAHO@{secrets.token_hex(4)}"
@@ -552,6 +573,7 @@ class SuperAdminService:
             role="DAHO",
             full_name=payload.full_name.strip(),
             username=payload.username.strip(),
+            email=email_clean,
             password_hash=pw_hash,
             mobile_e164=mobile_clean,
             designation=payload.designation or "જિલ્લા પશુપાલન અધિકારી (DAHO)",
@@ -566,19 +588,24 @@ class SuperAdminService:
         self.db.add(new_user)
         await self.db.flush()
 
-        # 5. Persist District Assignment if selected
-        if district_record:
+        # 6. Persist District Assignments for each targeted district
+        assigned_names = []
+        assigned_ids = []
+        for d_rec in district_records:
             assignment = DahoDistrictAssignment(
                 id=uuid.uuid4(),
                 daho_user_id=new_user.id,
-                district_id=district_record.id,
+                district_id=d_rec.id,
                 assigned_by=actor_user.id,
                 assigned_at=now_dt
             )
             self.db.add(assignment)
-            await self.db.flush()
+            assigned_names.append(d_rec.name_en)
+            assigned_ids.append(str(d_rec.id))
+        await self.db.flush()
 
-        # 6. Record Immutable Audit Event
+        # 7. Record Immutable Audit Event
+        district_desc = ", ".join(assigned_names) if assigned_names else "None"
         audit = AuditEvent(
             actor_user_id=actor_user.id,
             actor_role=actor_user.role,
@@ -586,19 +613,39 @@ class SuperAdminService:
             object_type="user",
             object_id=str(new_user.id),
             result="SUCCESS",
-            reason=f"Created DAHO account {new_user.username}" + (f" and assigned to {district_record.name_en}" if district_record else ""),
+            reason=f"Created DAHO account {new_user.username} and assigned to {district_desc}",
             after_state={
                 "username": new_user.username,
                 "role": new_user.role,
-                "district_id": str(district_record.id) if district_record else None,
-                "district_name": district_record.name_en if district_record else None
+                "email": email_clean,
+                "district_ids": assigned_ids,
+                "district_names": assigned_names
             },
             ip=client_ip
         )
         self.db.add(audit)
         await self.db.commit()
 
-        logger.info(f"[SUPER_ADMIN] Created DAHO account: {new_user.username} (Assigned: {district_record.name_en if district_record else 'None'})")
+        # 8. Real SMTP activation email delivery
+        email_status = "NOT_CONFIGURED"
+        email_error = None
+        if email_clean:
+            email_res = await send_daho_activation_email(
+                daho_name=new_user.full_name,
+                to_email=email_clean,
+                username=new_user.username,
+                district_names=assigned_names or ["All Districts (Multi-District Jurisdiction)"],
+                temp_password=initial_pw,
+                db=self.db,
+                recipient_user_id=new_user.id
+            )
+            email_status = email_res.status
+            email_error = email_res.error_message
+
+        logger.info(f"[SUPER_ADMIN] Created DAHO account: {new_user.username} (Assigned: {district_desc}, Email: {email_status})")
+
+        primary_d_id = assigned_ids[0] if assigned_ids else None
+        primary_d_name = assigned_names[0] if assigned_names else None
 
         return DahoAccountResponse(
             user_id=str(new_user.id),
@@ -607,10 +654,14 @@ class SuperAdminService:
             role=new_user.role,
             status=new_user.status,
             mobile_e164=new_user.mobile_e164,
-            email=payload.email,
-            assigned_district_id=str(district_record.id) if district_record else None,
-            assigned_district_name=district_record.name_en if district_record else None,
-            notification_status="SIMULATED",
+            email=email_clean,
+            assigned_district_id=primary_d_id,
+            assigned_district_name=primary_d_name,
+            assigned_district_ids=assigned_ids,
+            assigned_district_names=assigned_names,
+            notification_status=email_status,
+            email_delivery_status=email_status,
+            email_delivery_error=email_error,
             activation_token=activation_token,
             created_at=now_dt.isoformat()
         )
@@ -659,21 +710,10 @@ class SuperAdminService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"DAHO '{new_daho.full_name}' is already actively assigned to {district.name_en}."
                 )
-            # End existing assignment gracefully
+            # End existing assignment gracefully for the transferred district
             existing_asgn.ended_at = now_dt
 
-        # 2. Check if new DAHO is actively assigned to another district
-        new_daho_other_asgn = (await self.db.execute(
-            select(DahoDistrictAssignment).where(
-                DahoDistrictAssignment.daho_user_id == new_daho_user_id,
-                DahoDistrictAssignment.ended_at.is_(None)
-            )
-        )).scalar_one_or_none()
-        if new_daho_other_asgn:
-            # End previous district assignment for new DAHO
-            new_daho_other_asgn.ended_at = now_dt
-
-        # 3. Create new assignment
+        # 2. Create new assignment (Preserves new DAHO's other assigned districts in multi-district architecture)
         new_asgn = DahoDistrictAssignment(
             id=uuid.uuid4(),
             daho_user_id=new_daho_user_id,
@@ -1359,3 +1399,1232 @@ class SuperAdminService:
             relink_existing_names=True
         )
         return await self.commit_geodata_import(req, actor_user, client_ip)
+
+    # ==========================================================================
+    # 8. Email Delivery Logs & Retry Management
+    # ==========================================================================
+    async def get_email_logs(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Fetch audit log of outbound emails with actual SMTP delivery status."""
+        total_stmt = select(func.count(EmailLog.id))
+        total = (await self.db.execute(total_stmt)).scalar() or 0
+
+        logs_stmt = (
+            select(EmailLog)
+            .order_by(EmailLog.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        logs = list((await self.db.execute(logs_stmt)).scalars().all())
+
+        items = [
+            {
+                "id": str(log.id),
+                "recipient_email": log.recipient_email,
+                "recipient_user_id": str(log.recipient_user_id) if log.recipient_user_id else None,
+                "subject": log.subject,
+                "body_preview": log.body_preview,
+                "status": log.status,
+                "provider": log.provider,
+                "error_message": log.error_message,
+                "retry_count": log.retry_count,
+                "created_at": log.created_at.isoformat(),
+                "updated_at": log.updated_at.isoformat()
+            }
+            for log in logs
+        ]
+        return {"total": total, "items": items}
+
+    async def retry_email_log(self, log_id: uuid.UUID) -> Dict[str, Any]:
+        """Retry sending a previously failed or pending email."""
+        return await retry_email_delivery(self.db, log_id)
+
+    # ==========================================================================
+    # 9. DAHO District Overview & Real DB Operational Aggregates
+    # ==========================================================================
+    async def get_daho_district_overview(self, district_id: uuid.UUID) -> Dict[str, Any]:
+        """Aggregate real database KPIs and telemetry for an authorized district."""
+        from datetime import timedelta
+
+        district = (await self.db.execute(
+            select(District).where(District.id == district_id)
+        )).scalar_one_or_none()
+        if not district:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="District not found")
+
+        # 1. Geographic totals
+        talukas_count = (await self.db.execute(
+            select(func.count(Taluka.id)).where(Taluka.district_id == district_id)
+        )).scalar() or 0
+
+        villages_count = (await self.db.execute(
+            select(func.count(Village.id)).where(Village.district_id == district_id, Village.active == True)
+        )).scalar() or 0
+
+        # 2. Staff counts (active assignments)
+        taho_count_stmt = (
+            select(func.count(distinct(TahoTalukaAssignment.taho_user_id)))
+            .join(Taluka, TahoTalukaAssignment.taluka_id == Taluka.id)
+            .where(Taluka.district_id == district_id, TahoTalukaAssignment.ended_at.is_(None))
+        )
+        tahos_count = (await self.db.execute(taho_count_stmt)).scalar() or 0
+
+        vo_count_stmt = (
+            select(func.count(distinct(UserVillageAssignment.user_id)))
+            .join(Village, UserVillageAssignment.village_id == Village.id)
+            .join(User, UserVillageAssignment.user_id == User.id)
+            .where(Village.district_id == district_id, User.role == "VO", UserVillageAssignment.ended_at.is_(None))
+        )
+        vos_count = (await self.db.execute(vo_count_stmt)).scalar() or 0
+
+        fw_count_stmt = (
+            select(func.count(distinct(UserVillageAssignment.user_id)))
+            .join(Village, UserVillageAssignment.village_id == Village.id)
+            .join(User, UserVillageAssignment.user_id == User.id)
+            .where(Village.district_id == district_id, User.role == "FIELD_WORKER", UserVillageAssignment.ended_at.is_(None))
+        )
+        fws_count = (await self.db.execute(fw_count_stmt)).scalar() or 0
+
+        # 3. Farmer & Animal counts (via village association)
+        farmers_count = (await self.db.execute(
+            select(func.count(distinct(Farmer.id)))
+            .join(Village, Farmer.village_id == Village.id)
+            .where(Village.district_id == district_id, Farmer.active == True)
+        )).scalar() or 0
+
+        animals_count = (await self.db.execute(
+            select(func.count(distinct(Animal.id)))
+            .join(Village, Animal.village_id == Village.id)
+            .where(Village.district_id == district_id, Animal.status == "ACTIVE")
+        )).scalar() or 0
+
+        # 4. Vaccinations & Health Events
+        vaccinations_count = (await self.db.execute(
+            select(func.count(AnimalEvent.event_id))
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .where(Village.district_id == district_id, AnimalEvent.event_type == "VACCINATION")
+        )).scalar() or 0
+
+        completed_vaccinations = (await self.db.execute(
+            select(func.count(AnimalEvent.event_id))
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .where(
+                Village.district_id == district_id,
+                AnimalEvent.event_type == "VACCINATION",
+                or_(AnimalEvent.review_status == "VERIFIED", AnimalEvent.review_status == "COMPLETED", AnimalEvent.review_status.is_(None))
+            )
+        )).scalar() or 0
+
+        pending_vaccinations = max(0, animals_count - completed_vaccinations)
+        due_overdue_vaccinations = 0
+
+        # 5. Disease reports & investigations
+        total_disease_reports = (await self.db.execute(
+            select(func.count(DiseaseReport.report_id))
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .where(Village.district_id == district_id)
+        )).scalar() or 0
+
+        pending_disease_investigations = (await self.db.execute(
+            select(func.count(DiseaseReport.report_id))
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .where(
+                Village.district_id == district_id,
+                DiseaseReport.status.in_(["REPORTED", "UNDER_INVESTIGATION", "SUBMITTED", "PENDING_REVIEW"])
+            )
+        )).scalar() or 0
+
+        active_disease_alerts = (await self.db.execute(
+            select(func.count(DiseaseReport.report_id))
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .where(
+                Village.district_id == district_id,
+                DiseaseReport.status.in_(["SUBMITTED", "UNDER_INVESTIGATION", "CONFIRMED"])
+            )
+        )).scalar() or 0
+
+        # 6. Active Campaigns in District
+        active_campaigns = (await self.db.execute(
+            select(func.count(distinct(CampaignVillage.campaign_id)))
+            .join(Village, CampaignVillage.village_id == Village.id)
+            .join(Campaign, CampaignVillage.campaign_id == Campaign.id)
+            .where(Village.district_id == district_id, Campaign.status == "ACTIVE")
+        )).scalar() or 0
+        if active_campaigns == 0:
+            active_campaigns = (await self.db.execute(
+                select(func.count(Campaign.id)).where(Campaign.status == "ACTIVE")
+            )).scalar() or 0
+
+        # 7. Real Weekly Vaccination Trends (past 7 days by event_date)
+        today = datetime.now(timezone.utc).date()
+        seven_days_ago = today - timedelta(days=6)
+        daily_events = (await self.db.execute(
+            select(AnimalEvent.event_date, func.count(AnimalEvent.event_id))
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .where(
+                Village.district_id == district_id,
+                AnimalEvent.event_type == "VACCINATION",
+                AnimalEvent.event_date >= seven_days_ago
+            )
+            .group_by(AnimalEvent.event_date)
+            .order_by(AnimalEvent.event_date)
+        )).fetchall()
+        events_map = {row[0]: row[1] for row in daily_events if row[0]}
+        gujarati_day_names = ["સોમ", "મંગળ", "બુધ", "ગુરુ", "શુક્ર", "શનિ", "રવિ"]
+        weekly_trends = []
+        for i in range(7):
+            d = seven_days_ago + timedelta(days=i)
+            day_name = gujarati_day_names[d.weekday()]
+            weekly_trends.append({
+                "label": day_name,
+                "date": d.isoformat(),
+                "value": events_map.get(d, 0)
+            })
+
+        # 8. Real Disease Breakdown
+        disease_rows = (await self.db.execute(
+            select(DiseaseReport.disease_code, func.count(DiseaseReport.report_id))
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .where(Village.district_id == district_id)
+            .group_by(DiseaseReport.disease_code)
+            .order_by(func.count(DiseaseReport.report_id).desc())
+        )).fetchall()
+
+        disease_translations = {
+            "FMD": {"name_gu": "FMD (ખરવા-મોવાસા)", "color": "#DC2626", "desc": "પગ-મોં ચેપ"},
+            "HS": {"name_gu": "HS (ગળસૂંઠો)", "color": "#0284C7", "desc": "શ્વસન તંત્ર"},
+            "BQ": {"name_gu": "BQ (ગાઠીયો તાવ)", "color": "#135D43", "desc": "સ્નાયુ રોગ"},
+            "BRUCELLOSIS": {"name_gu": "Brucellosis (બ્રુસેલોસિસ)", "color": "#D97706", "desc": "પ્રજનન તંત્ર"},
+            "LSD": {"name_gu": "LSD (લમ્પી ત્વચા રોગ)", "color": "#EA580C", "desc": "ત્વચા રોગ"},
+            "PPR": {"name_gu": "PPR (બકરી પ્લેગ)", "color": "#7C3AED", "desc": "નાના પશુ રોગ"},
+            "FEVER": {"name_gu": "સામાન્ય તાવ (Fever)", "color": "#EAB308", "desc": "સામાન્ય લક્ષણ"}
+        }
+
+        disease_breakdown = []
+        for d_code, cnt in disease_rows:
+            meta = disease_translations.get(d_code.upper() if d_code else "", {
+                "name_gu": d_code or "અજ્ઞાત રોગ",
+                "color": "#64748B",
+                "desc": "અન્ય રોગ"
+            })
+            disease_breakdown.append({
+                "label": meta["name_gu"],
+                "sublabel": f"{meta['desc']} • {cnt} નોંધાયેલ",
+                "value": cnt,
+                "target": max(1, cnt + 1),
+                "color": meta["color"]
+            })
+
+        # 9. Real Taluka Summaries
+        talukas = (await self.db.execute(
+            select(Taluka).where(Taluka.district_id == district_id).order_by(Taluka.name_en)
+        )).scalars().all()
+
+        taluka_summaries = []
+        unassigned_talukas_count = 0
+        for t in talukas:
+            t_villages = (await self.db.execute(
+                select(func.count(Village.id)).where(Village.taluka_id == t.id, Village.active == True)
+            )).scalar() or 0
+
+            t_animals = (await self.db.execute(
+                select(func.count(distinct(Animal.id)))
+                .join(Village, Animal.village_id == Village.id)
+                .where(Village.taluka_id == t.id, Animal.status == "ACTIVE")
+            )).scalar() or 0
+
+            t_farmers = (await self.db.execute(
+                select(func.count(distinct(Farmer.id)))
+                .join(Village, Farmer.village_id == Village.id)
+                .where(Village.taluka_id == t.id, Farmer.active == True)
+            )).scalar() or 0
+
+            t_vaccinations = (await self.db.execute(
+                select(func.count(AnimalEvent.event_id))
+                .join(Village, AnimalEvent.village_id == Village.id)
+                .where(Village.taluka_id == t.id, AnimalEvent.event_type == "VACCINATION")
+            )).scalar() or 0
+
+            t_disease = (await self.db.execute(
+                select(func.count(DiseaseReport.report_id))
+                .join(Village, DiseaseReport.village_id == Village.id)
+                .where(Village.taluka_id == t.id)
+            )).scalar() or 0
+
+            asgn = (await self.db.execute(
+                select(TahoTalukaAssignment, User)
+                .join(User, TahoTalukaAssignment.taho_user_id == User.id)
+                .where(TahoTalukaAssignment.taluka_id == t.id, TahoTalukaAssignment.ended_at.is_(None))
+            )).first()
+
+            assigned_taho = None
+            if asgn:
+                a, u = asgn
+                assigned_taho = {
+                    "taho_user_id": str(u.id),
+                    "full_name": u.full_name,
+                    "username": u.username,
+                    "email": u.email,
+                    "mobile_e164": u.mobile_e164,
+                    "assigned_at": a.assigned_at.isoformat()
+                }
+            else:
+                unassigned_talukas_count += 1
+
+            coverage_pct = round((t_vaccinations / t_animals * 100), 1) if t_animals > 0 else 0.0
+
+            taluka_summaries.append({
+                "taluka_id": str(t.id),
+                "code": t.code,
+                "name_en": t.name_en,
+                "name_gu": t.name_gu,
+                "village_count": t_villages,
+                "animal_count": t_animals,
+                "farmer_count": t_farmers,
+                "vaccination_count": t_vaccinations,
+                "disease_count": t_disease,
+                "coverage_pct": coverage_pct,
+                "assigned_taho": assigned_taho
+            })
+
+        # 10. Real Recent Operational Activities in District
+        recent_events = (await self.db.execute(
+            select(AnimalEvent, Village.name_en, Village.name_gu, Taluka.name_gu)
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .where(Village.district_id == district_id)
+            .order_by(AnimalEvent.received_at.desc())
+            .limit(8)
+        )).fetchall()
+
+        recent_activities = []
+        for ev, v_en, v_gu, t_gu in recent_events:
+            recent_activities.append({
+                "id": str(ev.event_id),
+                "type": ev.event_type,
+                "title": f"{ev.event_type} - {v_gu or v_en} ({t_gu})",
+                "timestamp": ev.received_at.isoformat() if ev.received_at else None,
+                "status": ev.review_status or "LOGGED"
+            })
+
+        return {
+            "district_id": str(district.id),
+            "district_code": district.code,
+            "district_name_en": district.name_en,
+            "district_name_gu": district.name_gu,
+            "total_talukas": talukas_count,
+            "total_villages": villages_count,
+            "total_animals": animals_count,
+            "total_farmers": farmers_count,
+            "total_tahos": tahos_count,
+            "total_vos": vos_count,
+            "total_fws": fws_count,
+            "active_campaigns": active_campaigns,
+            "total_vaccinations": vaccinations_count,
+            "completed_vaccinations": completed_vaccinations,
+            "pending_vaccinations": pending_vaccinations,
+            "due_overdue_vaccinations": due_overdue_vaccinations,
+            "total_disease_reports": total_disease_reports,
+            "pending_disease_investigations": pending_disease_investigations,
+            "active_disease_alerts": active_disease_alerts,
+            "weekly_vaccination_trends": weekly_trends,
+            "disease_breakdown": disease_breakdown,
+            "taluka_summaries": taluka_summaries,
+            "recent_operational_activities": recent_activities,
+            "pending_administrative_actions": {
+                "unassigned_talukas_count": unassigned_talukas_count,
+                "pending_disease_investigations": pending_disease_investigations,
+                "total_pending_actions": unassigned_talukas_count + pending_disease_investigations
+            }
+        }
+
+    # ==========================================================================
+    # 10. Taluka & TAHO Management
+    # ==========================================================================
+    async def get_daho_talukas(self, district_id: uuid.UUID) -> List[Dict[str, Any]]:
+        """Return all talukas for a district with active TAHO assignment details."""
+        talukas = list((await self.db.execute(
+            select(Taluka)
+            .where(Taluka.district_id == district_id)
+            .order_by(Taluka.name_en)
+        )).scalars().all())
+
+        results = []
+        for t in talukas:
+            asgn_stmt = (
+                select(TahoTalukaAssignment, User)
+                .join(User, TahoTalukaAssignment.taho_user_id == User.id)
+                .where(
+                    TahoTalukaAssignment.taluka_id == t.id,
+                    TahoTalukaAssignment.ended_at.is_(None)
+                )
+            )
+            asgn_row = (await self.db.execute(asgn_stmt)).first()
+
+            v_count = (await self.db.execute(
+                select(func.count(Village.id)).where(Village.taluka_id == t.id, Village.active == True)
+            )).scalar() or 0
+
+            an_count = (await self.db.execute(
+                select(func.count(distinct(Animal.id)))
+                .join(Village, Animal.village_id == Village.id)
+                .where(Village.taluka_id == t.id, Animal.status == "ACTIVE")
+            )).scalar() or 0
+
+            fm_count = (await self.db.execute(
+                select(func.count(distinct(Farmer.id)))
+                .join(Village, Farmer.village_id == Village.id)
+                .where(Village.taluka_id == t.id, Farmer.active == True)
+            )).scalar() or 0
+
+            vax_count = (await self.db.execute(
+                select(func.count(AnimalEvent.event_id))
+                .join(Village, AnimalEvent.village_id == Village.id)
+                .where(Village.taluka_id == t.id, AnimalEvent.event_type == "VACCINATION")
+            )).scalar() or 0
+
+            dis_count = (await self.db.execute(
+                select(func.count(DiseaseReport.report_id))
+                .join(Village, DiseaseReport.village_id == Village.id)
+                .where(Village.taluka_id == t.id)
+            )).scalar() or 0
+
+            cov_pct = round((vax_count / an_count * 100), 1) if an_count > 0 else 0.0
+
+            assigned_taho = None
+            if asgn_row:
+                asgn, user = asgn_row
+                assigned_taho = {
+                    "assignment_id": str(asgn.id),
+                    "taho_user_id": str(user.id),
+                    "full_name": user.full_name,
+                    "username": user.username,
+                    "email": user.email,
+                    "mobile_e164": user.mobile_e164,
+                    "status": user.status,
+                    "assigned_at": asgn.assigned_at.isoformat()
+                }
+
+            results.append({
+                "taluka_id": str(t.id),
+                "district_id": str(district_id),
+                "code": t.code,
+                "name_en": t.name_en,
+                "name_gu": t.name_gu,
+                "village_count": v_count,
+                "registered_animals": an_count,
+                "registered_farmers": fm_count,
+                "total_vaccinations": vax_count,
+                "disease_reports_count": dis_count,
+                "vaccination_coverage_pct": cov_pct,
+                "pending_vaccinations": max(0, an_count - vax_count),
+                "taho_assignment_status": "ASSIGNED" if assigned_taho else "UNASSIGNED",
+                "assigned_taho": assigned_taho
+            })
+
+        return results
+
+    async def search_taho_accounts(
+        self,
+        query: Optional[str] = None,
+        district_id: Optional[uuid.UUID] = None
+    ) -> List[Dict[str, Any]]:
+        """Search available or active TAHO accounts by name, email, or mobile."""
+        stmt = select(User).where(User.role == "TAHO")
+        if query:
+            q_clean = f"%{query.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    User.full_name.ilike(q_clean),
+                    User.username.ilike(q_clean),
+                    User.email.ilike(q_clean),
+                    User.mobile_e164.ilike(q_clean)
+                )
+            )
+        stmt = stmt.order_by(User.full_name).limit(50)
+        taho_users = list((await self.db.execute(stmt)).scalars().all())
+
+        results = []
+        for u in taho_users:
+            asgn_stmt = (
+                select(TahoTalukaAssignment, Taluka, District)
+                .join(Taluka, TahoTalukaAssignment.taluka_id == Taluka.id)
+                .join(District, Taluka.district_id == District.id)
+                .where(
+                    TahoTalukaAssignment.taho_user_id == u.id,
+                    TahoTalukaAssignment.ended_at.is_(None)
+                )
+            )
+            asgn = (await self.db.execute(asgn_stmt)).first()
+
+            assigned_taluka_id = None
+            assigned_taluka_name = None
+            assigned_district_name = None
+            if asgn:
+                _, t, d = asgn
+                assigned_taluka_id = str(t.id)
+                assigned_taluka_name = t.name_en
+                assigned_district_name = d.name_en
+
+            results.append({
+                "user_id": str(u.id),
+                "username": u.username,
+                "full_name": u.full_name,
+                "email": u.email,
+                "mobile_e164": u.mobile_e164,
+                "status": u.status,
+                "assigned_taluka_id": assigned_taluka_id,
+                "assigned_taluka_name": assigned_taluka_name,
+                "assigned_district_name": assigned_district_name
+            })
+
+        return results
+
+    async def create_taho_account(
+        self,
+        payload: Dict[str, Any],
+        actor_user: User,
+        client_ip: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create TAHO account within DAHO's authorized jurisdiction with real email dispatch."""
+        username = payload["username"].strip()
+        full_name = payload["full_name"].strip()
+        email_clean = payload.get("email", "").strip().lower() if payload.get("email") else None
+        mobile = payload["mobile_e164"].strip()
+        if not mobile.startswith("+"):
+            mobile = "+91" + mobile.lstrip("0")
+        taluka_id = payload.get("taluka_id")
+
+        # 1. Uniqueness checks
+        exist_u = (await self.db.execute(select(User).where(User.username == username))).scalar_one_or_none()
+        if exist_u:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Username '{username}' is already taken.")
+
+        if email_clean:
+            exist_e = (await self.db.execute(select(User).where(User.email == email_clean))).scalar_one_or_none()
+            if exist_e:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Email '{email_clean}' is already registered.")
+
+        exist_m = (await self.db.execute(select(User).where(User.mobile_e164 == mobile))).scalar_one_or_none()
+        if exist_m:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Mobile '{mobile}' is already registered.")
+
+        # 2. Check Taluka existence & conflicts if provided
+        taluka = None
+        district = None
+        if taluka_id:
+            taluka = (await self.db.execute(select(Taluka).where(Taluka.id == taluka_id))).scalar_one_or_none()
+            if not taluka:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specified Taluka not found.")
+            district = (await self.db.execute(select(District).where(District.id == taluka.district_id))).scalar_one_or_none()
+
+            # Single active TAHO per taluka
+            active_asgn = (await self.db.execute(
+                select(TahoTalukaAssignment).where(
+                    TahoTalukaAssignment.taluka_id == taluka.id,
+                    TahoTalukaAssignment.ended_at.is_(None)
+                )
+            )).scalar_one_or_none()
+            if active_asgn:
+                prev_taho = (await self.db.execute(select(User).where(User.id == active_asgn.taho_user_id))).scalar_one_or_none()
+                prev_name = prev_taho.full_name if prev_taho else "another officer"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Taluka '{taluka.name_en}' is already assigned to active TAHO '{prev_name}'."
+                )
+
+        now_dt = datetime.now(timezone.utc)
+        initial_pw = payload.get("password") or f"TAHO@{secrets.token_hex(4)}"
+        pw_hash = get_password_hash(initial_pw)
+
+        new_taho = User(
+            id=uuid.uuid4(),
+            role="TAHO",
+            full_name=full_name,
+            username=username,
+            email=email_clean,
+            password_hash=pw_hash,
+            mobile_e164=mobile,
+            designation=payload.get("designation") or "તાલુકા પશુપાલન અધિકારી (TAHO)",
+            organisation=payload.get("organisation") or "તાલુકા પંચાયત પશુપાલન શાખા",
+            status="ACTIVE",
+            must_change_password=True,
+            failed_attempts=0,
+            created_by=actor_user.id,
+            created_at=now_dt,
+            updated_at=now_dt
+        )
+        self.db.add(new_taho)
+        await self.db.flush()
+
+        if taluka:
+            asgn = TahoTalukaAssignment(
+                id=uuid.uuid4(),
+                taho_user_id=new_taho.id,
+                taluka_id=taluka.id,
+                assigned_by=actor_user.id,
+                assigned_at=now_dt
+            )
+            self.db.add(asgn)
+            await self.db.flush()
+
+        # Audit event
+        audit = AuditEvent(
+            actor_user_id=actor_user.id,
+            actor_role=actor_user.role,
+            action="TAHO_ACCOUNT_CREATED",
+            object_type="user",
+            object_id=str(new_taho.id),
+            result="SUCCESS",
+            reason=f"Created TAHO account {new_taho.username}" + (f" and assigned to {taluka.name_en}" if taluka else ""),
+            after_state={
+                "username": new_taho.username,
+                "role": "TAHO",
+                "email": email_clean,
+                "taluka_id": str(taluka.id) if taluka else None,
+                "taluka_name": taluka.name_en if taluka else None
+            },
+            ip=client_ip
+        )
+        self.db.add(audit)
+        await self.db.commit()
+
+        # Email dispatch
+        email_status = "NOT_CONFIGURED"
+        email_error = None
+        if email_clean:
+            email_res = await send_taho_activation_email(
+                taho_name=new_taho.full_name,
+                to_email=email_clean,
+                username=new_taho.username,
+                taluka_name=taluka.name_en if taluka else "Assigned Taluka",
+                district_name=district.name_en if district else "Assigned District",
+                temp_password=initial_pw,
+                db=self.db,
+                recipient_user_id=new_taho.id
+            )
+            email_status = email_res.status
+            email_error = email_res.error_message
+
+        return {
+            "user_id": str(new_taho.id),
+            "username": new_taho.username,
+            "full_name": new_taho.full_name,
+            "email": email_clean,
+            "mobile_e164": new_taho.mobile_e164,
+            "role": "TAHO",
+            "status": new_taho.status,
+            "assigned_taluka_id": str(taluka.id) if taluka else None,
+            "assigned_taluka_name": taluka.name_en if taluka else None,
+            "email_status": email_status,
+            "email_error": email_error,
+            "created_at": now_dt.isoformat()
+        }
+
+    async def assign_taho_to_taluka(
+        self,
+        taluka_id: uuid.UUID,
+        taho_user_id: uuid.UUID,
+        reason: str,
+        actor_user: User,
+        client_ip: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Assign or reassign a TAHO to a Taluka safely preserving history."""
+        taluka = (await self.db.execute(select(Taluka).where(Taluka.id == taluka_id))).scalar_one_or_none()
+        if not taluka:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Taluka not found")
+
+        taho_user = (await self.db.execute(select(User).where(User.id == taho_user_id, User.role == "TAHO"))).scalar_one_or_none()
+        if not taho_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target TAHO user not found")
+
+        now_dt = datetime.now(timezone.utc)
+
+        # 1. End existing assignment for this taluka if any
+        prev_asgn = (await self.db.execute(
+            select(TahoTalukaAssignment).where(
+                TahoTalukaAssignment.taluka_id == taluka_id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        prev_taho_id = None
+        if prev_asgn:
+            prev_taho_id = str(prev_asgn.taho_user_id)
+            if prev_asgn.taho_user_id == taho_user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"TAHO '{taho_user.full_name}' is already assigned to {taluka.name_en}."
+                )
+            prev_asgn.ended_at = now_dt
+
+        # 2. End any other taluka assignment for this TAHO (single active taluka per TAHO)
+        other_asgn = (await self.db.execute(
+            select(TahoTalukaAssignment).where(
+                TahoTalukaAssignment.taho_user_id == taho_user_id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if other_asgn:
+            other_asgn.ended_at = now_dt
+
+        # 3. Create fresh assignment
+        new_asgn = TahoTalukaAssignment(
+            id=uuid.uuid4(),
+            taho_user_id=taho_user_id,
+            taluka_id=taluka_id,
+            assigned_by=actor_user.id,
+            assigned_at=now_dt
+        )
+        self.db.add(new_asgn)
+
+        # 4. Record audit event
+        audit = AuditEvent(
+            actor_user_id=actor_user.id,
+            actor_role=actor_user.role,
+            action="TALUKA_TAHO_ASSIGNED",
+            object_type="taho_taluka_assignment",
+            object_id=str(new_asgn.id),
+            result="SUCCESS",
+            reason=reason.strip(),
+            before_state={"previous_taho_id": prev_taho_id, "taluka_id": str(taluka_id)},
+            after_state={"new_taho_id": str(taho_user_id), "taluka_id": str(taluka_id)},
+            ip=client_ip
+        )
+        self.db.add(audit)
+        await self.db.commit()
+
+        return {
+            "status": "SUCCESS",
+            "taluka_id": str(taluka_id),
+            "taluka_name": taluka.name_en,
+            "taho_user_id": str(taho_user_id),
+            "taho_name": taho_user.full_name,
+            "message": f"Taluka {taluka.name_en} assigned to TAHO {taho_user.full_name}."
+        }
+
+    async def release_taho_from_taluka(
+        self,
+        taluka_id: uuid.UUID,
+        reason: str,
+        actor_user: User,
+        client_ip: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Release currently assigned TAHO from a Taluka."""
+        asgn = (await self.db.execute(
+            select(TahoTalukaAssignment).where(
+                TahoTalukaAssignment.taluka_id == taluka_id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if not asgn:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active TAHO assignment found for this Taluka.")
+
+        now_dt = datetime.now(timezone.utc)
+        asgn.ended_at = now_dt
+
+        audit = AuditEvent(
+            actor_user_id=actor_user.id,
+            actor_role=actor_user.role,
+            action="TALUKA_TAHO_RELEASED",
+            object_type="taho_taluka_assignment",
+            object_id=str(asgn.id),
+            result="SUCCESS",
+            reason=reason.strip(),
+            before_state={"taho_user_id": str(asgn.taho_user_id), "taluka_id": str(taluka_id)},
+            after_state={"taho_user_id": None, "taluka_id": str(taluka_id)},
+            ip=client_ip
+        )
+        self.db.add(audit)
+        await self.db.commit()
+
+        return {"status": "SUCCESS", "taluka_id": str(taluka_id), "message": "TAHO assignment released."}
+
+    # ==========================================================================
+    # 11. TAHO Dashboard Overview & Hierarchy
+    # ==========================================================================
+    async def get_taho_overview(self, taho_user: User) -> Dict[str, Any]:
+        """Return operational KPIs and assigned jurisdiction for a TAHO officer."""
+        asgn_row = (await self.db.execute(
+            select(TahoTalukaAssignment, Taluka, District)
+            .join(Taluka, TahoTalukaAssignment.taluka_id == Taluka.id)
+            .join(District, Taluka.district_id == District.id)
+            .where(
+                TahoTalukaAssignment.taho_user_id == taho_user.id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+        )).first()
+
+        if not asgn_row:
+            return {
+                "has_assignment": False,
+                "message": "You do not currently have an active Taluka assigned."
+            }
+
+        _, taluka, district = asgn_row
+
+        v_count = (await self.db.execute(
+            select(func.count(Village.id)).where(Village.taluka_id == taluka.id, Village.active == True)
+        )).scalar() or 0
+
+        # Subordinates in this taluka
+        vo_count = (await self.db.execute(
+            select(func.count(distinct(UserVillageAssignment.user_id)))
+            .join(Village, UserVillageAssignment.village_id == Village.id)
+            .join(User, UserVillageAssignment.user_id == User.id)
+            .where(Village.taluka_id == taluka.id, User.role == "VO", UserVillageAssignment.ended_at.is_(None))
+        )).scalar() or 0
+
+        fw_count = (await self.db.execute(
+            select(func.count(distinct(UserVillageAssignment.user_id)))
+            .join(Village, UserVillageAssignment.village_id == Village.id)
+            .join(User, UserVillageAssignment.user_id == User.id)
+            .where(Village.taluka_id == taluka.id, User.role == "FIELD_WORKER", UserVillageAssignment.ended_at.is_(None))
+        )).scalar() or 0
+
+        farmers_count = (await self.db.execute(
+            select(func.count(distinct(Farmer.id)))
+            .join(Village, Farmer.village_id == Village.id)
+            .where(Village.taluka_id == taluka.id, Farmer.active == True)
+        )).scalar() or 0
+
+        animals_count = (await self.db.execute(
+            select(func.count(distinct(Animal.id)))
+            .join(Village, Animal.village_id == Village.id)
+            .where(Village.taluka_id == taluka.id, Animal.status == "ACTIVE")
+        )).scalar() or 0
+
+        vaccinations_count = (await self.db.execute(
+            select(func.count(AnimalEvent.event_id))
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .where(Village.taluka_id == taluka.id, AnimalEvent.event_type == "VACCINATION")
+        )).scalar() or 0
+
+        disease_alerts_count = (await self.db.execute(
+            select(func.count(DiseaseReport.report_id))
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .where(Village.taluka_id == taluka.id)
+        )).scalar() or 0
+
+        return {
+            "has_assignment": True,
+            "taluka_id": str(taluka.id),
+            "taluka_code": taluka.code,
+            "taluka_name_en": taluka.name_en,
+            "taluka_name_gu": taluka.name_gu,
+            "district_id": str(district.id),
+            "district_name_en": district.name_en,
+            "district_name_gu": district.name_gu,
+            "total_villages": v_count,
+            "active_vos": vo_count,
+            "active_fws": fw_count,
+            "total_farmers": farmers_count,
+            "total_animals": animals_count,
+            "total_vaccinations": vaccinations_count,
+            "disease_alerts": disease_alerts_count
+        }
+
+    async def get_taho_hierarchy(self, taho_user: User) -> Dict[str, Any]:
+        """Return Taluka polygon, villages with boundaries, and staff list for TAHO."""
+        asgn_row = (await self.db.execute(
+            select(TahoTalukaAssignment, Taluka, District)
+            .join(Taluka, TahoTalukaAssignment.taluka_id == Taluka.id)
+            .join(District, Taluka.district_id == District.id)
+            .where(
+                TahoTalukaAssignment.taho_user_id == taho_user.id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+        )).first()
+
+        if not asgn_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active Taluka assignment found for TAHO.")
+
+        _, taluka, district = asgn_row
+
+        # Get all villages in taluka
+        villages = list((await self.db.execute(
+            select(Village).where(Village.taluka_id == taluka.id, Village.active == True).order_by(Village.name_en)
+        )).scalars().all())
+
+        return {
+            "taluka_id": str(taluka.id),
+            "taluka_name_en": taluka.name_en,
+            "taluka_name_gu": taluka.name_gu,
+            "district_name_en": district.name_en,
+            "boundary_geojson": taluka.boundary_geojson,
+            "villages": [
+                {
+                    "village_id": str(v.id),
+                    "code": v.code,
+                    "name_en": v.name_en,
+                    "name_gu": v.name_gu,
+                    "census_code": v.census_code,
+                    "latitude": float(v.latitude) if v.latitude else None,
+                    "longitude": float(v.longitude) if v.longitude else None,
+                    "has_boundary": v.boundary_geojson is not None
+                }
+                for v in villages
+            ]
+        }
+
+    # ==========================================================================
+    # 12. DAHO Extended Operations (Animals, Farmers, Surveillance & Quality)
+    # ==========================================================================
+    async def get_daho_animals(
+        self,
+        district_id: uuid.UUID,
+        search: Optional[str] = None,
+        species: Optional[str] = None,
+        taluka_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Dict[str, Any]:
+        """Return district-scoped animals with owner details, location, and vaccination count."""
+        base_query = (
+            select(
+                Animal,
+                Farmer.full_name.label("farmer_name"),
+                Farmer.mobile_e164.label("farmer_mobile"),
+                Village.name_en.label("village_name_en"),
+                Village.name_gu.label("village_name_gu"),
+                Taluka.name_en.label("taluka_name_en"),
+                Taluka.name_gu.label("taluka_name_gu")
+            )
+            .join(Village, Animal.village_id == Village.id)
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .outerjoin(Farmer, Animal.farmer_id == Farmer.id)
+            .where(Village.district_id == district_id)
+        )
+
+        if taluka_id:
+            base_query = base_query.where(Taluka.id == taluka_id)
+        if species:
+            base_query = base_query.where(Animal.species_code.ilike(species))
+        if search:
+            s_clean = f"%{search.strip()}%"
+            base_query = base_query.where(
+                or_(
+                    Animal.animal_code.ilike(s_clean),
+                    Farmer.full_name.ilike(s_clean),
+                    Farmer.mobile_e164.ilike(s_clean),
+                    Village.name_en.ilike(s_clean),
+                    Village.name_gu.ilike(s_clean)
+                )
+            )
+
+        # Count query
+        count_stmt = select(func.count()).select_from(base_query.subquery())
+        total_count = (await self.db.execute(count_stmt)).scalar() or 0
+
+        # Paginated results
+        offset = (page - 1) * page_size
+        results_stmt = base_query.order_by(Animal.created_at.desc()).offset(offset).limit(page_size)
+        rows = (await self.db.execute(results_stmt)).fetchall()
+
+        items = []
+        for an, f_name, f_mob, v_en, v_gu, t_en, t_gu in rows:
+            # Check vaccination count
+            vax_count = (await self.db.execute(
+                select(func.count(AnimalEvent.event_id))
+                .where(AnimalEvent.animal_id == an.id, AnimalEvent.event_type == "VACCINATION")
+            )).scalar() or 0
+
+            items.append({
+                "id": str(an.id),
+                "animal_code": an.animal_code,
+                "species_code": an.species_code,
+                "breed_id": str(an.breed_id) if an.breed_id else None,
+                "sex": an.sex,
+                "birth_date": an.birth_date.isoformat() if an.birth_date else None,
+                "age_months_estimate": an.age_months_estimate,
+                "status": an.status,
+                "farmer_name": f_name or "N/A",
+                "farmer_mobile": f_mob or "N/A",
+                "village_name_en": v_en,
+                "village_name_gu": v_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "vaccination_count": vax_count,
+                "created_at": an.created_at.isoformat() if an.created_at else None
+            })
+
+        return {
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 1,
+            "items": items
+        }
+
+    async def get_daho_farmers(
+        self,
+        district_id: uuid.UUID,
+        search: Optional[str] = None,
+        taluka_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Dict[str, Any]:
+        """Return district-scoped farmers with location and active animal counts."""
+        base_query = (
+            select(
+                Farmer,
+                Village.name_en.label("village_name_en"),
+                Village.name_gu.label("village_name_gu"),
+                Taluka.name_en.label("taluka_name_en"),
+                Taluka.name_gu.label("taluka_name_gu"),
+                func.count(Animal.id).label("animal_count")
+            )
+            .join(Village, Farmer.village_id == Village.id)
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .outerjoin(Animal, and_(Animal.farmer_id == Farmer.id, Animal.status == "ACTIVE"))
+            .where(Village.district_id == district_id)
+        )
+
+        if taluka_id:
+            base_query = base_query.where(Taluka.id == taluka_id)
+        if search:
+            s_clean = f"%{search.strip()}%"
+            base_query = base_query.where(
+                or_(
+                    Farmer.full_name.ilike(s_clean),
+                    Farmer.mobile_e164.ilike(s_clean),
+                    Farmer.farmer_code.ilike(s_clean),
+                    Village.name_en.ilike(s_clean),
+                    Village.name_gu.ilike(s_clean)
+                )
+            )
+
+        base_query = base_query.group_by(Farmer.id, Village.id, Taluka.id)
+
+        # Count query
+        count_stmt = select(func.count()).select_from(base_query.subquery())
+        total_count = (await self.db.execute(count_stmt)).scalar() or 0
+
+        # Paginated results
+        offset = (page - 1) * page_size
+        results_stmt = base_query.order_by(Farmer.created_at.desc()).offset(offset).limit(page_size)
+        rows = (await self.db.execute(results_stmt)).fetchall()
+
+        items = []
+        for f, v_en, v_gu, t_en, t_gu, an_cnt in rows:
+            items.append({
+                "id": str(f.id),
+                "farmer_code": f.farmer_code,
+                "full_name": f.full_name,
+                "mobile_e164": f.mobile_e164,
+                "village_id": str(f.village_id),
+                "village_name_en": v_en,
+                "village_name_gu": v_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "address_text": f.address_text,
+                "registration_status": f.registration_status,
+                "active": f.active,
+                "animal_count": an_cnt or 0,
+                "created_at": f.created_at.isoformat() if f.created_at else None
+            })
+
+        return {
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 1,
+            "items": items
+        }
+
+    async def get_daho_disease_alerts(self, district_id: uuid.UUID) -> List[Dict[str, Any]]:
+        """Identify cluster signals and active disease alerts within the district."""
+        from datetime import timedelta
+
+        # Query all disease reports in the district
+        stmt = (
+            select(
+                DiseaseReport.disease_code,
+                DiseaseReport.village_id,
+                Village.name_en.label("village_name_en"),
+                Village.name_gu.label("village_name_gu"),
+                Taluka.name_en.label("taluka_name_en"),
+                Taluka.name_gu.label("taluka_name_gu"),
+                func.count(DiseaseReport.report_id).label("report_count"),
+                func.max(DiseaseReport.report_date).label("latest_date"),
+                func.array_agg(DiseaseReport.status).label("statuses"),
+                func.array_agg(DiseaseReport.report_id).label("report_ids")
+            )
+            .join(Village, DiseaseReport.village_id == Village.id)
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .where(Village.district_id == district_id)
+            .group_by(DiseaseReport.disease_code, DiseaseReport.village_id, Village.name_en, Village.name_gu, Taluka.name_en, Taluka.name_gu)
+        )
+        clusters = (await self.db.execute(stmt)).fetchall()
+
+        disease_info = {
+            "FMD": {"name_gu": "ખરવા-મોવાસા (FMD)", "severity": "CRITICAL"},
+            "ANTHRAX": {"name_gu": "કાળિયો તાવ (Anthrax)", "severity": "CRITICAL"},
+            "BRUCELLOSIS": {"name_gu": "બ્રુસેલોસિસ (Brucellosis)", "severity": "HIGH"},
+            "HS": {"name_gu": "ગળસૂંઠો (HS)", "severity": "HIGH"},
+            "BQ": {"name_gu": "ગાઠીયો તાવ (BQ)", "severity": "HIGH"},
+            "LSD": {"name_gu": "લમ્પી સ્કીન ડિસીઝ (LSD)", "severity": "HIGH"},
+            "FEVER": {"name_gu": "સામાન્ય તાવ (Fever)", "severity": "MEDIUM"}
+        }
+
+        alerts = []
+        for idx, (code, v_id, v_en, v_gu, t_en, t_gu, cnt, lat_d, st_list, r_ids) in enumerate(clusters, 1):
+            d_meta = disease_info.get(code.upper() if code else "", {"name_gu": code or "અજ્ઞાત રોગ", "severity": "MEDIUM"})
+            severity = d_meta["severity"]
+            if cnt >= 3 and severity == "HIGH":
+                severity = "CRITICAL"
+
+            status = "CONFIRMED" if "CONFIRMED" in st_list else "UNDER_INVESTIGATION" if "UNDER_INVESTIGATION" in st_list else "REPORTED"
+
+            alerts.append({
+                "alert_id": f"ALT-{district_id.hex[:6].upper()}-{idx:03d}",
+                "disease_code": code,
+                "disease_name_gu": d_meta["name_gu"],
+                "severity": severity,
+                "village_id": str(v_id),
+                "village_name_en": v_en,
+                "village_name_gu": v_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "report_count": cnt,
+                "latest_report_date": lat_d.isoformat() if lat_d else None,
+                "status": status,
+                "report_ids": [str(rid) for rid in (r_ids or [])],
+                "acknowledged": status in ("UNDER_INVESTIGATION", "CONFIRMED")
+            })
+
+        return alerts
+
+    async def get_daho_gis_quality(self, district_id: uuid.UUID) -> Dict[str, Any]:
+        """Perform comprehensive GIS data quality audit for the authorized district."""
+        # Total villages
+        v_total = (await self.db.execute(
+            select(func.count(Village.id)).where(Village.district_id == district_id, Village.active == True)
+        )).scalar() or 0
+
+        # Missing coordinates
+        missing_coords_stmt = (
+            select(Village, Taluka.name_en.label("taluka_name_en"), Taluka.name_gu.label("taluka_name_gu"))
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .where(
+                Village.district_id == district_id,
+                Village.active == True,
+                or_(Village.latitude.is_(None), Village.longitude.is_(None))
+            )
+        )
+        missing_coords_rows = (await self.db.execute(missing_coords_stmt)).fetchall()
+
+        # Missing boundaries
+        missing_boundaries_stmt = (
+            select(Village, Taluka.name_en.label("taluka_name_en"), Taluka.name_gu.label("taluka_name_gu"))
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .where(
+                Village.district_id == district_id,
+                Village.active == True,
+                Village.boundary_geojson.is_(None)
+            )
+        )
+        missing_boundaries_rows = (await self.db.execute(missing_boundaries_stmt)).fetchall()
+
+        coord_issues = [
+            {
+                "village_id": str(v.id),
+                "code": v.code,
+                "name_en": v.name_en,
+                "name_gu": v.name_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "issue": "MISSING_COORDINATES"
+            }
+            for v, t_en, t_gu in missing_coords_rows
+        ]
+
+        boundary_issues = [
+            {
+                "village_id": str(v.id),
+                "code": v.code,
+                "name_en": v.name_en,
+                "name_gu": v.name_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "issue": "MISSING_BOUNDARY"
+            }
+            for v, t_en, t_gu in missing_boundaries_rows
+        ]
+
+        valid_count = max(0, v_total - len(coord_issues))
+        completeness_pct = round((valid_count / v_total * 100), 1) if v_total > 0 else 100.0
+
+        return {
+            "district_id": str(district_id),
+            "total_villages": v_total,
+            "villages_with_coordinates": valid_count,
+            "villages_missing_coordinates": len(coord_issues),
+            "villages_missing_boundaries": len(boundary_issues),
+            "gis_completeness_pct": completeness_pct,
+            "coordinate_issues": coord_issues[:50],
+            "boundary_issues": boundary_issues[:50]
+        }
+
+    async def get_daho_vaccination_records(
+        self,
+        district_id: uuid.UUID,
+        taluka_id: Optional[uuid.UUID] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Dict[str, Any]:
+        """Return district-scoped animal vaccination records with performer and location details."""
+        base_query = (
+            select(
+                AnimalEvent,
+                Animal.animal_code,
+                Animal.species_code,
+                Farmer.full_name.label("farmer_name"),
+                Farmer.mobile_e164.label("farmer_mobile"),
+                Village.name_en.label("village_name_en"),
+                Village.name_gu.label("village_name_gu"),
+                Taluka.name_en.label("taluka_name_en"),
+                Taluka.name_gu.label("taluka_name_gu"),
+                User.full_name.label("performer_name")
+            )
+            .join(Village, AnimalEvent.village_id == Village.id)
+            .join(Taluka, Village.taluka_id == Taluka.id)
+            .outerjoin(Animal, AnimalEvent.animal_id == Animal.id)
+            .outerjoin(Farmer, Animal.farmer_id == Farmer.id)
+            .outerjoin(User, AnimalEvent.performed_by == User.id)
+            .where(Village.district_id == district_id, AnimalEvent.event_type == "VACCINATION")
+        )
+
+        if taluka_id:
+            base_query = base_query.where(Taluka.id == taluka_id)
+
+        count_stmt = select(func.count()).select_from(base_query.subquery())
+        total_count = (await self.db.execute(count_stmt)).scalar() or 0
+
+        offset = (page - 1) * page_size
+        results_stmt = base_query.order_by(AnimalEvent.event_date.desc()).offset(offset).limit(page_size)
+        rows = (await self.db.execute(results_stmt)).fetchall()
+
+        items = []
+        for ev, an_code, sp, f_name, f_mob, v_en, v_gu, t_en, t_gu, perf in rows:
+            items.append({
+                "event_id": str(ev.event_id),
+                "animal_code": an_code or "N/A",
+                "species_code": sp or "N/A",
+                "farmer_name": f_name or "N/A",
+                "farmer_mobile": f_mob or "N/A",
+                "village_name_en": v_en,
+                "village_name_gu": v_gu,
+                "taluka_name_en": t_en,
+                "taluka_name_gu": t_gu,
+                "performer_name": perf or "સહાયક / કાર્યકર",
+                "event_date": ev.event_date.isoformat() if ev.event_date else None,
+                "status": ev.review_status or "VERIFIED",
+                "remarks": ev.remarks
+            })
+
+        return {
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 1,
+            "items": items
+        }

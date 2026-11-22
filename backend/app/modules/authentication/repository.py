@@ -12,7 +12,7 @@ Encapsulates all asynchronous SQLAlchemy 2.0 database queries for:
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.geography import District, Village
@@ -41,6 +41,12 @@ class AuthRepository:
     async def get_user_by_username(self, username: str) -> Optional[User]:
         """Fetch user by case-insensitive username."""
         stmt = select(User).where(func.lower(User.username) == username.lower().strip())
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def get_user_by_email(self, email: str) -> Optional[User]:
+        """Fetch user by case-insensitive email."""
+        stmt = select(User).where(func.lower(User.email) == email.lower().strip())
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
@@ -279,12 +285,13 @@ class AuthRepository:
     async def get_user_profile_data(
         self,
         user: User
-    ) -> Tuple[List[uuid.UUID], List[uuid.UUID], List[str]]:
-        """Retrieve assigned villages, districts, and combined permissions for a user.
+    ) -> Tuple[List[uuid.UUID], List[uuid.UUID], List[uuid.UUID], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+        """Retrieve assigned villages, districts, talukas, and combined permissions for a user.
         
         Returns:
-            Tuple of (assigned_village_ids, assigned_district_ids, permission_codes)
+            Tuple of (assigned_village_ids, assigned_district_ids, assigned_taluka_ids, assigned_districts_details, assigned_talukas_details, permission_codes)
         """
+        from app.models.geography import District, Taluka, Village
         # 1. Active Village Assignments
         assigned_villages: List[uuid.UUID] = []
         try:
@@ -306,7 +313,8 @@ class AuthRepository:
 
         # 2. Active DAHO District Assignments
         assigned_districts: List[uuid.UUID] = []
-        if user.role in ("DAHO", "SYS_ADMIN"):
+        assigned_districts_details: List[Dict[str, Any]] = []
+        if user.role in ("DAHO", "SYS_ADMIN", "SUPER_ADMIN"):
             try:
                 d_stmt = (
                     select(DahoDistrictAssignment.district_id)
@@ -317,13 +325,64 @@ class AuthRepository:
                 )
                 d_res = await self.db.execute(d_stmt)
                 assigned_districts = [row[0] for row in d_res.fetchall()]
-                if not assigned_districts:
+                if not assigned_districts and user.role in ("SYS_ADMIN", "SUPER_ADMIN"):
                     d_all = await self.db.execute(select(District.id).where(District.active == True))
                     assigned_districts = [row[0] for row in d_all.fetchall()]
+
+                if assigned_districts:
+                    d_objs = await self.db.execute(select(District).where(District.id.in_(assigned_districts)))
+                    for d in d_objs.scalars().all():
+                        assigned_districts_details.append({
+                            "id": str(d.id),
+                            "code": d.code,
+                            "name_en": d.name_en,
+                            "name_gu": d.name_gu
+                        })
             except Exception as d_err:
                 logger.warning("Error resolving user assigned districts: %s", d_err)
 
-        # 3. Role-based permissions
+        # 3. Active TAHO Taluka Assignments
+        assigned_talukas: List[uuid.UUID] = []
+        assigned_talukas_details: List[Dict[str, Any]] = []
+        if user.role in ("TAHO", "DAHO", "SYS_ADMIN"):
+            try:
+                from app.modules.authentication.models import TahoTalukaAssignment
+                if user.role == "TAHO":
+                    t_stmt = select(TahoTalukaAssignment.taluka_id).where(
+                        TahoTalukaAssignment.taho_user_id == user.id,
+                        TahoTalukaAssignment.ended_at.is_(None)
+                    )
+                    t_res = await self.db.execute(t_stmt)
+                    assigned_talukas = [row[0] for row in t_res.fetchall()]
+                    if assigned_talukas:
+                        t_info = await self.db.execute(
+                            select(Taluka, District.name_en.label("dist_en"), District.name_gu.label("dist_gu"))
+                            .join(District, Taluka.district_id == District.id)
+                            .where(Taluka.id.in_(assigned_talukas))
+                        )
+                        for t_row in t_info.all():
+                            t_obj, dist_en, dist_gu = t_row[0], t_row[1], t_row[2]
+                            assigned_talukas_details.append({
+                                "id": str(t_obj.id),
+                                "code": t_obj.code,
+                                "name_en": t_obj.name_en,
+                                "name_gu": t_obj.name_gu,
+                                "district_id": str(t_obj.district_id),
+                                "district_name_en": dist_en,
+                                "district_name_gu": dist_gu
+                            })
+                            if t_obj.district_id not in assigned_districts:
+                                assigned_districts.append(t_obj.district_id)
+                                assigned_districts_details.append({
+                                    "id": str(t_obj.district_id),
+                                    "code": t_obj.code,
+                                    "name_en": dist_en,
+                                    "name_gu": dist_gu
+                                })
+            except Exception as t_err:
+                logger.warning("Error resolving user assigned talukas: %s", t_err)
+
+        # 4. Role-based permissions
         rp_roles = [user.role]
         if user.role in ("FIELD_WORKER", "FW"):
             rp_roles = ["FIELD_WORKER", "FW"]
@@ -331,6 +390,8 @@ class AuthRepository:
             rp_roles = ["VET_OFFICER", "VO"]
         elif user.role in ("DAHO",):
             rp_roles = ["DAHO"]
+        elif user.role in ("TAHO",):
+            rp_roles = ["TAHO"]
 
         rp_stmt = (
             select(RolePermission.permission_code)
@@ -339,7 +400,7 @@ class AuthRepository:
         rp_res = await self.db.execute(rp_stmt)
         permissions: Set[str] = {row[0] for row in rp_res.fetchall()}
 
-        # 4. Explicit user permission grants (active only)
+        # 5. Explicit user permission grants (active only)
         up_stmt = (
             select(UserPermissionGrant.permission_code)
             .where(
@@ -351,7 +412,7 @@ class AuthRepository:
         for row in up_res.fetchall():
             permissions.add(row[0])
 
-        # 5. Canonical fallback permissions if unseeded
+        # 6. Canonical fallback permissions if unseeded
         if not permissions:
             DEFAULT_ROLE_PERMS = {
                 "FIELD_WORKER": {
@@ -387,14 +448,24 @@ class AuthRepository:
                     "own.read", "aggregate.view", "offline.sync"
                 },
                 "DAHO": {
-                    "district.setup.manage", "village.manage", "user.manage",
+                    "district.setup.manage", "village.manage", "taluka.manage", "user.manage",
                     "campaign.manage", "campaign.view", "camp.manage", "camp.view",
                     "inventory.manage", "inventory.read",
                     "disease.read", "disease.confirm",
                     "animal.read", "farmer.read", "aggregate.view", "audit.read"
+                },
+                "TAHO": {
+                    "taluka.manage", "taho.dashboard.view", "village.manage", "user.manage",
+                    "veterinary_officer.manage", "field_worker.manage",
+                    "campaign.view", "campaign.manage",
+                    "camp.manage", "camp.view",
+                    "inventory.read",
+                    "disease.read", "disease.review",
+                    "animal.read", "farmer.read", "aggregate.view",
+                    "map.view", "event.read"
                 }
             }
             norm = "FW" if user.role == "FIELD_WORKER" else "VO" if user.role == "VET_OFFICER" else user.role
             permissions.update(DEFAULT_ROLE_PERMS.get(user.role, DEFAULT_ROLE_PERMS.get(norm, set())))
 
-        return assigned_villages, assigned_districts, sorted(list(permissions))
+        return assigned_villages, assigned_districts, assigned_talukas, assigned_districts_details, assigned_talukas_details, sorted(list(permissions))

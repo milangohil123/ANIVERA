@@ -93,9 +93,11 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     'inventory',
     'master-data',
     'staff',
+    'villages',
     'users',
     'devices',
     'village-progress',
+    'cooperatives',
   ];
   const recordsPaths = [
     'surveillance-reviews',
@@ -107,6 +109,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     'sync',
     'audit-logs',
     'maps',
+    'map',
   ];
 
   // Filter items by search query if user typed anything (excluding notifications)
@@ -115,8 +118,9 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     .filter((item) => {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
+      const label = (item.label || (item.path.includes('map') ? 'GIS નકશો' : '')).toLowerCase();
       return (
-        item.label.toLowerCase().includes(q) ||
+        label.includes(q) ||
         item.path.toLowerCase().includes(q)
       );
     });
@@ -152,6 +156,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
    */
   const renderNavItem = (item: NavItemDef) => {
     const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+    const itemLabel = (item.label && item.label.trim()) || (item.path.includes('map') ? 'GIS નકશો' : item.path.split('/').pop() || 'મેનુ');
 
     return (
       <div key={item.path} className="relative group">
@@ -183,7 +188,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
               {item.icon}
             </span>
             {!isCollapsed && (
-              <span className="truncate tracking-tight">{item.label}</span>
+              <span className="truncate tracking-tight">{itemLabel}</span>
             )}
           </div>
 
@@ -202,7 +207,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
         {/* Sleek Floating Tooltip in Collapsed Mode */}
         {isCollapsed && (
           <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-2">
-            <span>{item.label}</span>
+            <span>{itemLabel}</span>
             {item.badge ? (
               <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-[#E6F3EF] text-[#164E45] border border-[#176B5B]/30">
                 {item.badge}

@@ -7,10 +7,23 @@ import {
   type FarmerTreatmentEvent,
   type FarmerTransferItem,
 } from '../../services/farmerService';
+import { healthWorkflowService, type AnimalTimelineEventItem } from '../../services/healthWorkflowService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { StateView } from '../../components/common/StateView';
 import { Button } from '../../components/common/Button';
-import { X } from 'lucide-react';
+import {
+  X,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Syringe,
+  Stethoscope,
+  HeartPulse,
+  UserCheck,
+  ShieldCheck,
+  Bell,
+  Calendar,
+} from 'lucide-react';
 
 interface FarmerAnimalDetailModalProps {
   animal: FarmerAnimalItem | null;
@@ -25,10 +38,11 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
 }) => {
   const { apiBaseUrl } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'VACCINATIONS' | 'TREATMENTS' | 'TRANSFERS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'TIMELINE' | 'VACCINATIONS' | 'TREATMENTS' | 'TRANSFERS'>('OVERVIEW');
   const [vaccinations, setVaccinations] = useState<FarmerVaccinationEvent[]>([]);
   const [treatments, setTreatments] = useState<FarmerTreatmentEvent[]>([]);
   const [transfers, setTransfers] = useState<FarmerTransferItem[]>([]);
+  const [timeline, setTimeline] = useState<AnimalTimelineEventItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -40,16 +54,18 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
       setIsLoading(true);
       setErrorMsg(null);
       try {
-        const [vacs, treats, trans] = await Promise.all([
-          farmerService.getAnimalVaccinations(apiBaseUrl, animal.id),
-          farmerService.getAnimalTreatments(apiBaseUrl, animal.id),
-          farmerService.getAnimalTransfers(apiBaseUrl, animal.id),
+        const [vacs, treats, trans, timeData] = await Promise.all([
+          farmerService.getAnimalVaccinations(apiBaseUrl, animal.id).catch(() => []),
+          farmerService.getAnimalTreatments(apiBaseUrl, animal.id).catch(() => []),
+          farmerService.getAnimalTransfers(apiBaseUrl, animal.id).catch(() => []),
+          healthWorkflowService.getAnimalTimeline(apiBaseUrl, animal.id).catch(() => null),
         ]);
 
         if (isMounted) {
           setVaccinations(vacs);
           setTreatments(treats);
           setTransfers(trans);
+          setTimeline(timeData?.events || []);
         }
       } catch (err: any) {
         if (isMounted) {
@@ -81,8 +97,33 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
     }
   };
 
+  const getTimelineIcon = (type: string) => {
+    switch (type) {
+      case 'REGISTRATION':
+        return <CheckCircle2 className="w-4 h-4 text-emerald-600" />;
+      case 'DISEASE_REPORT':
+        return <HeartPulse className="w-4 h-4 text-red-600" />;
+      case 'CASE_ASSIGNMENT':
+        return <UserCheck className="w-4 h-4 text-amber-600" />;
+      case 'CLINICAL_TREATMENT':
+        return <Stethoscope className="w-4 h-4 text-purple-600" />;
+      case 'TAHO_VERIFICATION':
+        return <ShieldCheck className="w-4 h-4 text-teal-600" />;
+      case 'RECURRING_SCHEDULE_ENROLLMENT':
+        return <Clock className="w-4 h-4 text-blue-600" />;
+      case 'REMINDER_SENT_15_DAYS':
+        return <Bell className="w-4 h-4 text-amber-500 animate-bounce" />;
+      case 'VACCINATION_EXECUTED':
+        return <Syringe className="w-4 h-4 text-emerald-600" />;
+      case 'NEXT_CYCLE_SCHEDULED':
+        return <Calendar className="w-4 h-4 text-indigo-600" />;
+      default:
+        return <Clock className="w-4 h-4 text-slate-500" />;
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs font-body">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs font-body animate-fade-in">
       <div className="bg-white rounded-2xl max-w-2xl w-full p-5 shadow-2xl border border-[#E2E8F0] space-y-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
@@ -104,39 +145,41 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
             onClick={onClose}
             className="p-1 rounded-lg text-[#64748B] hover:bg-gray-100"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Controls */}
-        <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 rounded-xl text-xs font-semibold">
+        <div className="grid grid-cols-5 gap-1 p-1 bg-gray-100 rounded-xl text-[11px] sm:text-xs font-semibold">
           <button
             onClick={() => setActiveTab('OVERVIEW')}
-            className={`py-2 rounded-lg transition-colors ${activeTab === 'OVERVIEW' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'
-              }`}
+            className={`py-2 rounded-lg transition-colors ${activeTab === 'OVERVIEW' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'}`}
           >
             વિગતો
           </button>
           <button
+            onClick={() => setActiveTab('TIMELINE')}
+            className={`py-2 rounded-lg transition-colors ${activeTab === 'TIMELINE' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'}`}
+          >
+            સમયરેખા ({timeline.length})
+          </button>
+          <button
             onClick={() => setActiveTab('VACCINATIONS')}
-            className={`py-2 rounded-lg transition-colors ${activeTab === 'VACCINATIONS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'
-              }`}
+            className={`py-2 rounded-lg transition-colors ${activeTab === 'VACCINATIONS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'}`}
           >
             રસીકરણ ({vaccinations.length})
           </button>
           <button
             onClick={() => setActiveTab('TREATMENTS')}
-            className={`py-2 rounded-lg transition-colors ${activeTab === 'TREATMENTS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'
-              }`}
+            className={`py-2 rounded-lg transition-colors ${activeTab === 'TREATMENTS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'}`}
           >
             સારવાર ({treatments.length})
           </button>
           <button
             onClick={() => setActiveTab('TRANSFERS')}
-            className={`py-2 rounded-lg transition-colors ${activeTab === 'TRANSFERS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'
-              }`}
+            className={`py-2 rounded-lg transition-colors ${activeTab === 'TRANSFERS' ? 'bg-white text-[#135D43] shadow-xs' : 'text-[#64748B]'}`}
           >
-            માલિકી બદલી ({transfers.length})
+            માલિકી ({transfers.length})
           </button>
         </div>
 
@@ -188,6 +231,38 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
                 <strong>સલામતી સૂચના:</strong> પશુનું QR કાર્ડ અને કાનનો ટેગ સુરક્ષિત રાખો. રસીકરણ કે સારવાર સમયે સ્ટાફને આ QR કોડ બતાવવો.
               </div>
             </div>
+          ) : activeTab === 'TIMELINE' ? (
+            timeline.length === 0 ? (
+              <StateView
+                state="empty"
+                title="કોઈ સમયરેખા ઇવેન્ટ નથી"
+                message="આ પશુ માટે હજુ સુધી કોઈ સમયરેખા રેકોર્ડ નથી."
+              />
+            ) : (
+              <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                {timeline.map((event, idx) => (
+                  <div key={event.event_id || idx} className="relative flex items-start gap-3">
+                    <div className="absolute -left-6 mt-1 w-5 h-5 rounded-full bg-white border-2 border-slate-300 flex items-center justify-center shrink-0 shadow-2xs">
+                      {getTimelineIcon(event.event_type)}
+                    </div>
+                    <div className="flex-1 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-900">{event.title}</span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {formatDate(event.event_date)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600">{event.description}</p>
+                      {event.actor_name && (
+                        <div className="text-[10px] text-slate-400 mt-1">
+                          દ્વારા: <span className="font-medium text-slate-600">{event.actor_name}</span> ({event.actor_role})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : activeTab === 'VACCINATIONS' ? (
             vaccinations.length === 0 ? (
               <StateView
@@ -292,4 +367,3 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
     </div>
   );
 };
-

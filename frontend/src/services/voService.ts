@@ -422,7 +422,7 @@ export const voService = {
   },
 
   // 5. Jurisdictional Master Data Helpers
-  async listVillages(apiBaseUrl: string): Promise<Array<{ id: string; name_gu: string; name_en: string; code: string }>> {
+  async listVillages(apiBaseUrl: string): Promise<Array<{ id: string; name_gu: string; name_en: string; code: string; taluka_id?: string }>> {
     try {
       const res = await authFetch(apiBaseUrl, `/api/v1/administration/villages?limit=200`);
       if (!res.ok) return [];
@@ -432,7 +432,7 @@ export const voService = {
     }
   },
 
-  async listFieldWorkers(apiBaseUrl: string): Promise<Array<{ id: string; full_name: string; username: string }>> {
+  async listFieldWorkers(apiBaseUrl: string): Promise<Array<{ id: string; full_name: string; username: string; mobile_e164?: string; status?: string }>> {
     try {
       const res = await authFetch(apiBaseUrl, `/api/v1/administration/field-workers?limit=100`);
       if (!res.ok) return [];
@@ -440,6 +440,96 @@ export const voService = {
     } catch {
       return [];
     }
+  },
+
+  // 6. Farmers Management (VO Scoped)
+  async listFarmers(
+    apiBaseUrl: string,
+    params?: { village_id?: string; search?: string; limit?: number; offset?: number }
+  ): Promise<any[]> {
+    const q = new URLSearchParams();
+    if (params?.village_id) q.append('village_id', params.village_id);
+    if (params?.search) q.append('search', params.search);
+    q.append('limit', String(params?.limit || 100));
+    q.append('offset', String(params?.offset || 0));
+
+    const res = await authFetch(apiBaseUrl, `/api/v1/farmers?${q.toString()}`);
+    if (!res.ok) throw new Error(`ખેડૂતોની યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async getFarmer(apiBaseUrl: string, farmerId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/farmers/${farmerId}`);
+    if (!res.ok) throw new Error(`ખેડૂત વિગત મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async registerFarmer(
+    apiBaseUrl: string,
+    payload: {
+      full_name: string;
+      mobile_e164: string;
+      village_id: string;
+      address?: string;
+      preferred_language?: string;
+      outreach_opt_in?: boolean;
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/farmers`, {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: payload.full_name,
+        mobile_e164: payload.mobile_e164,
+        village_id: payload.village_id,
+        address_text: payload.address,
+        data_consent: true,
+        outreach_consent: payload.outreach_opt_in ? 'GRANTED' : 'WITHDRAWN',
+        registration_path: 'STAFF_ASSISTED',
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ખેડૂત નોંધણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // 7. Animal Management & History (VO Scoped)
+  async getAnimal(apiBaseUrl: string, animalId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/animals/${animalId}`);
+    if (!res.ok) throw new Error(`પશુ વિગત મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async getAnimalHistory(apiBaseUrl: string, animalId: string): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/animals/${animalId}/history`);
+    if (!res.ok) throw new Error(`પશુ ઇતિહાસ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async registerAnimal(
+    apiBaseUrl: string,
+    payload: {
+      species_code: string;
+      breed_id?: string;
+      sex: string;
+      age_months_estimate?: number;
+      farmer_id: string;
+      village_id: string;
+      bharat_pashudhan_tag?: string;
+      tag_value?: string;
+      tag_identification_method?: string;
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/animals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `પશુ નોંધણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
   },
 };
 

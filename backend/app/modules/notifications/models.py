@@ -68,3 +68,38 @@ class Notification(Base):
         lazy="selectin"
     )
 
+
+class EmailLog(Base):
+    """Email delivery log matching 'email_logs' table."""
+    __tablename__ = "email_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    recipient_email: Mapped[str] = mapped_column(Text, nullable=False)
+    recipient_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body_preview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)  # SENT, FAILED, PENDING
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+

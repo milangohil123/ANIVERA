@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
 import { StateView } from '../../components/common/StateView';
 import { useAuth } from '../../context/AuthContext';
 import { GoogleMapViewer, type MapLayerMode } from '../../components/maps/GoogleMapViewer';
+import { GujaratStateMap } from '../../components/maps/GujaratStateMap';
 import {
   mapService,
   type MapLayersResponse,
@@ -14,17 +16,42 @@ import {
   Map as MapIcon,
   MapPin,
   Info,
+  Layers,
 } from 'lucide-react';
 
-type ViewMode = 'MAP' | 'TABLE';
+type GisTabMode = 'ADMIN_BOUNDARIES' | 'TELEMETRY' | 'TABLE';
 
 export const DahoMapsView: React.FC = () => {
-  const { apiBaseUrl, session } = useAuth();
+  const [searchParams] = useSearchParams();
+  const urlView = searchParams.get('view');
+  const urlTalukaId = searchParams.get('taluka_id');
+
+  const { apiBaseUrl, session, scope, profile, selectedDistrictId, assignedDistricts } = useAuth();
   const token = session?.accessToken || '';
+
+  const activeDistrictId =
+    selectedDistrictId ||
+    assignedDistricts[0]?.id ||
+    assignedDistricts[0]?.district_id ||
+    scope?.assigned_districts?.[0] ||
+    profile?.assigned_districts?.[0];
+
+  const currentDistrictObj = assignedDistricts.find(
+    (d: any) => (d.id || d.district_id) === activeDistrictId
+  ) || null;
+
+  const currentDistrictNameGu = currentDistrictObj?.name_gu || 'બોટાદ જિલ્લો';
+
+  const [gisTab, setGisTab] = useState<GisTabMode>('ADMIN_BOUNDARIES');
+  const [viewLevel, setViewLevel] = useState<'DISTRICT' | 'TALUKA' | 'VILLAGE'>(
+    urlView === 'village' ? 'VILLAGE' : 'TALUKA'
+  );
+  const [selectedTalukaId, setSelectedTalukaId] = useState<string | undefined>(
+    urlTalukaId || undefined
+  );
 
   const [layerData, setLayerData] = useState<MapLayersResponse | null>(null);
   const [activeLayer, setActiveLayer] = useState<MapLayerMode>('VACCINATION');
-  const [viewMode, setViewMode] = useState<ViewMode>('MAP');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +89,7 @@ export const DahoMapsView: React.FC = () => {
   const vaccinationLayer = useMemo(() => layerData?.vaccinationLayer || {}, [layerData?.vaccinationLayer]);
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto pb-10 animate-fade-in">
+    <div className="space-y-4 max-w-7xl mx-auto pb-10 animate-fade-in font-body">
       {/* -------------------------------------------------------------------- */}
       {/* Action / View Switcher Bar                                           */}
       {/* -------------------------------------------------------------------- */}
@@ -70,36 +97,47 @@ export const DahoMapsView: React.FC = () => {
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#135D43]" />
           <h2 className="text-sm font-bold text-[#0F172A] font-heading">
-            જિલ્લા ભૌગોલિક નકશો અને જીઓ-ડેટા (Geospatial & Map Layers)
+            {currentDistrictNameGu} ભૌગોલિક વહીવટી નકશો (District GIS Portal)
           </h2>
-          <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80">
-            DAHO_DISTRICT_SCOPE
+          <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200">
+            DAHO_SCOPE
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex bg-[#F1F5F9] p-0.5 rounded-lg border border-[#E2E8F0]">
             <button
-              onClick={() => setViewMode('MAP')}
+              onClick={() => setGisTab('ADMIN_BOUNDARIES')}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                viewMode === 'MAP'
+                gisTab === 'ADMIN_BOUNDARIES'
+                  ? 'bg-white shadow-xs text-[#135D43]'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>વહીવટી સીમા નકશો (GIS)</span>
+            </button>
+            <button
+              onClick={() => setGisTab('TELEMETRY')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                gisTab === 'TELEMETRY'
                   ? 'bg-white shadow-xs text-[#135D43]'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <MapIcon className="w-3.5 h-3.5" />
-              નકશો (Interactive GIS)
+              <span>રસીકરણ/રોગ મોનિટરિંગ</span>
             </button>
             <button
-              onClick={() => setViewMode('TABLE')}
+              onClick={() => setGisTab('TABLE')}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                viewMode === 'TABLE'
+                gisTab === 'TABLE'
                   ? 'bg-white shadow-xs text-[#135D43]'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <TableIcon className="w-3.5 h-3.5" />
-              કોષ્ટક (Table View)
+              <span>કોષ્ટક (Table)</span>
             </button>
           </div>
 
@@ -120,18 +158,31 @@ export const DahoMapsView: React.FC = () => {
       <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-[#334155] flex items-start gap-2">
         <Info className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5" />
         <div>
-          <strong>સરકારી સર્વેક્ષણ સિદ્ધાંત:</strong> જે ગામમાં કોઈ રિપોર્ટ નથી તેને ‘રોગમુક્ત’ નહીં પણ તટસ્થ ‘કોઈ રિપોર્ટ નથી / ડેટા અપૂરતો’ ગણવામાં આવે છે. રસીકરણ પ્રગતિ ચોક્કસ નોંધાયેલ ડોઝ અને કુલ પશુધન ગુણોત્તર મુજબ ગણવામાં આવે છે.
+          <strong>ગુજરાત વહીવટી પદાનુક્રમ:</strong> રાજ્ય સ્તર → તમામ ૩૩/૩૪ જિલ્લા → ૨૪૮ તાલુકા → ૧૮,૮૨૩ ગામડાં. તાલુકા વ્યુમાં સમગ્ર ગુજરાતના તમામ તાલુકા સીમાઓ સ્પષ્ટ દેખાય છે, અને વિલેજ વ્યુમાં તાલુકાના તમામ ગામોના ગુજરાતી નામો અને સીમા પોલિગોન પ્રદર્શિત થાય છે.
         </div>
       </div>
 
       {/* -------------------------------------------------------------------- */}
-      {/* Main View Area (Interactive Map or Table)                            */}
+      {/* Main View Area                                                       */}
       {/* -------------------------------------------------------------------- */}
-      {isLoading ? (
+      {gisTab === 'ADMIN_BOUNDARIES' ? (
+        <Card className="overflow-hidden border border-[#E2E8F0] shadow-xs bg-white p-0">
+          <GujaratStateMap
+            viewLevel={viewLevel}
+            onViewLevelChange={setViewLevel}
+            selectedDistrictId={activeDistrictId}
+            selectedTalukaId={selectedTalukaId}
+            onTalukaSelect={(tp) => setSelectedTalukaId(tp?.taluka_id)}
+            height="640px"
+            title={`${currentDistrictNameGu} સત્તાવાર વહીવટી સીમા નકશો`}
+            subtitle="જિલ્લા, તાલુકા અને ગામડાઓની સત્તાવાર GIS પોલિગોન સીમાઓ"
+          />
+        </Card>
+      ) : isLoading ? (
         <StateView state="loading" message="જિલ્લા જીઓસ્પેશિયલ નકશો લોડ થઈ રહ્યો છે..." />
       ) : error ? (
         <StateView state="error" message={error} onRetry={loadLayers} />
-      ) : viewMode === 'MAP' ? (
+      ) : gisTab === 'TELEMETRY' ? (
         <GoogleMapViewer
           mappedVillages={mappedVillages}
           unmappedVillages={unmappedVillages}
@@ -140,7 +191,7 @@ export const DahoMapsView: React.FC = () => {
           activeLayer={activeLayer}
           onLayerChange={setActiveLayer}
           roleScope="DAHO"
-          title="બોટાદ જિલ્લો ભૌગોલિક પોર્ટલ (DAHO District GIS)"
+          title={`${currentDistrictNameGu} ભૌગોલિક પોર્ટલ (DAHO District GIS)`}
           subtitle="જિલ્લાના તમામ તાલુકા અને ગામડાઓમાં રસીકરણ સિદ્ધિ દર અને રોગ સર્વેક્ષણ જીઓ-મોનિટરિંગ."
         />
       ) : (

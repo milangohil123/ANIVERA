@@ -6,17 +6,21 @@ import { Button } from './Button';
 export type StateKind = 'loading' | 'empty' | 'error' | 'access-denied' | 'not-yet-available';
 
 export interface StateViewProps {
-  state: StateKind;
+  state?: StateKind;
+  type?: StateKind;
   title?: string;
   message?: string;
+  description?: string;
   onRetry?: () => void;
   className?: string;
 }
 
 export const StateView: React.FC<StateViewProps> = ({
   state,
+  type,
   title,
   message,
+  description,
   onRetry,
   className = '',
 }) => {
@@ -56,7 +60,8 @@ export const StateView: React.FC<StateViewProps> = ({
     },
   };
 
-  const current = configs[state];
+  const resolvedKind = (state || type || 'empty') as StateKind;
+  const current = configs[resolvedKind] || configs.empty;
 
   return (
     <div
@@ -67,7 +72,7 @@ export const StateView: React.FC<StateViewProps> = ({
         {title || current.defaultTitle}
       </h3>
       <p className="text-xs text-[#64748B] mb-5 leading-relaxed max-w-sm mx-auto">
-        {message || current.defaultMessage}
+        {message || description || current.defaultMessage}
       </p>
       {onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry} leftIcon={<RotateCcw className="w-3.5 h-3.5" />}>

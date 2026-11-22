@@ -57,6 +57,7 @@ describe('GIS Administrative Boundaries & Geographic Quality Audit', () => {
           districtsContextLine: 'none', // District boundaries completely removed in Taluka view
           talukasFill: 'visible',
           talukasBorders: 'visible',
+          talukasLabels: 'visible', // Clear readable centered taluka labels
           talukasContextLine: 'none',
           villagesFill: 'none',
           villagesBorders: 'none',
@@ -101,11 +102,11 @@ describe('GIS Administrative Boundaries & Geographic Quality Audit', () => {
     const palette = {
       districtAssigned: '#135D43',
       districtUnassigned: '#94A3B8',
-      districtSelected: '#ebedf0ff',
-      talukaFill: '#000000ff',
-      talukaBorder: '#1f2021ff',
-      talukaSelectedFill: '#0a0b0bff',
-      talukaSelectedBorder: '#000000ff',
+      districtSelected: '#2563EB',
+      talukaFill: '#0EA5E9',
+      talukaBorder: '#1F2937',
+      talukaSelectedFill: '#38BDF8',
+      talukaSelectedBorder: '#2563EB',
       villageFill: '#6EE7B7',
       villageBorder: '#047857',
       villageSelectedFill: '#F59E0B',

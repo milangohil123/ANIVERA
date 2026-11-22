@@ -18,6 +18,8 @@ from app.modules.reports.endpoints import router as reports_router
 from app.modules.maps.endpoints import router as maps_router
 from app.modules.duty.endpoints import router as duty_router
 from app.modules.translation.endpoints import router as translation_router
+from app.modules.administration.cooperative_portal_endpoints import router as coop_portal_router
+from app.modules.health_cases.endpoints import router as health_cases_router
 
 api_router = APIRouter()
 
@@ -75,6 +77,12 @@ api_router.include_router(duty_router, prefix="/duty", tags=["Duty & Smart Locat
 
 # Include dynamic content translation endpoint under /translation
 api_router.include_router(translation_router, prefix="/translation", tags=["Dynamic Translation"])
+
+# Include Dairy Cooperative Portal endpoints under /cooperative
+api_router.include_router(coop_portal_router, prefix="/cooperative", tags=["Dairy Cooperative Portal"])
+
+# Include Connected Animal Health, TAHO Assignment, Treatment & Recurring Schedules under /health-cases
+api_router.include_router(health_cases_router, tags=["Connected Health & Recurring Vaccination Workflows"])
 
 
 

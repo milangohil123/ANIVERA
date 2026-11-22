@@ -42,8 +42,20 @@ from app.modules.administration.schemas import (
     VillageResponse,
     VillageUpdate,
 )
+from app.modules.authorization.service import AuthorizationService
+from app.modules.administration.cooperative_schemas import (
+    CooperativeDetailResponse,
+    CooperativeMemberItem,
+    CooperativeMemberLinkRequest,
+    CooperativeRegisterRequest,
+    CooperativeStatusRequest,
+    CooperativeSummaryItem,
+    CooperativeUpdateRequest,
+)
+from app.modules.administration.daho_cooperative_service import DahoCooperativeService
 from app.modules.administration.service import AdministrationService
 from app.modules.administration.super_admin_service import SuperAdminService
+from app.modules.administration.taho_service import TahoService
 from app.modules.administration.super_admin_schemas import (
     AssignmentActionResponse,
     CustomJurisdictionCreateRequest,
@@ -53,11 +65,16 @@ from app.modules.administration.super_admin_schemas import (
     DistrictHierarchyResponse,
     DistrictReassignRequest,
     DistrictReleaseRequest,
+    EmailLogsListResponse,
     GeodataCommitRequest,
     GeodataImportResult,
     GeodataValidationReport,
     SuperAdminOverviewResponse,
     GeographicQualityAuditResponse,
+    TahoAccountCreateRequest,
+    TahoAccountResponse,
+    TalukaAssignTahoRequest,
+    TalukaReleaseTahoRequest,
 )
 
 router = APIRouter(prefix="", tags=["Administrative Management"])
@@ -674,5 +691,700 @@ async def seed_official_district_hierarchy(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
     service = SuperAdminService(db)
     return await service.seed_official_district_hierarchy(district_id, current_user, _extract_ip(request))
+
+
+# ==============================================================================
+# 9. Email Delivery Logs Endpoints
+# ==============================================================================
+@router.get("/super-admin/email-logs", response_model=EmailLogsListResponse, summary="Retrieve outbound SMTP email delivery audit logs")
+async def get_email_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> EmailLogsListResponse:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    res = await service.get_email_logs(limit, offset)
+    return EmailLogsListResponse(**res)
+
+
+@router.post("/super-admin/email-logs/{log_id}/retry", summary="Retry sending a failed or pending activation email")
+async def retry_email_log(
+    log_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.retry_email_log(log_id)
+
+
+# ==============================================================================
+# 10. DAHO Multi-District Jurisdiction & Taluka/TAHO Management Endpoints
+# ==============================================================================
+@router.get("/daho/assigned-districts", summary="Retrieve all active districts assigned to caller DAHO")
+async def get_daho_assigned_districts(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or State Administrators.")
+
+    auth_svc = AuthorizationService(db)
+    scope = await auth_svc.get_user_scope(current_user)
+    from app.models.geography import District
+    from sqlalchemy import select
+
+    if current_user.role in ("SUPER_ADMIN", "SYS_ADMIN"):
+        stmt = select(District).where(District.active == True).order_by(District.name_en)
+    else:
+        stmt = select(District).where(District.id.in_(scope.assigned_district_ids), District.active == True).order_by(District.name_en)
+
+    districts = list((await db.execute(stmt)).scalars().all())
+    return [
+        {
+            "id": str(d.id),
+            "district_id": str(d.id),
+            "code": d.code,
+            "name_en": d.name_en,
+            "name_gu": d.name_gu
+        }
+        for d in districts
+    ]
+
+
+@router.get("/daho/district-overview", summary="Retrieve real calculated database KPIs for a district")
+async def get_daho_district_overview(
+    district_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_district_overview(district_id)
+
+
+@router.get("/daho/talukas", summary="Retrieve all talukas in district with active TAHO details")
+async def get_daho_talukas(
+    district_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_talukas(district_id)
+
+
+@router.get("/daho/taho-search", summary="Search available TAHO accounts by name, email, or mobile")
+async def search_taho_accounts(
+    q: Optional[str] = Query(None),
+    district_id: Optional[uuid.UUID] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    service = SuperAdminService(db)
+    return await service.search_taho_accounts(q, district_id)
+
+
+@router.post("/daho/taho-accounts", response_model=TahoAccountResponse, summary="Create a new TAHO account with real activation email")
+async def create_taho_account(
+    payload: TahoAccountCreateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only DAHO and Super Admin can create TAHO accounts.")
+
+    # If taluka_id provided and caller is DAHO, ensure taluka is within caller's district
+    if payload.taluka_id and current_user.role == "DAHO":
+        auth_svc = AuthorizationService(db)
+        await auth_svc.assert_taluka_scope(current_user, payload.taluka_id)
+
+    service = SuperAdminService(db)
+    res = await service.create_taho_account(payload.model_dump(), current_user, _extract_ip(request))
+    return TahoAccountResponse(**res)
+
+
+@router.post("/daho/talukas/{taluka_id}/assign-taho", summary="Assign or reassign a TAHO officer to a Taluka")
+async def assign_taho_to_taluka(
+    taluka_id: uuid.UUID,
+    payload: TalukaAssignTahoRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_taluka_scope(current_user, taluka_id)
+
+    service = SuperAdminService(db)
+    return await service.assign_taho_to_taluka(
+        taluka_id=taluka_id,
+        taho_user_id=payload.taho_user_id,
+        reason=payload.reason or "Administrative Assignment",
+        actor_user=current_user,
+        client_ip=_extract_ip(request)
+    )
+
+
+@router.post("/daho/talukas/{taluka_id}/release-taho", summary="Release currently assigned TAHO officer from a Taluka")
+async def release_taho_from_taluka(
+    taluka_id: uuid.UUID,
+    payload: TalukaReleaseTahoRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_taluka_scope(current_user, taluka_id)
+
+    service = SuperAdminService(db)
+    return await service.release_taho_from_taluka(
+        taluka_id=taluka_id,
+        reason=payload.reason,
+        actor_user=current_user,
+        client_ip=_extract_ip(request)
+    )
+
+
+@router.get("/daho/animals", summary="Retrieve district-scoped animal records with owner and vaccination count")
+async def get_daho_animals(
+    district_id: uuid.UUID = Query(...),
+    search: Optional[str] = Query(None),
+    species: Optional[str] = Query(None),
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_animals(
+        district_id=district_id,
+        search=search,
+        species=species,
+        taluka_id=taluka_id,
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/daho/farmers", summary="Retrieve district-scoped farmer records with registered animals")
+async def get_daho_farmers(
+    district_id: uuid.UUID = Query(...),
+    search: Optional[str] = Query(None),
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_farmers(
+        district_id=district_id,
+        search=search,
+        taluka_id=taluka_id,
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/daho/disease-alerts", summary="Retrieve early warning cluster signals and active disease alerts for district")
+async def get_daho_disease_alerts(
+    district_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_disease_alerts(district_id=district_id)
+
+
+@router.get("/daho/gis-quality", summary="Perform GIS completeness audit for villages within district")
+async def get_daho_gis_quality(
+    district_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_gis_quality(district_id=district_id)
+
+
+@router.get("/daho/vaccination-records", summary="Retrieve district-scoped animal vaccination telemetry")
+async def get_daho_vaccination_records(
+    district_id: uuid.UUID = Query(...),
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    auth_svc = AuthorizationService(db)
+    await auth_svc.assert_district_scope(current_user, district_id)
+
+    service = SuperAdminService(db)
+    return await service.get_daho_vaccination_records(
+        district_id=district_id,
+        taluka_id=taluka_id,
+        page=page,
+        page_size=page_size
+    )
+
+
+# ==============================================================================
+# 11. TAHO Operational & Administration Suite Endpoints
+# ==============================================================================
+@router.get("/taho/overview", summary="Retrieve assigned Taluka KPIs, multi-dimensional charts, and actionable insights")
+async def get_taho_overview(
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.get_taho_overview(current_user, taluka_id)
+
+
+@router.get("/taho/hierarchy", summary="Retrieve assigned Taluka GeoJSON boundaries and villages with analytics")
+async def get_taho_hierarchy(
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.get_taho_hierarchy(current_user, taluka_id)
+
+
+@router.get("/taho/village-analytics", summary="Retrieve in-depth analytics for a clicked village on the Taluka GIS map")
+async def get_taho_village_analytics(
+    village_id: uuid.UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.get_village_analytics(current_user, village_id)
+
+
+@router.get("/taho/gis-analytics", summary="Retrieve filter-based GIS analytics, layer color assignments, legend and charts")
+async def get_taho_gis_analytics(
+    layer_mode: str = Query("coverage", description="Layer visualization mode: coverage, disease, pending, campaign, population, risk"),
+    village_id: Optional[uuid.UUID] = Query(None),
+    vaccine_code: Optional[str] = Query(None),
+    disease_code: Optional[str] = Query(None),
+    campaign_id: Optional[uuid.UUID] = Query(None),
+    species_code: Optional[str] = Query(None),
+    vaccination_status: Optional[str] = Query(None),
+    disease_status: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    vo_id: Optional[uuid.UUID] = Query(None),
+    fw_id: Optional[uuid.UUID] = Query(None),
+    coverage_range: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.get_gis_analytics(
+        taho_user=current_user,
+        layer_mode=layer_mode,
+        village_id=village_id,
+        vaccine_code=vaccine_code,
+        disease_code=disease_code,
+        campaign_id=campaign_id,
+        species_code=species_code,
+        vaccination_status=vaccination_status,
+        disease_status=disease_status,
+        start_date=start_date,
+        end_date=end_date,
+        vo_id=vo_id,
+        fw_id=fw_id,
+        coverage_range=coverage_range
+    )
+
+
+@router.get("/taho/veterinary-officers", summary="List Veterinary Officers operating in this Taluka")
+async def list_taho_vos(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_vos(current_user)
+
+
+@router.post("/taho/veterinary-officers", status_code=status.HTTP_201_CREATED, summary="Create new VO account with email activation")
+async def create_taho_vo(
+    payload: Dict[str, Any],
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.create_vo(current_user, payload, _extract_ip(request))
+
+
+@router.patch("/taho/veterinary-officers/{vo_id}/status", summary="Activate or deactivate a Veterinary Officer")
+async def update_taho_vo_status(
+    vo_id: uuid.UUID,
+    payload: StaffStatusUpdate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.update_vo_status(current_user, vo_id, payload.status, payload.reason, _extract_ip(request))
+
+
+@router.get("/taho/field-workers", summary="List Field Workers operating in this Taluka")
+async def list_taho_fws(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_fws(current_user)
+
+
+@router.post("/taho/field-workers", status_code=status.HTTP_201_CREATED, summary="Create new Field Worker account with location-based assignment and email activation")
+async def create_taho_fw(
+    payload: Dict[str, Any],
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.create_fw(current_user, payload, _extract_ip(request))
+
+
+@router.patch("/taho/field-workers/{fw_id}/status", summary="Activate or deactivate a Field Worker")
+async def update_taho_fw_status(
+    fw_id: uuid.UUID,
+    payload: StaffStatusUpdate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.update_fw_status(current_user, fw_id, payload.status, payload.reason, _extract_ip(request))
+
+
+@router.get("/taho/campaigns", summary="List vaccination campaigns active in this Taluka")
+async def list_taho_campaigns(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_campaigns(current_user)
+
+
+@router.post("/taho/campaigns", status_code=status.HTTP_201_CREATED, summary="Create new Taluka-level campaign with target villages")
+async def create_taho_campaign(
+    payload: Dict[str, Any],
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.create_campaign(current_user, payload, _extract_ip(request))
+
+
+@router.get("/taho/vaccinations", summary="Retrieve Taluka-scoped vaccination telemetry")
+async def list_taho_vaccinations(
+    village_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_vaccinations(current_user, village_id=village_id, page=page, page_size=page_size)
+
+
+@router.get("/taho/animals", summary="Retrieve Taluka-scoped animal records with owner details")
+async def list_taho_animals(
+    search: Optional[str] = Query(None),
+    species: Optional[str] = Query(None),
+    village_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_animals(current_user, search=search, species=species, village_id=village_id, page=page, page_size=page_size)
+
+
+@router.get("/taho/farmers", summary="Retrieve Taluka-scoped farmer directory with animal counts")
+async def list_taho_farmers(
+    search: Optional[str] = Query(None),
+    village_id: Optional[uuid.UUID] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_farmers(current_user, search=search, village_id=village_id, page=page, page_size=page_size)
+
+
+@router.get("/taho/surveillance", summary="Retrieve Taluka-scoped disease surveillance reports")
+async def list_taho_surveillance(
+    village_id: Optional[uuid.UUID] = Query(None),
+    disease_code: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_surveillance(current_user, village_id=village_id, disease_code=disease_code, status=status)
+
+
+@router.get("/taho/disease-alerts", summary="Retrieve Taluka disease cluster and surge signals")
+async def list_taho_disease_alerts(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.list_disease_alerts(current_user)
+
+
+@router.post("/taho/demo/seed", summary="Seed 2 interconnected demonstration records per module (Requirement 19)")
+async def seed_taho_demo(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO or Admin.")
+    service = TahoService(db)
+    return await service.seed_demo_data(current_user, _extract_ip(request))
+
+
+@router.post("/taho/demo/reset", summary="Cleanly remove demonstration records from Taluka")
+async def reset_taho_demo(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO or Admin.")
+    service = TahoService(db)
+    return await service.reset_demo_data(current_user, _extract_ip(request))
+
+
+# ==============================================================================
+# 9. DAHO Dairy Cooperative Management Endpoints
+# ==============================================================================
+@router.get("/daho/cooperatives", response_model=List[CooperativeSummaryItem], summary="DAHO: List cooperatives in assigned district")
+async def list_daho_cooperatives(
+    district_id: Optional[uuid.UUID] = Query(None),
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    village_id: Optional[uuid.UUID] = Query(None),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.list_cooperatives(
+        current_user=current_user,
+        district_id=district_id,
+        taluka_id=taluka_id,
+        village_id=village_id,
+        status_filter=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/daho/cooperatives", response_model=CooperativeDetailResponse, status_code=status.HTTP_201_CREATED, summary="DAHO: Create cooperative and provision account")
+async def create_daho_cooperative(
+    payload: CooperativeRegisterRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.create_cooperative(current_user, payload, _extract_ip(request))
+
+
+@router.get("/daho/cooperatives/{coop_id}", response_model=CooperativeDetailResponse, summary="DAHO: Get single cooperative details")
+async def get_daho_cooperative(
+    coop_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.get_cooperative(current_user, coop_id)
+
+
+@router.put("/daho/cooperatives/{coop_id}", response_model=CooperativeDetailResponse, summary="DAHO: Update cooperative profile")
+async def update_daho_cooperative(
+    coop_id: uuid.UUID,
+    payload: CooperativeUpdateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.update_cooperative(current_user, coop_id, payload, _extract_ip(request))
+
+
+@router.patch("/daho/cooperatives/{coop_id}/status", response_model=CooperativeDetailResponse, summary="DAHO: Activate or deactivate cooperative")
+async def set_daho_cooperative_status(
+    coop_id: uuid.UUID,
+    payload: CooperativeStatusRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.set_cooperative_status(current_user, coop_id, payload, _extract_ip(request))
+
+
+@router.post("/daho/cooperatives/{coop_id}/resend-email", summary="DAHO: Resend onboarding credentials email")
+async def resend_daho_cooperative_email(
+    coop_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.resend_onboarding_email(current_user, coop_id, _extract_ip(request))
+
+
+@router.get("/daho/cooperatives/{coop_id}/members", response_model=List[CooperativeMemberItem], summary="DAHO: List cooperative member farmers")
+async def list_daho_cooperative_members(
+    coop_id: uuid.UUID,
+    search: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.list_cooperative_members(current_user, coop_id, search=search, limit=limit, offset=offset)
+
+
+@router.post("/daho/cooperatives/{coop_id}/members", response_model=CooperativeMemberItem, summary="DAHO: Link farmer to cooperative")
+async def link_daho_cooperative_member(
+    coop_id: uuid.UUID,
+    payload: CooperativeMemberLinkRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.link_farmer(current_user, coop_id, payload, _extract_ip(request))
+
+
+@router.delete("/daho/cooperatives/{coop_id}/members/{farmer_id}", summary="DAHO: Unlink farmer from cooperative")
+async def unlink_daho_cooperative_member(
+    coop_id: uuid.UUID,
+    farmer_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.unlink_farmer(current_user, coop_id, farmer_id, _extract_ip(request))
+
+
+@router.post("/daho/cooperatives/seed-demo", summary="DAHO: Seed 2 demo cooperatives with members")
+async def seed_daho_demo_cooperatives(
+    district_id: uuid.UUID = Query(..., description="Target district ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.seed_demo_data(current_user, district_id)
+
+
+@router.post("/daho/cooperatives/reset-demo", summary="DAHO: Reset and clean demo cooperatives")
+async def reset_daho_demo_cooperatives(
+    district_id: uuid.UUID = Query(..., description="Target district ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    if current_user.role not in ("DAHO", "SUPER_ADMIN", "SYS_ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
+    service = DahoCooperativeService(db)
+    return await service.reset_demo_data(current_user, district_id)
+
+
 
 

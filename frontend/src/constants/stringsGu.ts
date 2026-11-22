@@ -29,6 +29,7 @@ export const STRINGS_GU = {
       get daho() {
         return {
           get overview() { return tStandalone('nav.daho.overview'); },
+          get cooperatives() { return tStandalone('nav.daho.cooperatives') || 'ડેરી સહકારી મંડળીઓ'; },
           get masterData() { return tStandalone('nav.daho.masterData'); },
           get staff() { return tStandalone('nav.daho.staff'); },
           get campaigns() { return tStandalone('nav.daho.campaigns'); },
@@ -44,6 +45,9 @@ export const STRINGS_GU = {
       get vo() {
         return {
           get overview() { return tStandalone('nav.vo.overview'); },
+          get villages() { return tStandalone('nav.vo.villages') || 'ગામ મોનિટરિંગ'; },
+          get staff() { return tStandalone('nav.vo.staff') || 'ક્ષેત્રીય સ્ટાફ સંચાલન'; },
+          get farmers() { return tStandalone('nav.vo.farmers') || 'પશુપાલક ડિરેક્ટરી'; },
           get surveillanceReviews() { return tStandalone('nav.vo.surveillanceReviews'); },
           get animals() { return tStandalone('nav.vo.animals'); },
           get vaccinations() { return tStandalone('nav.vo.vaccinations'); },
@@ -51,7 +55,7 @@ export const STRINGS_GU = {
           get camps() { return tStandalone('nav.vo.camps'); },
           get inventory() { return tStandalone('nav.vo.inventory'); },
           get reports() { return tStandalone('nav.vo.reports'); },
-          get maps() { return tStandalone('nav.vo.maps'); },
+          get maps() { return tStandalone('nav.vo.maps') || 'GIS નકશો'; },
           get sync() { return tStandalone('nav.vo.sync'); },
           get notifications() { return tStandalone('nav.vo.notifications'); },
           get profile() { return tStandalone('nav.vo.profile'); },
@@ -60,13 +64,15 @@ export const STRINGS_GU = {
       get fw() {
         return {
           get home() { return tStandalone('nav.fw.home'); },
+          get villages() { return tStandalone('nav.fw.villages') || 'સોંપાયેલ ગામો'; },
           get farmers() { return tStandalone('nav.fw.farmers'); },
           get animals() { return tStandalone('nav.fw.animals'); },
           get scan() { return tStandalone('nav.fw.scan'); },
           get vaccinations() { return tStandalone('nav.fw.vaccinations'); },
           get newReport() { return tStandalone('nav.fw.newReport'); },
           get pending() { return tStandalone('nav.fw.pending'); },
-          get maps() { return tStandalone('nav.fw.maps'); },
+          get maps() { return tStandalone('nav.fw.maps') || 'GIS નકશો'; },
+          get reports() { return tStandalone('nav.fw.reports') || 'કામગીરી અહેવાલો'; },
           get sync() { return tStandalone('nav.fw.sync'); },
           get notifications() { return tStandalone('nav.fw.notifications'); },
           get profile() { return tStandalone('nav.fw.profile'); },
@@ -83,12 +89,18 @@ export const STRINGS_GU = {
       },
       get coop() {
         return {
-          get overview() { return tStandalone('nav.coop.overview'); },
-          get villageProgress() { return tStandalone('nav.coop.villageProgress'); },
-          get camps() { return tStandalone('nav.coop.camps'); },
-          get reports() { return tStandalone('nav.coop.reports'); },
-          get notifications() { return tStandalone('nav.coop.notifications'); },
-          get profile() { return tStandalone('nav.coop.profile'); },
+          get overview() { return tStandalone('nav.coop.overview') || 'ડેરી ઝાંખી'; },
+          get maps() { return tStandalone('nav.coop.maps') || 'GIS નકશો'; },
+          get farmers() { return tStandalone('nav.coop.farmers') || 'સભાસદ પશુપાલકો'; },
+          get animals() { return tStandalone('nav.coop.animals') || 'સંલગ્ન પશુધન'; },
+          get vaccinations() { return tStandalone('nav.coop.vaccinations') || 'રસીકરણ સ્થિતિ'; },
+          get campaigns() { return tStandalone('nav.coop.campaigns') || 'ઝુંબેશ મોનિટરિંગ'; },
+          get villageProgress() { return tStandalone('nav.coop.villageProgress') || 'ગામવાર પ્રગતિ'; },
+          get camps() { return tStandalone('nav.coop.camps') || 'કેમ્પ સંકલન'; },
+          get surveillance() { return tStandalone('nav.coop.surveillance') || 'રોગ દેખરેખ'; },
+          get reports() { return tStandalone('nav.coop.reports') || 'અહેવાલો'; },
+          get notifications() { return tStandalone('nav.coop.notifications') || 'સૂચનાઓ'; },
+          get profile() { return tStandalone('nav.coop.profile') || 'પ્રોફાઇલ'; },
         };
       },
       get admin() {

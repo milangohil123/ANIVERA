@@ -10,6 +10,7 @@ import { LandingPage } from './views/LandingPage';
 // Role Layouts
 import {
   DahoLayoutWrapper,
+  TahoLayoutWrapper,
   VoLayoutWrapper,
   FwLayoutWrapper,
   FarmerLayoutWrapper,
@@ -18,7 +19,19 @@ import {
 } from './layouts/RoleLayoutWrappers';
 
 // Views
+import { DahoDistrictSelectorView } from './views/daho/DahoDistrictSelectorView';
+import { TahoDashboard } from './views/taho/TahoDashboard';
+import { TahoMapsView } from './views/taho/TahoMapsView';
+import { TahoStaffView } from './views/taho/TahoStaffView';
+import { TahoCampaignsView } from './views/taho/TahoCampaignsView';
+import { TahoVaccinationsView } from './views/taho/TahoVaccinationsView';
+import { TahoAnimalsView } from './views/taho/TahoAnimalsView';
+import { TahoFarmersView } from './views/taho/TahoFarmersView';
+import { TahoSurveillanceView } from './views/taho/TahoSurveillanceView';
+import { TahoReportsView } from './views/taho/TahoReportsView';
+import { TahoProfileView } from './views/taho/TahoProfileView';
 import { DahoDashboard } from './views/daho/DahoDashboard';
+import { DahoCooperativesView } from './views/daho/DahoCooperativesView';
 import { DahoMasterDataView } from './views/daho/DahoMasterDataView';
 import { DahoStaffView } from './views/daho/DahoStaffView';
 import { DahoCampaignsView } from './views/daho/DahoCampaignsView';
@@ -39,18 +52,30 @@ import { VoSyncView } from './views/vo/VoSyncView';
 import { VoProfileView } from './views/vo/VoProfileView';
 import { VoReportsView } from './views/vo/VoReportsView';
 import { VoMapsView } from './views/vo/VoMapsView';
+import { VoFarmersView } from './views/vo/VoFarmersView';
+import { VoStaffView } from './views/vo/VoStaffView';
+import { VoVillagesView } from './views/vo/VoVillagesView';
 import { FwDashboard } from './views/fw/FwDashboard';
+import { FwVillagesView } from './views/fw/FwVillagesView';
 import { FwFarmersView } from './views/fw/FwFarmersView';
 import { FwAnimalsView } from './views/fw/FwAnimalsView';
 import { FwScanView } from './views/fw/FwScanView';
 import { FwVaccinationsView } from './views/fw/FwVaccinationsView';
+import { FwReportsView } from './views/fw/FwReportsView';
 import { FwProfileView } from './views/fw/FwProfileView';
 import { FarmerDashboard } from './views/farmer/FarmerDashboard';
 import { FarmerAnimalsView } from './views/farmer/FarmerAnimalsView';
 import { FarmerProfileView } from './views/farmer/FarmerProfileView';
 import { CoopDashboard } from './views/coop/CoopDashboard';
+import { CoopFarmersView } from './views/coop/CoopFarmersView';
+import { CoopAnimalsView } from './views/coop/CoopAnimalsView';
+import { CoopVaccinationsView } from './views/coop/CoopVaccinationsView';
+import { CoopCampaignsView } from './views/coop/CoopCampaignsView';
+import { CoopSurveillanceView } from './views/coop/CoopSurveillanceView';
 import { CoopVillageProgressView } from './views/coop/CoopVillageProgressView';
+import { CoopMapsView } from './views/coop/CoopMapsView';
 import { CoopCampsView } from './views/coop/CoopCampsView';
+import { CoopReportsView } from './views/coop/CoopReportsView';
 import { CoopProfileView } from './views/coop/CoopProfileView';
 import { AdminDashboard } from './views/admin/AdminDashboard';
 import { AdminStateMapView } from './views/admin/AdminStateMapView';
@@ -64,13 +89,11 @@ import { AdminDevicesView } from './views/admin/AdminDevicesView';
 import { AdminAuditLogsView } from './views/admin/AdminAuditLogsView';
 import { AdminSystemHealthView } from './views/admin/AdminSystemHealthView';
 import { AdminProfileView } from './views/admin/AdminProfileView';
-import { CommonNotAvailableView } from './views/CommonNotAvailableView';
 import { FwDiseaseReportView } from './views/fw/FwDiseaseReportView';
 import { FwAttachmentView } from './views/fw/FwAttachmentView';
 import { FwPendingView } from './views/fw/FwPendingView';
 import { FwSyncView } from './views/fw/FwSyncView';
 import { NotificationsView } from './views/notifications/NotificationsView';
-import { STRINGS_GU } from './constants/stringsGu';
 
 const RootRedirect: React.FC = () => {
   const { isAuthenticated, rolePrefix, isLoading } = useAuth();
@@ -90,6 +113,16 @@ export const AppRoutes: React.FC = () => {
       {/* Root Dynamic Redirect */}
       <Route path="/" element={<RootRedirect />} />
 
+      {/* DAHO District Selection Screen (Multi-District Jurisdiction) */}
+      <Route
+        path="/daho/select-district"
+        element={
+          <ProtectedRoute allowedRoles={['DAHO', 'SYS_ADMIN']}>
+            <DahoDistrictSelectorView />
+          </ProtectedRoute>
+        }
+      />
+
       {/* DAHO Protected Tree */}
       <Route
         path="/daho"
@@ -101,6 +134,7 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/daho/overview" replace />} />
         <Route path="overview" element={<DahoDashboard />} />
+        <Route path="cooperatives" element={<DahoCooperativesView />} />
         <Route path="master-data" element={<DahoMasterDataView />} />
         <Route path="staff" element={<DahoStaffView />} />
         <Route path="campaigns" element={<DahoCampaignsView />} />
@@ -114,6 +148,29 @@ export const AppRoutes: React.FC = () => {
         <Route path="profile" element={<DahoProfileView />} />
       </Route>
 
+      {/* TAHO Protected Tree */}
+      <Route
+        path="/taho"
+        element={
+          <ProtectedRoute allowedRoles={['TAHO']}>
+            <TahoLayoutWrapper />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/taho/overview" replace />} />
+        <Route path="overview" element={<TahoDashboard />} />
+        <Route path="maps" element={<TahoMapsView />} />
+        <Route path="map" element={<Navigate to="/taho/maps" replace />} />
+        <Route path="staff" element={<TahoStaffView />} />
+        <Route path="campaigns" element={<TahoCampaignsView />} />
+        <Route path="vaccinations" element={<TahoVaccinationsView />} />
+        <Route path="animals" element={<TahoAnimalsView />} />
+        <Route path="farmers" element={<TahoFarmersView />} />
+        <Route path="surveillance" element={<TahoSurveillanceView />} />
+        <Route path="reports" element={<TahoReportsView />} />
+        <Route path="profile" element={<TahoProfileView />} />
+      </Route>
+
       {/* VO Protected Tree */}
       <Route
         path="/vo"
@@ -125,6 +182,9 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/vo/overview" replace />} />
         <Route path="overview" element={<VoDashboard />} />
+        <Route path="villages" element={<VoVillagesView />} />
+        <Route path="staff" element={<VoStaffView />} />
+        <Route path="farmers" element={<VoFarmersView />} />
         <Route path="surveillance-reviews" element={<VoDiseaseInboxView />} />
         <Route path="animals" element={<VoAnimalsView />} />
         <Route path="vaccinations" element={<VoVaccinationsView />} />
@@ -150,9 +210,11 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/fw/home" replace />} />
         <Route path="home" element={<FwDashboard />} />
+        <Route path="villages" element={<FwVillagesView />} />
         <Route path="farmers" element={<FwFarmersView />} />
         <Route path="animals" element={<FwAnimalsView />} />
         <Route path="scan" element={<FwScanView />} />
+        <Route path="reports" element={<FwReportsView />} />
         <Route path="reports/new" element={<FwDiseaseReportView />} />
         <Route path="reports/attachments" element={<FwAttachmentView />} />
         <Route path="vaccinations" element={<FwVaccinationsView />} />
@@ -191,11 +253,16 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/coop/overview" replace />} />
         <Route path="overview" element={<CoopDashboard />} />
+        <Route path="farmers" element={<CoopFarmersView />} />
+        <Route path="animals" element={<CoopAnimalsView />} />
+        <Route path="vaccinations" element={<CoopVaccinationsView />} />
+        <Route path="campaigns" element={<CoopCampaignsView />} />
         <Route path="village-progress" element={<CoopVillageProgressView />} />
-        <Route path="maps" element={<VoMapsView />} />
+        <Route path="maps" element={<CoopMapsView />} />
         <Route path="map" element={<Navigate to="/coop/maps" replace />} />
         <Route path="camps" element={<CoopCampsView />} />
-        <Route path="reports" element={<CommonNotAvailableView title={STRINGS_GU.nav.coop.reports} />} />
+        <Route path="surveillance" element={<CoopSurveillanceView />} />
+        <Route path="reports" element={<CoopReportsView />} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<CoopProfileView />} />
       </Route>

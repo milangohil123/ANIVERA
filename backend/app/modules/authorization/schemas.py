@@ -13,6 +13,7 @@ class UserScope(BaseModel):
     status: str
     permissions: Set[str] = Field(default_factory=set)
     assigned_district_ids: Set[uuid.UUID] = Field(default_factory=set)
+    assigned_taluka_ids: Set[uuid.UUID] = Field(default_factory=set)
     assigned_village_ids: Set[uuid.UUID] = Field(default_factory=set)
     linked_farmer_ids: Set[uuid.UUID] = Field(default_factory=set)
     assigned_cooperative_ids: Set[uuid.UUID] = Field(default_factory=set)
@@ -38,14 +39,34 @@ class UserScope(BaseModel):
             return district_id in self.assigned_district_ids
         return False
 
+    def can_access_taluka(
+        self,
+        taluka_id: uuid.UUID,
+        taluka_district_id: Optional[uuid.UUID] = None
+    ) -> bool:
+        """Check if user is authorized for the given taluka.
+        
+        - TAHO: Requires active assignment in taho_taluka_assignments.
+        - DAHO: Permitted if the taluka belongs to one of their assigned districts.
+        """
+        if self.role == "TAHO":
+            return taluka_id in self.assigned_taluka_ids
+        if self.role == "DAHO":
+            if taluka_district_id:
+                return taluka_district_id in self.assigned_district_ids
+            return True
+        return False
+
     def can_access_village(
         self,
         village_id: uuid.UUID,
-        village_district_id: Optional[uuid.UUID] = None
+        village_district_id: Optional[uuid.UUID] = None,
+        village_taluka_id: Optional[uuid.UUID] = None
     ) -> bool:
         """Check if user is authorized for the given village.
         
         - VET_OFFICER / VO & FIELD_WORKER / FW: Assigned via user_village_assignments or district scope.
+        - TAHO: Permitted if the village belongs to their assigned taluka.
         - DAHO: Permitted if the village belongs to their assigned district.
         - DAIRY_STAFF: Permitted if the village is served by their assigned cooperative.
         - FARMER: Restricted to own identity and registered village.
@@ -54,6 +75,11 @@ class UserScope(BaseModel):
         if self.role in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO"):
             return village_id in self.assigned_village_ids
         
+        if self.role == "TAHO":
+            if village_taluka_id:
+                return village_taluka_id in self.assigned_taluka_ids
+            return True
+
         if self.role == "DAHO":
             if village_district_id:
                 return village_district_id in self.assigned_district_ids
@@ -82,6 +108,7 @@ class UserScopeResponse(BaseModel):
     status: str
     permissions: List[str]
     assigned_districts: List[uuid.UUID]
+    assigned_talukas: List[uuid.UUID] = Field(default_factory=list)
     assigned_villages: List[uuid.UUID]
     linked_farmers: List[uuid.UUID]
     assigned_cooperatives: List[uuid.UUID]

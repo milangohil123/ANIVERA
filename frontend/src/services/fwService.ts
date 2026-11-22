@@ -743,5 +743,45 @@ export const fwService = {
     );
     return { eventId, isOffline: true };
   },
+
+  async listMyDiseaseReports(apiBaseUrl: string): Promise<any[]> {
+    try {
+      const res = await authFetch(apiBaseUrl, `/api/v1/disease-reports?limit=100`);
+      if (res.ok) {
+        return res.json();
+      }
+    } catch (e) {
+      console.warn('Failed to fetch disease reports from server:', e);
+    }
+    return [];
+  },
+
+  async getVillageStats(
+    apiBaseUrl: string,
+    villageId: string
+  ): Promise<{
+    total_animals: number;
+    total_farmers: number;
+    vaccinated_count: number;
+    coverage_percentage: number;
+  }> {
+    try {
+      const [farmers, animals] = await Promise.all([
+        this.listFarmers(apiBaseUrl, villageId).catch(() => []),
+        this.listAnimals(apiBaseUrl, villageId).catch(() => []),
+      ]);
+      const total_animals = animals.length;
+      const total_farmers = farmers.length;
+      const vaccinated_count = animals.filter(
+        (a) => a.registration_status === 'VERIFIED'
+      ).length;
+      const coverage_percentage =
+        total_animals > 0 ? Math.round((vaccinated_count / total_animals) * 100) : 0;
+      return { total_animals, total_farmers, vaccinated_count, coverage_percentage };
+    } catch {
+      return { total_animals: 0, total_farmers: 0, vaccinated_count: 0, coverage_percentage: 0 };
+    }
+  },
 };
+
 

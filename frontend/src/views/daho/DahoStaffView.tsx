@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '../../components/common/Button';
 import { DataTable, type Column } from '../../components/common/DataTable';
@@ -19,9 +20,10 @@ import {
   AlertCircle,
   MapPin,
   Power,
+  Building,
 } from 'lucide-react';
 
-type StaffTab = 'VETERINARY_OFFICERS' | 'FIELD_WORKERS';
+type StaffTab = 'TAHO' | 'VETERINARY_OFFICERS' | 'FIELD_WORKERS';
 
 const voSchema = z.object({
   full_name: z.string().trim().min(2, 'સંપૂર્ણ નામ ઓછામાં ઓછું ૨ અક્ષરનું હોવું જોઈએ').max(150),
@@ -55,10 +57,12 @@ const fwSchema = z.object({
 });
 
 export const DahoStaffView: React.FC = () => {
+  const navigate = useNavigate();
   const { apiBaseUrl, scope, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<StaffTab>('VETERINARY_OFFICERS');
+  const [activeTab, setActiveTab] = useState<StaffTab>('TAHO');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [tahoList, setTahoList] = useState<any[]>([]);
   const [voList, setVoList] = useState<StaffItem[]>([]);
   const [fwList, setFwList] = useState<StaffItem[]>([]);
   const [villages, setVillages] = useState<VillageItem[]>([]);
@@ -117,11 +121,13 @@ export const DahoStaffView: React.FC = () => {
         adminService.listVeterinaryOfficers(apiBaseUrl, districtId),
         adminService.listFieldWorkers(apiBaseUrl, districtId),
         adminService.listVillages(apiBaseUrl, districtId),
+        adminService.getDahoTalukas(apiBaseUrl, districtId),
       ]);
 
       if (results[0].status === 'fulfilled') setVoList(results[0].value);
       if (results[1].status === 'fulfilled') setFwList(results[1].value);
       if (results[2].status === 'fulfilled') setVillages(results[2].value);
+      if (results[3].status === 'fulfilled') setTahoList(results[3].value);
 
       const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
       if (rejected.length === results.length) {
@@ -552,6 +558,21 @@ export const DahoStaffView: React.FC = () => {
       <div className="flex border-b border-[#E2E8F0] gap-4 text-sm font-semibold">
         <button
           onClick={() => {
+            setActiveTab('TAHO');
+            setSearchTerm('');
+          }}
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'TAHO'
+              ? 'border-[#135D43] text-[#135D43]'
+              : 'border-transparent text-[#64748B] hover:text-[#1E293B]'
+          }`}
+        >
+          <Building className="w-4 h-4" />
+          <span>તાલુકા અધિકારીઓ (TAHO) ({tahoList.length})</span>
+        </button>
+
+        <button
+          onClick={() => {
             setActiveTab('VETERINARY_OFFICERS');
             setSearchTerm('');
           }}
@@ -598,6 +619,101 @@ export const DahoStaffView: React.FC = () => {
       {/* DataTable */}
       {isLoading ? (
         <StateView state="loading" />
+      ) : activeTab === 'TAHO' ? (
+        <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#F8FAFC] text-slate-500 border-b border-[#E2E8F0] uppercase tracking-wider text-[11px]">
+              <tr>
+                <th className="p-3.5">તાલુકો અને કોડ</th>
+                <th className="p-3.5 text-center">કુલ ગામ</th>
+                <th className="p-3.5">નિયુક્ત TAHO અધિકારી</th>
+                <th className="p-3.5">સંપર્ક વિગતો</th>
+                <th className="p-3.5 text-center">સ્થિતિ</th>
+                <th className="p-3.5 text-right">વહીવટ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0]">
+              {tahoList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-6 text-center text-slate-500">
+                    કોઈ તાલુકા ડેટા મળ્યો નથી.
+                  </td>
+                </tr>
+              ) : (
+                tahoList
+                  .filter((t) =>
+                    !searchTerm ||
+                    (t.name_gu && t.name_gu.includes(searchTerm)) ||
+                    (t.name_en && t.name_en.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    (t.code && t.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    (t.assigned_taho?.full_name && t.assigned_taho.full_name.includes(searchTerm))
+                  )
+                  .map((t) => {
+                    const taho = t.assigned_taho;
+                    return (
+                      <tr key={t.taluka_id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5">
+                          <span className="font-bold text-[#0F172A] block text-sm">
+                            {t.name_gu || t.name_en}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            {t.name_en} ({t.code})
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center font-mono font-bold text-slate-700">
+                          {t.village_count || 0}
+                        </td>
+                        <td className="p-3.5">
+                          {taho ? (
+                            <div>
+                              <span className="font-bold text-[#0F172A] flex items-center gap-1.5">
+                                <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                {taho.full_name}
+                              </span>
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                @{taho.username}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-amber-600 font-medium text-xs">
+                              કોઈ TAHO સોંપાયેલ નથી
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-slate-600">
+                          {taho ? (
+                            <div className="space-y-0.5 text-[11px]">
+                              <div>{taho.email || '-'}</div>
+                              <div className="font-mono text-slate-500">{taho.mobile_e164 || '-'}</div>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <StatusChip
+                            label={taho ? 'સક્રિય' : 'ખાલી'}
+                            variant={taho ? 'success' : 'neutral'}
+                            size="sm"
+                          />
+                        </td>
+                        <td className="p-3.5 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate('/daho')}
+                            className="text-xs"
+                          >
+                            {taho ? 'બદલો (Reassign)' : 'સોંપો (Assign)'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })
+              )}
+            </tbody>
+          </table>
+        </div>
       ) : activeTab === 'VETERINARY_OFFICERS' ? (
         <DataTable
           columns={voColumns}

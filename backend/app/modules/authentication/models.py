@@ -33,6 +33,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     mobile_e164: Mapped[Optional[str]] = mapped_column(Text, unique=True, nullable=True)
     designation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -73,6 +74,11 @@ class User(Base):
         "DahoDistrictAssignment",
         foreign_keys="DahoDistrictAssignment.daho_user_id",
         back_populates="daho_user"
+    )
+    taluka_assignments: Mapped[List["TahoTalukaAssignment"]] = relationship(
+        "TahoTalukaAssignment",
+        foreign_keys="TahoTalukaAssignment.taho_user_id",
+        back_populates="taho_user"
     )
     permission_grants: Mapped[List["UserPermissionGrant"]] = relationship(
         "UserPermissionGrant",
@@ -205,6 +211,41 @@ class DahoDistrictAssignment(Base):
 
     # Relationships
     daho_user: Mapped["User"] = relationship("User", foreign_keys=[daho_user_id], back_populates="district_assignments")
+
+
+class TahoTalukaAssignment(Base):
+    """TAHO-to-Taluka operational assignment matching 'taho_taluka_assignments' table."""
+    __tablename__ = "taho_taluka_assignments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    taho_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    taluka_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("talukas.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    assigned_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    taho_user: Mapped["User"] = relationship("User", foreign_keys=[taho_user_id], back_populates="taluka_assignments")
 
 
 class Permission(Base):

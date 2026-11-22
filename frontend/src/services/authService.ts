@@ -200,6 +200,12 @@ class AuthService {
     }
 
     const data = await res.json();
+    if (data.debug_otp) {
+      console.log(`%c[PashuRakshak Farmer OTP] %c${data.debug_otp}`, 'color: #135D43; font-weight: bold;', 'color: #059669; font-weight: bold; font-size: 14px;');
+      if (!data.message.includes(data.debug_otp)) {
+        return `${data.message} [ટેસ્ટિંગ OTP: ${data.debug_otp}]`;
+      }
+    }
     return data.message;
   }
 

@@ -3,7 +3,7 @@ import { authService, type AuthSession } from '../services/authService';
 import { type DeviceInfo } from '../services/syncController';
 import { type UserProfileResponse, type UserScopeResponse } from '../types/auth';
 
-export type NormalizedRole = 'DAHO' | 'VO' | 'FW' | 'FARMER' | 'COOP' | 'SYS_ADMIN' | 'UNKNOWN';
+export type NormalizedRole = 'DAHO' | 'TAHO' | 'VO' | 'FW' | 'FARMER' | 'COOP' | 'SYS_ADMIN' | 'UNKNOWN';
 
 export interface AuthContextType {
   session: AuthSession | null;
@@ -15,6 +15,11 @@ export interface AuthContextType {
   isLoading: boolean;
   deviceInfo: DeviceInfo;
   apiBaseUrl: string;
+  selectedDistrictId: string | null;
+  setSelectedDistrictId: (id: string | null) => void;
+  selectedDistrict: any | null;
+  assignedDistricts: Array<{ id: string; district_id?: string; code?: string; name_en?: string; name_gu?: string }>;
+  assignedTalukas: Array<{ id: string; taluka_id?: string; district_id?: string; code?: string; name_en?: string; name_gu?: string; village_count?: number }>;
   loginStaff: (username: string, password: string) => Promise<AuthSession>;
   verifyFarmerOtp: (mobile: string, otpCode: string) => Promise<AuthSession>;
   logout: () => Promise<void>;
@@ -29,6 +34,7 @@ export function normalizeRole(roleRaw?: string | null): NormalizedRole {
   if (!roleRaw) return 'UNKNOWN';
   const upper = roleRaw.trim().toUpperCase();
   if (upper === 'DAHO') return 'DAHO';
+  if (upper === 'TAHO' || upper === 'TALUKA_OFFICER') return 'TAHO';
   if (upper === 'VO' || upper === 'VET_OFFICER') return 'VO';
   if (upper === 'FW' || upper === 'FIELD_WORKER') return 'FW';
   if (upper === 'FARMER') return 'FARMER';
@@ -41,6 +47,8 @@ export function getRolePrefix(role: NormalizedRole): string {
   switch (role) {
     case 'DAHO':
       return '/daho';
+    case 'TAHO':
+      return '/taho';
     case 'VO':
       return '/vo';
     case 'FW':
@@ -61,6 +69,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [scope, setScope] = useState<UserScopeResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedDistrictId, setSelectedDistrictIdState] = useState<string | null>(() => {
+    return sessionStorage.getItem('pashurakshak_selected_district_id');
+  });
+
+  const setSelectedDistrictId = useCallback((id: string | null) => {
+    if (id) {
+      sessionStorage.setItem('pashurakshak_selected_district_id', id);
+    } else {
+      sessionStorage.removeItem('pashurakshak_selected_district_id');
+    }
+    setSelectedDistrictIdState(id);
+  }, []);
 
   const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) ?? '';
 
@@ -68,6 +88,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!session?.accessToken) return 'UNKNOWN';
     return normalizeRole(profile?.role || session?.user?.role);
   }, [profile?.role, session?.user?.role, session?.accessToken]);
+
+  const assignedDistricts = useMemo(() => {
+    return (profile as any)?.assigned_districts_details || (session?.user as any)?.assigned_districts_details || [];
+  }, [profile, session]);
+
+  const assignedTalukas = useMemo(() => {
+    return (profile as any)?.assigned_talukas_details || (session?.user as any)?.assigned_talukas_details || [];
+  }, [profile, session]);
+
+  // If DAHO has only 1 district, automatically select it
+  useEffect(() => {
+    if (role === 'DAHO' && assignedDistricts.length === 1) {
+      const singleId = assignedDistricts[0].id || assignedDistricts[0].district_id;
+      if (singleId && selectedDistrictId !== singleId) {
+        setSelectedDistrictId(singleId);
+      }
+    }
+  }, [role, assignedDistricts, selectedDistrictId, setSelectedDistrictId]);
+
+  const selectedDistrict = useMemo(() => {
+    if (!selectedDistrictId) return null;
+    return assignedDistricts.find((d: any) => (d.id || d.district_id) === selectedDistrictId) || null;
+  }, [selectedDistrictId, assignedDistricts]);
 
   const permissions: string[] = useMemo(() => {
     const fromScope = scope?.permissions || [];
@@ -228,6 +271,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         deviceInfo,
         apiBaseUrl,
+        selectedDistrictId,
+        setSelectedDistrictId,
+        selectedDistrict,
+        assignedDistricts,
+        assignedTalukas,
         loginStaff,
         verifyFarmerOtp,
         logout,
@@ -241,10 +289,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
+const fallbackAuthContext: AuthContextType = {
+  session: null,
+  profile: null,
+  scope: null,
+  role: 'UNKNOWN',
+  permissions: [],
+  isAuthenticated: false,
+  isLoading: false,
+  deviceInfo: {
+    deviceId: 'BROWSER-DEV',
+    platform: 'Web',
+    registered: false,
+    appVersion: '1.0.0',
+    deviceSecret: '',
+  },
+  apiBaseUrl: (import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
+  selectedDistrictId: null,
+  setSelectedDistrictId: () => {},
+  selectedDistrict: null,
+  assignedDistricts: [],
+  assignedTalukas: [],
+  loginStaff: async (u: string, p: string) => authService.loginStaff((import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000', u, p),
+  verifyFarmerOtp: async (m: string, c: string) => authService.verifyFarmerOtp((import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000', m, c),
+  logout: async () => {},
+  refreshProfile: async () => {},
+  hasPermission: () => false,
+  rolePrefix: '/login',
+};
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return fallbackAuthContext;
   }
   return ctx;
 };
