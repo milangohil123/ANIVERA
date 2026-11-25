@@ -111,6 +111,7 @@ export const STRINGS_GU = {
           get daho() { return tStandalone('nav.admin.daho'); },
           get assignments() { return tStandalone('nav.admin.assignments'); },
           get oversight() { return tStandalone('nav.admin.oversight'); },
+          get rbac() { return tStandalone('nav.admin.rbac') || 'ભૂમિકા નિયંત્રણ'; },
           get roles() { return tStandalone('nav.admin.roles'); },
           get users() { return tStandalone('nav.admin.users'); },
           get devices() { return tStandalone('nav.admin.devices'); },

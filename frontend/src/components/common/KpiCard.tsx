@@ -1,4 +1,5 @@
 import React from 'react';
+import { AnimatedCounter } from './AnimatedCounter';
 
 export interface KpiCardProps {
   label: string;
@@ -17,6 +18,7 @@ export interface KpiCardProps {
   onClick?: () => void;
   className?: string;
   isLoading?: boolean;
+  disableAnimation?: boolean;
 }
 
 export const KpiCard: React.FC<KpiCardProps> = ({
@@ -33,6 +35,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   onClick,
   className = '',
   isLoading = false,
+  disableAnimation = false,
 }) => {
   const getIconContainerStyle = () => {
     switch (iconVariant) {
@@ -77,6 +80,24 @@ export const KpiCard: React.FC<KpiCardProps> = ({
     }
   };
 
+  const renderValue = () => {
+    if (isLoading) {
+      return <div className="h-7 w-24 bg-slate-200/80 animate-pulse rounded-md" />;
+    }
+
+    if (
+      !disableAnimation &&
+      (typeof value === 'number' ||
+        (typeof value === 'string' &&
+          /^([^\d.-]*)([-+]?[0-9,]*\.?[0-9]+)([^\d]*)$/.test(value.trim()) &&
+          value.trim() !== '...'))
+    ) {
+      return <AnimatedCounter value={value as string | number} />;
+    }
+
+    return value;
+  };
+
   return (
     <div
       onClick={onClick}
@@ -103,19 +124,15 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
       {/* Main Metric Value */}
       <div className="my-1.5 flex items-baseline justify-between gap-2 min-w-0">
-        {isLoading ? (
-          <div className="h-7 w-20 bg-slate-100 animate-pulse rounded" />
-        ) : (
-          <div
-            className={`text-2xl sm:text-[26px] font-bold tracking-tight font-heading tabular-nums leading-none truncate min-w-0 ${
-              valueColor || 'text-[#172033]'
-            }`}
-          >
-            {value}
-          </div>
-        )}
+        <div
+          className={`text-2xl sm:text-[26px] font-bold tracking-tight font-heading tabular-nums leading-none truncate min-w-0 ${
+            valueColor || 'text-[#172033]'
+          }`}
+        >
+          {renderValue()}
+        </div>
 
-        {trend && (
+        {trend && !isLoading && (
           <span
             className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
               trend.isUp ? 'bg-[#E6F3EF] text-[#164E45]' : 'bg-slate-100 text-slate-600'
@@ -128,7 +145,9 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
       {/* Footer Subtext & Optional Badge */}
       <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 text-xs text-[#64748B] min-w-0">
-        {subtext ? (
+        {isLoading ? (
+          <div className="h-3 w-28 bg-slate-100 animate-pulse rounded" />
+        ) : subtext ? (
           <div
             title={typeof subtext === 'string' ? subtext : undefined}
             className="flex items-center gap-1 truncate text-[11px] font-medium text-[#64748B] min-w-0 flex-1"
@@ -140,7 +159,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           <span />
         )}
 
-        {badgeText && (
+        {!isLoading && badgeText && (
           <span
             className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${getBadgeStyle()}`}
           >

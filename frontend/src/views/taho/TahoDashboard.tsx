@@ -54,15 +54,19 @@ export const TahoDashboard: React.FC = () => {
       ]);
       setOverview(ov);
       setHierarchy(hier);
+      setIsLoading(false);
 
       if (ov?.taluka_id) {
-        const vGeo = await adminService.getTalukaVillagesGeoJson(apiBaseUrl, ov.taluka_id).catch(() => null);
-        setVillagesGeoJson(vGeo);
+        adminService
+          .getTalukaVillagesGeoJson(apiBaseUrl, ov.taluka_id)
+          .then((vGeo) => {
+            if (vGeo) setVillagesGeoJson(vGeo);
+          })
+          .catch(() => null);
       }
     } catch (err: any) {
       console.warn('Failed to load TAHO operational data:', err);
       setError(err?.message || 'તાલુકા ડેટા લોડ કરવામાં નિષ્ફળ.');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -306,8 +310,9 @@ export const TahoDashboard: React.FC = () => {
       {/* ---------------------------------------------------------------------- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
+          isLoading={isLoading}
           label="કુલ ગામો"
-          value={isLoading ? '...' : String(kpis.total_villages ?? overview.total_villages ?? 0)}
+          value={kpis.total_villages ?? overview.total_villages ?? 0}
           subtext="GIS સીમાઓ ઉપલબ્ધ"
           icon={<Layers className="w-4 h-4 text-[#135D43]" />}
           iconVariant="emerald"
@@ -315,8 +320,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="વેટરનરી ઓફિસર"
-          value={isLoading ? '...' : String(kpis.active_vos ?? overview.active_vos ?? 0)}
+          value={kpis.active_vos ?? overview.active_vos ?? 0}
           subtext="સક્રિય VO સ્ટાફ"
           icon={<Users className="w-4 h-4 text-sky-600" />}
           iconVariant="blue"
@@ -324,8 +330,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="ફીલ્ડ વર્કર્સ"
-          value={isLoading ? '...' : String(kpis.active_fws ?? overview.active_fws ?? 0)}
+          value={kpis.active_fws ?? overview.active_fws ?? 0}
           subtext="સક્રિય FW સ્ટાફ"
           icon={<Users className="w-4 h-4 text-[#176B5B]" />}
           iconVariant="teal"
@@ -333,8 +340,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="નોંધાયેલ ખેડૂતો"
-          value={isLoading ? '...' : String(kpis.total_farmers ?? overview.total_farmers ?? 0)}
+          value={kpis.total_farmers ?? overview.total_farmers ?? 0}
           subtext="પશુપાલક પરિવારો"
           icon={<Users className="w-4 h-4 text-amber-600" />}
           iconVariant="amber"
@@ -342,8 +350,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="પશુધન સંખ્યા"
-          value={isLoading ? '...' : String(kpis.total_animals ?? overview.total_animals ?? 0)}
+          value={kpis.total_animals ?? overview.total_animals ?? 0}
           subtext="ટેગ થયેલ પશુઓ"
           icon={<PawPrint className="w-4 h-4 text-[#135D43]" />}
           iconVariant="emerald"
@@ -356,8 +365,9 @@ export const TahoDashboard: React.FC = () => {
       {/* ---------------------------------------------------------------------- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
+          isLoading={isLoading}
           label="સંપૂર્ણ રસીકરણ થયેલ"
-          value={isLoading ? '...' : String(kpis.completed_vaccinations ?? overview.total_vaccinations ?? 0)}
+          value={kpis.completed_vaccinations ?? overview.total_vaccinations ?? 0}
           valueColor="text-emerald-700"
           subtext="સફળતાપૂર્વક અપાયેલ"
           icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
@@ -366,8 +376,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="બાકી / મુદત વીતી ગયેલ"
-          value={isLoading ? '...' : String(kpis.pending_vaccinations ?? 0)}
+          value={kpis.pending_vaccinations ?? 0}
           valueColor={(kpis.overdue_vaccinations ?? 0) > 0 ? 'text-[#DC2626]' : 'text-amber-700'}
           subtext="કતાર જુઓ →"
           badgeText={`${kpis.overdue_vaccinations ?? 0} મુદતવીતી`}
@@ -378,8 +389,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="સક્રિય રસીકરણ ઝુંબેશો"
-          value={isLoading ? '...' : String(kpis.active_campaigns ?? 0)}
+          value={kpis.active_campaigns ?? 0}
           subtext="તાલુકા અભિયાન"
           icon={<Megaphone className="w-4 h-4 text-sky-600" />}
           iconVariant="blue"
@@ -387,8 +399,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="રોગ સર્વેક્ષણ કેસ"
-          value={isLoading ? '...' : String(kpis.disease_reports ?? 0)}
+          value={kpis.disease_reports ?? 0}
           subtext={`${kpis.disease_reports ?? 0} સક્રિય કેસ`}
           badgeText={(kpis.active_alerts ?? 0) > 0 ? `${kpis.active_alerts} એલર્ટ` : undefined}
           badgeVariant={(kpis.active_alerts ?? 0) > 0 ? 'red' : undefined}
@@ -398,8 +411,9 @@ export const TahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="સરેરાશ કવરેજ દર"
-          value={isLoading ? '...' : `${kpis.overall_coverage_pct ?? 0}%`}
+          value={`${kpis.overall_coverage_pct ?? 0}%`}
           valueColor="text-[#176B5B]"
           subtext="તાલુકા પ્રગતિ"
           icon={<TrendingUp className="w-4 h-4 text-[#176B5B]" />}

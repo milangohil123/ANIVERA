@@ -38,6 +38,76 @@ export interface DistrictItem {
   active: boolean;
 }
 
+export interface SuperAdminChartsData {
+  disease_surveillance: {
+    total_reports: number;
+    confirmed_cases: number;
+    suspected_cases: number;
+    by_disease: Array<{
+      disease_code: string;
+      name_gu: string;
+      name_en: string;
+      color: string;
+      total: number;
+      confirmed: number;
+      suspected: number;
+      under_investigation: number;
+      resolved: number;
+      percentage: number;
+    }>;
+    monthly_trend: Array<{
+      month: string;
+      month_key: string;
+      reports: number;
+      confirmed: number;
+    }>;
+  };
+  vaccination_analytics: {
+    total_vaccinations: number;
+    by_programme: Array<{
+      programme_code: string;
+      name_gu: string;
+      name_en: string;
+      color: string;
+      doses: number;
+      percentage: number;
+    }>;
+    monthly_trend: Array<{
+      month: string;
+      month_key: string;
+      doses: number;
+    }>;
+  };
+  species_distribution: {
+    total_animals: number;
+    by_species: Array<{
+      species_code: string;
+      name_gu: string;
+      name_en: string;
+      color: string;
+      count: number;
+      percentage: number;
+    }>;
+    by_sex: {
+      MALE: number;
+      FEMALE: number;
+      UNKNOWN: number;
+    };
+  };
+  district_performance: Array<{
+    district_id: string;
+    name_en: string;
+    name_gu: string;
+    code: string;
+    animal_count: number;
+    vaccination_count: number;
+    disease_count: number;
+    coverage_pct: number;
+    daho_name?: string;
+    is_assigned: boolean;
+  }>;
+}
+
 export interface TalukaItem {
   id: string;
   district_id: string;
@@ -520,15 +590,24 @@ export const adminService = {
     return res.json();
   },
 
+  async getSuperAdminCharts(apiBaseUrl: string): Promise<SuperAdminChartsData> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/charts-analytics`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ચાર્ટ્સ એનાલિટિક્સ ડેટા મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
   async createDahoAccount(apiBaseUrl: string, payload: {
     full_name: string;
     username: string;
-    email?: string;
+    email: string;
     mobile_e164: string;
     designation?: string;
     organisation?: string;
     district_id?: string;
-    password?: string;
+    password: string;
   }): Promise<any> {
     const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/daho-accounts`, {
       method: 'POST',
@@ -646,26 +725,39 @@ export const adminService = {
   },
 
   async getDistrictTalukasGeoJson(apiBaseUrl: string, districtId?: string): Promise<any> {
+    // 1. Fetch live Talukas GeoJSON from backend API with real database assignment status
     const url = districtId
       ? `/api/v1/maps/talukas-geojson?district_id=${districtId}`
       : `/api/v1/maps/talukas-geojson`;
     try {
       const res = await authFetch(apiBaseUrl, url);
       if (res.ok) {
-        return await res.json();
+        const data = await res.json();
+        if (data && data.features && data.features.length >= (districtId ? 1 : 50)) {
+          return data;
+        }
       }
     } catch (e) {
       console.warn('API talukas fetch error, falling back to static cache:', e);
     }
-    // Fallback if statewide and API unreachable or unauthenticated
-    if (!districtId) {
-      try {
-        const localRes = await fetch('/data/gujarat_talukas.geojson');
-        if (localRes.ok) return await localRes.json();
-      } catch (err) {
-        console.warn('Static talukas fallback error:', err);
+
+    // 2. Fallback to static cache with all 226 verified Gujarat talukas (filtered by district if specified)
+    try {
+      const localRes = await fetch('/data/gujarat_talukas.geojson');
+      if (localRes.ok) {
+        const fullTalukas = await localRes.json();
+        if (districtId) {
+          const filtered = (fullTalukas.features || []).filter(
+            (f: any) => f.properties?.district_id === districtId
+          );
+          return { type: 'FeatureCollection', features: filtered };
+        }
+        return fullTalukas;
       }
+    } catch (err) {
+      console.warn('Static talukas fallback error:', err);
     }
+
     throw new Error('તાલુકા પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ');
   },
 

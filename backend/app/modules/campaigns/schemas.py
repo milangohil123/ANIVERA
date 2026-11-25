@@ -60,8 +60,8 @@ class CampaignResponse(BaseModel):
     schedule_version_id: Optional[uuid.UUID] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    created_by: uuid.UUID
-    created_at: datetime
+    created_by: Optional[uuid.UUID] = None
+    created_at: Optional[datetime] = None
     activated_by: Optional[uuid.UUID] = None
     activated_at: Optional[datetime] = None
     target_animals_count: Optional[int] = None

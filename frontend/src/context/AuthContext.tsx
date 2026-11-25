@@ -220,6 +220,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [fetchProfileAndScope]);
 
+  // Live RBAC Broadcast Listener: Re-sync permissions immediately when admin updates matrix
+  useEffect(() => {
+    const handleRbacUpdate = () => {
+      if (session) {
+        fetchProfileAndScope(session);
+      }
+    };
+    window.addEventListener('pashurakshak_rbac_updated', handleRbacUpdate);
+    return () => window.removeEventListener('pashurakshak_rbac_updated', handleRbacUpdate);
+  }, [session, fetchProfileAndScope]);
+
   const loginStaff = async (u: string, p: string) => {
     setIsLoading(true);
     try {

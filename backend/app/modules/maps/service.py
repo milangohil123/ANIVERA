@@ -442,6 +442,28 @@ class MapService:
         v_counts = dict((await self.db.execute(v_counts_stmt)).all())
         v_ver_counts = dict((await self.db.execute(v_ver_stmt)).all())
 
+        # Query active real TAHO assignments from database
+        from app.modules.authentication.models import TahoTalukaAssignment
+        asgn_stmt = select(TahoTalukaAssignment.taluka_id).where(TahoTalukaAssignment.ended_at.is_(None))
+        assigned_taluka_ids = set(str(tid) for tid in (await self.db.execute(asgn_stmt)).scalars().all() if tid)
+
+        assigned_taluka_codes = set()
+        assigned_taluka_names = set()
+        if assigned_taluka_ids:
+            try:
+                t_asgn_stmt = select(Taluka.id, Taluka.code, Taluka.name_en, Taluka.name_gu).where(
+                    Taluka.id.in_([uuid.UUID(tid) for tid in assigned_taluka_ids])
+                )
+                for r in (await self.db.execute(t_asgn_stmt)).all():
+                    if r[1]:
+                        assigned_taluka_codes.add(r[1].upper())
+                    if r[2]:
+                        assigned_taluka_names.add(r[2].strip().upper())
+                    if r[3]:
+                        assigned_taluka_names.add(r[3].strip())
+            except Exception as e:
+                logger.warning("Error fetching assigned taluka details: %s", e)
+
         features = []
         for row in taluka_rows:
             if len(row) >= 3:
@@ -456,6 +478,13 @@ class MapService:
             v_cnt = v_counts.get(t.id, 0)
             v_ver = v_ver_counts.get(t.id, 0)
             centroid = self._calc_centroid(t.boundary_geojson)
+            t_id_str = str(t.id)
+            is_assigned = bool(
+                t_id_str in assigned_taluka_ids or
+                (t.code and t.code.upper() in assigned_taluka_codes) or
+                (t.name_en and t.name_en.strip().upper() in assigned_taluka_names) or
+                (t.name_gu and t.name_gu.strip() in assigned_taluka_names)
+            )
             features.append({
                 "type": "Feature",
                 "id": str(t.id),
@@ -473,8 +502,46 @@ class MapService:
                     "village_count": v_cnt,
                     "verified_village_count": v_ver,
                     "has_boundary": True,
+                    "is_assigned": is_assigned,
+                    "status": "ASSIGNED" if is_assigned else "UNASSIGNED",
                 }
             })
+
+        if len(features) < 50:
+            import json
+            import os
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+            candidates = [
+                os.path.join(base_dir, "frontend", "public", "data", "gujarat_talukas.geojson"),
+                os.path.join(base_dir, "frontend", "dist", "data", "gujarat_talukas.geojson"),
+            ]
+            for c_path in candidates:
+                if os.path.exists(c_path):
+                    try:
+                        with open(c_path, "r", encoding="utf-8") as f:
+                            disk_data = json.load(f)
+                            disk_feats = disk_data.get("features", [])
+                            if district_id:
+                                dist_str = str(district_id)
+                                disk_feats = [df for df in disk_feats if str(df.get("properties", {}).get("district_id")) == dist_str]
+                            for df in disk_feats:
+                                p = df.get("properties", {})
+                                t_id = str(p.get("taluka_id") or df.get("id") or "")
+                                t_code = str(p.get("code") or "").upper()
+                                t_name_en = str(p.get("name_en") or "").strip().upper()
+                                t_name_gu = str(p.get("name_gu") or "").strip()
+                                is_asgn = bool(
+                                    t_id in assigned_taluka_ids or
+                                    (t_code and t_code in assigned_taluka_codes) or
+                                    (t_name_en and t_name_en in assigned_taluka_names) or
+                                    (t_name_gu and t_name_gu in assigned_taluka_names)
+                                )
+                                p["is_assigned"] = is_asgn
+                                p["status"] = "ASSIGNED" if is_asgn else "UNASSIGNED"
+                            if disk_feats:
+                                return {"type": "FeatureCollection", "features": disk_feats}
+                    except Exception as fe:
+                        logger.warning("Could not read disk talukas geojson: %s", fe)
 
         return {
             "type": "FeatureCollection",

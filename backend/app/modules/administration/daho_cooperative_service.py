@@ -399,27 +399,75 @@ class DahoCooperativeService:
                 detail="અનધિકૃત જિલ્લો: તમે ફક્ત તમારા અધિકૃત જિલ્લામાં જ મંડળી બનાવી શકો છો",
             )
 
-        # 2. Strict Geographic Hierarchy Validation
+        # 2. Strict Geographic Hierarchy Validation & Multi-Village Resolution
         district = await self.db.get(District, payload.district_id)
         if not district:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="પસંદ કરેલ જિલ્લો મળ્યો નથી")
 
-        taluka = await self.db.get(Taluka, payload.taluka_id)
-        if not taluka:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="પસંદ કરેલ તાલુકો મળ્યો નથી")
-        if taluka.district_id != payload.district_id:
+        # Gather target villages (multiple or single)
+        target_village_ids = list(payload.village_ids or [])
+        if payload.village_id and payload.village_id not in target_village_ids:
+            target_village_ids.insert(0, payload.village_id)
+
+        if not target_village_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="તાલુકો પસંદ કરેલ જિલ્લા અંતર્ગત આવતો નથી (Taluka does not belong to District)",
+                detail="ઓછામાં ઓછું એક ગામ પસંદ કરવું ફરજિયાત છે (At least one village is required)",
             )
 
-        village = await self.db.get(Village, payload.village_id)
-        if not village:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="પસંદ કરેલ ગામ મળ્યું નથી")
-        if village.taluka_id != payload.taluka_id:
+        # Query all selected villages from database
+        v_stmt = select(Village).where(Village.id.in_(target_village_ids))
+        villages_db = list((await self.db.execute(v_stmt)).scalars().all())
+        if len(villages_db) != len(target_village_ids):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="એક અથવા વધુ પસંદ કરેલ ગામો મળ્યા નથી")
+
+        # Verify all villages belong to the district
+        for v in villages_db:
+            if v.district_id != payload.district_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"ગામ '{v.name_gu}' પસંદ કરેલ જિલ્લા અંતર્ગત આવતું નથી",
+                )
+
+        # Primary village & taluka
+        primary_village = villages_db[0]
+        primary_taluka_id = payload.taluka_id or primary_village.taluka_id
+        primary_village_id = payload.village_id or primary_village.id
+        taluka = await self.db.get(Taluka, primary_taluka_id)
+        if not taluka:
+            taluka = await self.db.get(Taluka, primary_village.taluka_id)
+            if taluka:
+                primary_taluka_id = taluka.id
+        village = primary_village
+
+        # 2.5 PREVENT DUPLICATE VILLAGE ASSIGNMENT:
+        # A village already assigned to another Dairy Cooperative must not be selectable for a new Dairy Cooperative
+        conflict_stmt = (
+            select(CooperativeVillage.village_id, Cooperative.name_gu, Cooperative.code)
+            .join(Cooperative, Cooperative.id == CooperativeVillage.cooperative_id)
+            .where(
+                CooperativeVillage.village_id.in_(target_village_ids),
+                Cooperative.status == "ACTIVE"
+            )
+        )
+        conflicts = list((await self.db.execute(conflict_stmt)).all())
+
+        # Also check primary village on cooperatives table
+        primary_conflict_stmt = (
+            select(Cooperative.village_id, Cooperative.name_gu, Cooperative.code)
+            .where(
+                Cooperative.village_id.in_(target_village_ids),
+                Cooperative.status == "ACTIVE"
+            )
+        )
+        p_conflicts = list((await self.db.execute(primary_conflict_stmt)).all())
+        all_conflicts = conflicts + p_conflicts
+
+        if all_conflicts:
+            conflict_names = ", ".join(set([f"'{c[1]}' ({c[2]})" for c in all_conflicts]))
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="ગામ પસંદ કરેલ તાલુકા અંતર્ગત આવતું નથી (Village does not belong to Taluka)",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"પસંદ કરેલ ગામોમાંથી એક અથવા વધુ ગામો પહેલેથી જ અન્ય ડેરી મંડળી સાથે જોડાયેલા છે: {conflict_names}",
             )
 
         # 3. Duplicate checks
@@ -488,8 +536,8 @@ class DahoCooperativeService:
             mobile_e164=clean_mobile,
             email=clean_email,
             district_id=payload.district_id,
-            taluka_id=payload.taluka_id,
-            village_id=payload.village_id,
+            taluka_id=primary_taluka_id,
+            village_id=primary_village_id,
             address=payload.address.strip() if payload.address else None,
             postal_code=payload.postal_code.strip() if payload.postal_code else None,
             notes=payload.notes.strip() if payload.notes else None,
@@ -498,12 +546,13 @@ class DahoCooperativeService:
         )
         self.db.add(new_coop)
 
-        # 6. Map Primary Village to Cooperative Villages
-        coop_village = CooperativeVillage(
-            cooperative_id=coop_id,
-            village_id=payload.village_id,
-        )
-        self.db.add(coop_village)
+        # 6. Map All Selected Villages to Cooperative Villages
+        for vid in target_village_ids:
+            coop_village = CooperativeVillage(
+                cooperative_id=coop_id,
+                village_id=vid,
+            )
+            self.db.add(coop_village)
 
         # 7. Staff Assignment
         staff_assign = CooperativeStaffAssignment(
@@ -1379,9 +1428,9 @@ class DahoCooperativeService:
         for animal, farmer, village in rows:
             # Check external tag
             tag_val = await self.db.scalar(
-                select(AnimalExternalIdentifier.identifier_value).where(
+                select(AnimalExternalIdentifier.id_value).where(
                     AnimalExternalIdentifier.animal_id == animal.id,
-                    AnimalExternalIdentifier.identifier_type == "BHARAT_PASHUDHAN_TAG",
+                    AnimalExternalIdentifier.id_type == "BHARAT_PASHUDHAN_TAG",
                 )
             )
 
@@ -1471,9 +1520,9 @@ class DahoCooperativeService:
         items: List[CoopVaccinationItem] = []
         for event, animal, farmer, village, vax_detail in rows:
             tag_val = await self.db.scalar(
-                select(AnimalExternalIdentifier.identifier_value).where(
+                select(AnimalExternalIdentifier.id_value).where(
                     AnimalExternalIdentifier.animal_id == animal.id,
-                    AnimalExternalIdentifier.identifier_type == "BHARAT_PASHUDHAN_TAG",
+                    AnimalExternalIdentifier.id_type == "BHARAT_PASHUDHAN_TAG",
                 )
             )
 
@@ -1898,9 +1947,9 @@ class DahoCooperativeService:
             species_counts[sp] = species_counts.get(sp, 0) + 1
 
             tag_val = await self.db.scalar(
-                select(AnimalExternalIdentifier.identifier_value).where(
+                select(AnimalExternalIdentifier.id_value).where(
                     AnimalExternalIdentifier.animal_id == animal.id,
-                    AnimalExternalIdentifier.identifier_type == "BHARAT_PASHUDHAN_TAG",
+                    AnimalExternalIdentifier.id_type == "BHARAT_PASHUDHAN_TAG",
                 )
             )
 
@@ -2284,3 +2333,46 @@ class DahoCooperativeService:
             "status": "success",
             "message": f"{len(coop_ids)} ડેમો સહકારી મંડળીઓ સફળતાપૂર્વક સાફ કરવામાં આવી છે",
         }
+
+    async def get_assigned_villages(self, district_id: Optional[uuid.UUID] = None) -> List[Dict[str, Any]]:
+        """Return all village IDs and their assigned cooperative details."""
+        stmt = (
+            select(
+                CooperativeVillage.village_id,
+                Cooperative.id.label("cooperative_id"),
+                Cooperative.name_gu.label("cooperative_name_gu"),
+                Cooperative.name_en.label("cooperative_name_en"),
+                Cooperative.code.label("cooperative_code"),
+            )
+            .join(Cooperative, Cooperative.id == CooperativeVillage.cooperative_id)
+            .where(Cooperative.status == "ACTIVE")
+        )
+        if district_id:
+            stmt = stmt.where(Cooperative.district_id == district_id)
+        rows = list((await self.db.execute(stmt)).all())
+
+        primary_stmt = (
+            select(
+                Cooperative.village_id,
+                Cooperative.id.label("cooperative_id"),
+                Cooperative.name_gu.label("cooperative_name_gu"),
+                Cooperative.name_en.label("cooperative_name_en"),
+                Cooperative.code.label("cooperative_code"),
+            )
+            .where(Cooperative.village_id.isnot(None), Cooperative.status == "ACTIVE")
+        )
+        if district_id:
+            primary_stmt = primary_stmt.where(Cooperative.district_id == district_id)
+        p_rows = list((await self.db.execute(primary_stmt)).all())
+
+        seen = {}
+        for r in rows + p_rows:
+            v_id_str = str(r[0])
+            if v_id_str not in seen:
+                seen[v_id_str] = {
+                    "village_id": v_id_str,
+                    "cooperative_id": str(r[1]),
+                    "cooperative_name": r[2] or r[3] or r[4],
+                    "cooperative_code": r[4],
+                }
+        return list(seen.values())

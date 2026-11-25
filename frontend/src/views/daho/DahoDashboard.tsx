@@ -186,68 +186,75 @@ export const DahoDashboard: React.FC = () => {
     setIsLoadingInventory(true);
     setError(null);
 
-    // 1. Fetch District Summary & Talukas with TAHO
-    try {
-      let districtId = activeDistrictId;
-      if (!districtId) {
-        const dists = await adminService.listDistricts(apiBaseUrl);
-        if (dists.length > 0) {
-          districtId = dists[0].id;
+    // 1. Fetch District Summary & Talukas concurrently
+    const loadSummaryPromise = (async () => {
+      try {
+        let districtId = activeDistrictId;
+        if (!districtId) {
+          const dists = await adminService.listDistricts(apiBaseUrl);
+          if (dists.length > 0) {
+            districtId = dists[0].id;
+          }
         }
+        if (districtId) {
+          const [data, tList] = await Promise.all([
+            adminService.getDistrictSummary(apiBaseUrl, districtId),
+            adminService.getDahoTalukas(apiBaseUrl, districtId).catch(() => []),
+          ]);
+          setSummary(data);
+          setTalukasWithTaho(tList);
+        }
+      } catch (err) {
+        console.warn('Failed to load district summary:', err);
+        setError(err instanceof Error ? err.message : 'જિલ્લા આંકડા મેળવવામાં નિષ્ફળ.');
+      } finally {
+        setIsLoading(false);
       }
-      if (districtId) {
-        const [data, tList] = await Promise.all([
-          adminService.getDistrictSummary(apiBaseUrl, districtId),
-          adminService.getDahoTalukas(apiBaseUrl, districtId).catch(() => []),
-        ]);
-        setSummary(data);
-        setTalukasWithTaho(tList);
-      }
-    } catch (err) {
-      console.warn('Failed to load district summary:', err);
-      setError(err instanceof Error ? err.message : 'જિલ્લા આંકડા મેળવવામાં નિષ્ફળ.');
-    } finally {
-      setIsLoading(false);
-    }
+    })();
 
-    // 2. Fetch Active Campaign & Monitoring Telemetry
-    try {
-      const activeCampaigns = await dahoOpsService.listCampaigns(apiBaseUrl, 'ACTIVE');
-      if (activeCampaigns && activeCampaigns.length > 0) {
-        const monitoringData = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, activeCampaigns[0].id);
-        setCampaignMonitoring(monitoringData);
-      } else {
-        // Fallback: check any campaign if no explicitly ACTIVE one
-        const allCampaigns = await dahoOpsService.listCampaigns(apiBaseUrl);
-        if (allCampaigns && allCampaigns.length > 0) {
-          const monitoringData = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, allCampaigns[0].id);
+    // 2. Fetch Active Campaign & Monitoring Telemetry concurrently
+    const loadCampaignPromise = (async () => {
+      try {
+        const activeCampaigns = await dahoOpsService.listCampaigns(apiBaseUrl, 'ACTIVE').catch(() => []);
+        if (activeCampaigns && activeCampaigns.length > 0) {
+          const monitoringData = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, activeCampaigns[0].id);
           setCampaignMonitoring(monitoringData);
         } else {
-          setCampaignMonitoring(null);
+          const allCampaigns = await dahoOpsService.listCampaigns(apiBaseUrl).catch(() => []);
+          if (allCampaigns && allCampaigns.length > 0) {
+            const monitoringData = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, allCampaigns[0].id);
+            setCampaignMonitoring(monitoringData);
+          } else {
+            setCampaignMonitoring(null);
+          }
         }
+      } catch (err) {
+        console.warn('Failed to load campaign monitoring:', err);
+        setCampaignMonitoring(null);
+      } finally {
+        setIsLoadingCampaign(false);
       }
-    } catch (err) {
-      console.warn('Failed to load campaign monitoring:', err);
-      setCampaignMonitoring(null);
-    } finally {
-      setIsLoadingCampaign(false);
-    }
+    })();
 
-    // 3. Fetch Real Vaccine Inventory Lots & Catalogue Products
-    try {
-      const [prodList, lotList] = await Promise.all([
-        dahoOpsService.listProducts(apiBaseUrl),
-        dahoOpsService.listLots(apiBaseUrl),
-      ]);
-      setProducts(prodList || []);
-      setLots(lotList || []);
-    } catch (err) {
-      console.warn('Failed to load vaccine inventory:', err);
-      setProducts([]);
-      setLots([]);
-    } finally {
-      setIsLoadingInventory(false);
-    }
+    // 3. Fetch Real Vaccine Inventory Lots & Catalogue Products concurrently
+    const loadInventoryPromise = (async () => {
+      try {
+        const [prodList, lotList] = await Promise.all([
+          dahoOpsService.listProducts(apiBaseUrl).catch(() => []),
+          dahoOpsService.listLots(apiBaseUrl).catch(() => []),
+        ]);
+        setProducts(prodList || []);
+        setLots(lotList || []);
+      } catch (err) {
+        console.warn('Failed to load vaccine inventory:', err);
+        setProducts([]);
+        setLots([]);
+      } finally {
+        setIsLoadingInventory(false);
+      }
+    })();
+
+    await Promise.allSettled([loadSummaryPromise, loadCampaignPromise, loadInventoryPromise]);
   };
 
   useEffect(() => {
@@ -494,8 +501,9 @@ export const DahoDashboard: React.FC = () => {
       {/* ---------------------------------------------------------------------- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
+          isLoading={isLoading}
           label="કુલ નોંધાયેલ પશુધન"
-          value={isLoading ? '...' : String(summary?.total_animals ?? 0)}
+          value={summary?.total_animals ?? 0}
           subtext={`${talukasWithTaho.length || 4} તાલુકા • ${currentDistrictNameGu}`}
           icon={<PawPrint className="w-4 h-4 text-[#135D43]" />}
           iconVariant="emerald"
@@ -503,8 +511,9 @@ export const DahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="રસીકરણ કવરેજ દર"
-          value={isLoading ? '...' : (summary && summary.total_animals && summary.total_animals > 0 ? `${(((summary.total_vaccinations || 0) / summary.total_animals) * 100).toFixed(1)}%` : '0%')}
+          value={summary && summary.total_animals && summary.total_animals > 0 ? `${(((summary.total_vaccinations || 0) / summary.total_animals) * 100).toFixed(1)}%` : '0%'}
           valueColor="text-[#176B5B]"
           subtext={`${summary?.total_vaccinations ?? 0} ડોઝ પૂર્ણ • લક્ષ્ય ${summary?.total_animals ?? 0}`}
           icon={<Syringe className="w-4 h-4 text-[#176B5B]" />}
@@ -513,8 +522,9 @@ export const DahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="બાકી / મુદત વીતી ગયેલ"
-          value={isLoading ? '...' : String(summary?.pending_vaccinations ?? 0)}
+          value={summary?.pending_vaccinations ?? 0}
           valueColor="text-[#DC2626]"
           subtext="કતાર જુઓ →"
           badgeText={`${summary?.pending_vaccinations ?? 0} બાકી`}
@@ -525,8 +535,9 @@ export const DahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="રોગ સર્વેક્ષણ કેસ"
-          value={isLoading ? '...' : String(summary?.active_disease_reports ?? 0)}
+          value={summary?.active_disease_reports ?? 0}
           subtext={`${summary?.active_disease_reports ?? 0} સક્રિય કેસ`}
           icon={<Activity className="w-4 h-4 text-sky-600" />}
           iconVariant="blue"
@@ -534,8 +545,9 @@ export const DahoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="સક્રિય ક્ષેત્રીય સ્ટાફ"
-          value={isLoading ? '...' : String(summary ? (summary.vo_count + summary.fw_count) : 0)}
+          value={summary ? (summary.vo_count + summary.fw_count) : 0}
           subtext={`${summary?.fw_count || 0} ફીલ્ડ વર્કર્સ • ${summary?.vo_count || 0} VO`}
           subtextIcon={<span className="w-1.5 h-1.5 rounded-full bg-[#176B5B] shrink-0" />}
           icon={<Users className="w-4 h-4 text-[#176B5B]" />}

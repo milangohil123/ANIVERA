@@ -7,15 +7,20 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { StatusChip } from '../../components/common/StatusChip';
 import { StateView } from '../../components/common/StateView';
+import { GujaratStateMap } from '../../components/maps/GujaratStateMap';
 import {
   Shield,
   Plus,
   ArrowLeft,
   CheckCircle2,
-  AlertTriangle,
   RotateCcw,
   Users,
   X,
+  Eye,
+  EyeOff,
+  MapPin,
+  Globe,
+  Info,
 } from 'lucide-react';
 
 export const AdminDahoView: React.FC = () => {
@@ -36,11 +41,15 @@ export const AdminDahoView: React.FC = () => {
   const [fullName, setFullName] = useState<string>('');
   const [username, setUsername] = useState<string>('');
   const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [mobile, setMobile] = useState<string>('');
-  const [designation, setDesignation] = useState<string>('DAHO');
+  const [designation, setDesignation] = useState<string>('જિલ્લા પશુપાલન અધિકારી (DAHO)');
   const [selectedDistrictId, setSelectedDistrictId] = useState<string>(preselectedDistrictId || '');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [createdResult, setCreatedResult] = useState<any | null>(null);
+  const [stateGeoJson, setStateGeoJson] = useState<any | null>(null);
+  const [isMapExpanded, setIsMapExpanded] = useState<boolean>(true);
 
   // Reassignment Modal State
   const [reassignModalOpen, setReassignModalOpen] = useState<boolean>(false);
@@ -53,16 +62,41 @@ export const AdminDahoView: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [ov, usersList] = await Promise.all([
+      const [ov, usersList, geo] = await Promise.all([
         adminService.getSuperAdminOverview(apiBaseUrl).catch(() => null),
         adminService.listDistricts(apiBaseUrl).catch(() => []),
+        adminService.getGujaratStateMap(apiBaseUrl).catch(() => null),
       ]);
 
-      if (ov?.districts) {
-        setDistricts(ov.districts);
-      } else if (usersList) {
-        setDistricts(usersList);
+      if (geo) {
+        setStateGeoJson(geo);
       }
+
+      const rawDistricts = ov?.districts || usersList || [];
+      // Clean and deduplicate districts (collapsing duplicate Botad, eliminating corrupt dummy 'જી' or 'D_' entries)
+      const seen = new Set<string>();
+      const cleanDistricts = rawDistricts.filter((d: any) => {
+        const nameEn = (d.name_en || '').trim();
+        const nameGu = (d.name_gu || '').trim();
+        const code = (d.code || '').trim().toUpperCase();
+        if (
+          code.startsWith('D_') ||
+          nameEn.startsWith('D_') ||
+          nameGu.startsWith('જી') ||
+          nameGu === 'જી' ||
+          nameGu.startsWith('જી ') ||
+          nameEn.toLowerCase() === 'ji' ||
+          nameEn.toLowerCase() === 'jji'
+        ) {
+          return false;
+        }
+        let canonical = (nameEn || code).toLowerCase().trim();
+        if (canonical.includes('botad')) canonical = 'botad';
+        if (seen.has(canonical)) return false;
+        seen.add(canonical);
+        return true;
+      });
+      setDistricts(cleanDistricts);
 
       // Extract existing DAHOs
       const assignedDahos = (ov?.districts || [])
@@ -103,22 +137,52 @@ export const AdminDahoView: React.FC = () => {
     return districts.find((d: any) => d.district_id === selectedDistrictId);
   }, [selectedDistrictId, districts]);
 
-  const hasAssignmentConflict = Boolean(selectedDistrictInfo?.assigned_daho);
+  // Notice: Multiple DAHO accounts per district are explicitly permitted.
+  // hasExistingAssignment is informational and does NOT block account creation.
+  const hasExistingAssignment = Boolean(selectedDistrictInfo?.assigned_daho);
+
+  const handleMapDistrictSelect = (districtProps: any) => {
+    if (!districtProps) return;
+    const did = districtProps.district_id || districtProps.id;
+    if (did) {
+      const match = districts.find((d: any) => d.district_id === did);
+      if (match) {
+        setSelectedDistrictId(match.district_id);
+        return;
+      }
+    }
+    // Match by code or name
+    const propCode = (districtProps.code || '').toUpperCase();
+    const propName = (districtProps.name_en || districtProps.name || districtProps.district || '').toLowerCase();
+    const matched = districts.find(
+      (d: any) =>
+        (d.code && d.code.toUpperCase() === propCode) ||
+        (d.name_en && d.name_en.toLowerCase() === propName)
+    );
+    if (matched) {
+      setSelectedDistrictId(matched.district_id);
+    }
+  };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || !username.trim() || !mobile.trim()) {
-      alert('Please fill in required fields.');
+      alert('કૃપા કરીને તમામ ફરજિયાત ફિલ્ડ ભરો (Please fill in required fields).');
       return;
     }
 
-    if (hasAssignmentConflict) {
-      alert(
-        t('superAdmin.daho.conflictWarningMsg', {
-          district: selectedDistrictInfo ? localizeDistrict(selectedDistrictInfo) : '',
-          daho: selectedDistrictInfo?.assigned_daho?.full_name || '',
-        }) || 'District is already assigned.'
-      );
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      alert('કૃપા કરીને માન્ય ઈમેઈલ સરનામું દાખલ કરો (Please enter a valid email address).');
+      return;
+    }
+
+    if (!password || password.length < 8) {
+      alert('પાસવર્ડ ઓછામાં ઓછો ૮ અક્ષરનો હોવો જોઈએ (Password must be at least 8 characters).');
+      return;
+    }
+
+    if (!selectedDistrictId) {
+      alert('કૃપા કરીને અધિકારક્ષેત્રનો જિલ્લો પસંદ કરો (Please select a district).');
       return;
     }
 
@@ -127,21 +191,24 @@ export const AdminDahoView: React.FC = () => {
       const res = await adminService.createDahoAccount(apiBaseUrl, {
         full_name: fullName.trim(),
         username: username.trim(),
-        email: email.trim() || undefined,
+        email: email.trim(),
+        password: password.trim(),
         mobile_e164: mobile.trim(),
         designation: designation.trim() || undefined,
-        district_id: selectedDistrictId || undefined,
+        district_id: selectedDistrictId,
       });
       setCreatedResult(res);
       setIsCreating(false);
       setFullName('');
       setUsername('');
       setEmail('');
+      setPassword('');
+      setShowPassword(false);
       setMobile('');
       setSelectedDistrictId('');
-      loadData();
+      await loadData();
     } catch (err: any) {
-      alert(err?.message || 'Failed to create DAHO account.');
+      alert(err?.message || 'DAHO એકાઉન્ટ બનાવવામાં નિષ્ફળ (Failed to create DAHO account).');
     } finally {
       setIsSubmitting(false);
     }
@@ -278,7 +345,7 @@ export const AdminDahoView: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  {t('superAdmin.daho.fullName')} *
+                  {t('superAdmin.daho.fullName')} <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <input
                   type="text"
@@ -292,7 +359,7 @@ export const AdminDahoView: React.FC = () => {
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  {t('superAdmin.daho.username')} *
+                  {t('superAdmin.daho.username')} <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <input
                   type="text"
@@ -306,7 +373,7 @@ export const AdminDahoView: React.FC = () => {
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  {t('superAdmin.daho.mobile')} *
+                  {t('superAdmin.daho.mobile')} <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <input
                   type="tel"
@@ -320,15 +387,41 @@ export const AdminDahoView: React.FC = () => {
 
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  {t('superAdmin.daho.email')}
+                  {t('superAdmin.daho.email')} <span className="text-rose-500 font-bold">*</span>
                 </label>
                 <input
                   type="email"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t('superAdmin.daho.emailPlaceholder')}
+                  placeholder={t('superAdmin.daho.emailPlaceholder') || 'official@gujarat.gov.in'}
                   className="w-full px-3 py-1.5 border border-[#CBD5E1] rounded-xl text-xs bg-white"
                 />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  પાસવર્ડ (Password) <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="ઓછામાં ઓછા ૮ અક્ષર (Min. 8 chars)"
+                    className="w-full px-3 py-1.5 pr-8 border border-[#CBD5E1] rounded-xl text-xs bg-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -342,43 +435,96 @@ export const AdminDahoView: React.FC = () => {
                   className="w-full px-3 py-1.5 border border-[#CBD5E1] rounded-xl text-xs bg-white"
                 />
               </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  {t('superAdmin.daho.selectDistrict')}
-                </label>
-                <select
-                  value={selectedDistrictId}
-                  onChange={(e) => setSelectedDistrictId(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#CBD5E1] rounded-xl text-xs bg-white font-medium"
-                >
-                  <option value="">{t('superAdmin.daho.selectDistrictPlaceholder')}</option>
-                  {districts.map((d: any) => (
-                    <option key={d.district_id} value={d.district_id}>
-                      {localizeDistrict(d)} {d.status === 'ASSIGNED' ? `⚠️ [${t('superAdmin.dashboard.registryTable.tabAssigned')}]` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
-            {/* Invariant Warning if District has Conflict */}
-            {hasAssignmentConflict && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="font-bold">{t('superAdmin.daho.conflictWarningTitle')}:</strong>
-                  <p className="mt-0.5">
-                    {t('superAdmin.daho.conflictWarningMsg', {
-                      district: selectedDistrictInfo ? localizeDistrict(selectedDistrictInfo) : '',
-                      daho: selectedDistrictInfo?.assigned_daho?.full_name || '',
-                    })}
-                  </p>
+            {/* DISTRICT SELECTION & CLICKABLE GUJARAT DISTRICT MAP */}
+            <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                  <MapPin className="w-3.5 h-3.5 text-[#135D43]" />
+                  {t('superAdmin.daho.selectDistrict')} <span className="text-rose-500 font-bold">*</span>
+                  {selectedDistrictInfo && (
+                    <span className="ml-2 px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full font-semibold">
+                      પસંદ કરેલ: {localizeDistrict(selectedDistrictInfo)}
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px] gap-1"
+                    onClick={() => setIsMapExpanded(!isMapExpanded)}
+                  >
+                    <Globe className="w-3 h-3 text-[#135D43]" />
+                    {isMapExpanded ? 'નકશો છુપાવો (Hide Map)' : 'ગુજરાત નકશો જુઓ (Show Gujarat Map)'}
+                  </Button>
                 </div>
               </div>
-            )}
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+                <div>
+                  <select
+                    required
+                    value={selectedDistrictId}
+                    onChange={(e) => setSelectedDistrictId(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#CBD5E1] rounded-xl text-xs bg-white font-medium shadow-xs focus:ring-1 focus:ring-[#135D43]"
+                  >
+                    <option value="">{t('superAdmin.daho.selectDistrictPlaceholder')}</option>
+                    {districts.map((d: any) => (
+                      <option key={d.district_id} value={d.district_id}>
+                        {localizeDistrict(d)} {d.assigned_daho ? `(હાલના DAHO: ${d.assigned_daho.full_name})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    ડ્રોપડાઉનમાંથી જિલ્લો પસંદ કરો અથવા જમણી બાજુના ગુજરાત નકશા પર ક્લિક કરો.
+                  </p>
+                </div>
+
+                {/* Multiple DAHO Co-assignment Information Banner */}
+                {hasExistingAssignment && (
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2 text-blue-900 text-xs">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="font-semibold text-blue-950">સહ-નિયુક્તિ (Co-assignment):</strong>
+                      <p className="mt-0.5 text-[11px] text-blue-800 leading-relaxed">
+                        {selectedDistrictInfo ? localizeDistrict(selectedDistrictInfo) : 'આ'} જિલ્લામાં પહેલેથી DAHO ({selectedDistrictInfo?.assigned_daho?.full_name}) સક્રિય છે. સિસ્ટમ નીતિ અનુસાર આ નવું એકાઉન્ટ વધારાના DAHO તરીકે એકસાથે સક્રિય રહેશે.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Interactive Clickable Gujarat District Map */}
+              {isMapExpanded && (
+                <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-slate-50">
+                  <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between text-[11px] text-slate-700">
+                    <span className="font-semibold flex items-center gap-1">
+                      <Globe className="w-3.5 h-3.5 text-[#135D43]" />
+                      ગુજરાત રાજ્યના ૩૪ જિલ્લાઓ (Click any district to select):
+                    </span>
+                    {selectedDistrictInfo && (
+                      <span className="font-bold text-[#135D43]">
+                        {localizeDistrict(selectedDistrictInfo)} પસંદ કરેલ છે
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-1">
+                    <GujaratStateMap
+                      geoJsonData={stateGeoJson}
+                      selectedDistrictId={selectedDistrictId}
+                      selectedDistrictProps={selectedDistrictInfo}
+                      onDistrictSelect={handleMapDistrictSelect}
+                      height="280px"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E2E8F0]">
               <Button
                 variant="outline"
                 size="sm"
@@ -392,7 +538,6 @@ export const AdminDahoView: React.FC = () => {
                 size="sm"
                 type="submit"
                 isLoading={isSubmitting}
-                disabled={hasAssignmentConflict}
               >
                 {t('superAdmin.daho.createBtn')}
               </Button>

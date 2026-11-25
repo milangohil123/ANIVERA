@@ -110,6 +110,7 @@ export const en = {
       daho: 'DAHO Management',
       assignments: 'Assignment Registry',
       oversight: 'Operational Oversight',
+      rbac: 'RBAC – Roles & Permissions',
       roles: 'Role Oversight',
       users: 'User Directory',
       devices: 'Registered Devices',

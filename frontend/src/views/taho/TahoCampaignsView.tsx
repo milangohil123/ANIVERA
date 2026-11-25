@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const TahoCampaignsView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, hasPermission } = useAuth();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,9 +120,11 @@ export const TahoCampaignsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="primary" size="sm" onClick={handleOpenModal} leftIcon={<Plus className="w-3.5 h-3.5" />}>
-            નવી ઝુંબેશ શરૂ કરો
-          </Button>
+          {hasPermission('campaign.create') && (
+            <Button variant="primary" size="sm" onClick={handleOpenModal} leftIcon={<Plus className="w-3.5 h-3.5" />}>
+              નવી ઝુંબેશ શરૂ કરો
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={loadData} leftIcon={<RotateCcw className="w-3.5 h-3.5" />}>
             રીફ્રેશ
           </Button>
@@ -286,7 +288,7 @@ export const TahoCampaignsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 sticky bottom-0 bg-white pb-1 z-10">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsModalOpen(false)}>
               રદ કરો
             </Button>

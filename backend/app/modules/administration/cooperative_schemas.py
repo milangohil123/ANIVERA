@@ -19,8 +19,10 @@ class CooperativeRegisterRequest(BaseModel):
     mobile_e164: str = Field(..., min_length=10, max_length=15)
     email: str = Field(..., min_length=5, max_length=150, description="Valid email address")
     district_id: uuid.UUID
-    taluka_id: uuid.UUID
-    village_id: uuid.UUID
+    taluka_id: Optional[uuid.UUID] = None
+    village_id: Optional[uuid.UUID] = None
+    taluka_ids: Optional[List[uuid.UUID]] = None
+    village_ids: Optional[List[uuid.UUID]] = None
     address: Optional[str] = None
     postal_code: Optional[str] = None
     status: str = Field(default="ACTIVE")

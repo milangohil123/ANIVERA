@@ -36,7 +36,29 @@ export const AdminAssignmentsView: React.FC = () => {
     try {
       const ov = await adminService.getSuperAdminOverview(apiBaseUrl);
       if (ov?.districts) {
-        setDistricts(ov.districts);
+        const seen = new Set<string>();
+        const clean = ov.districts.filter((d: any) => {
+          const nameEn = (d.name_en || '').trim();
+          const nameGu = (d.name_gu || '').trim();
+          const code = (d.code || '').trim().toUpperCase();
+          if (
+            code.startsWith('D_') ||
+            nameEn.startsWith('D_') ||
+            nameGu.startsWith('જી') ||
+            nameGu === 'જી' ||
+            nameGu.startsWith('જી ') ||
+            nameEn.toLowerCase() === 'ji' ||
+            nameEn.toLowerCase() === 'jji'
+          ) {
+            return false;
+          }
+          let canonical = (nameEn || code).toLowerCase().trim();
+          if (canonical.includes('botad')) canonical = 'botad';
+          if (seen.has(canonical)) return false;
+          seen.add(canonical);
+          return true;
+        });
+        setDistricts(clean);
       }
     } catch (err: any) {
       setErrorMsg(err?.message || t('superAdmin.common.loadFailed') || 'Failed to load assignments.');

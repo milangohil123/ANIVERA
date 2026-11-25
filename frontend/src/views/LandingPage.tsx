@@ -2,59 +2,49 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
-  WifiOff,
-  Stethoscope,
   ArrowRight,
   LogIn,
   CheckCircle2,
   Laptop,
-  Smartphone,
   MapPin,
   Syringe,
-  Building2,
-  Lock,
-  Eye,
-  Send,
-  Check,
-  RefreshCw,
-  QrCode,
-  Thermometer,
-  Shield,
-  Database,
-  Award,
   Menu,
   X,
   Compass,
   RotateCw,
+  QrCode,
+  Wifi,
+  Layers,
+  Activity,
+  HeartPulse,
+  PhoneCall,
+  ChevronRight,
+  Users,
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import { LanguageSelector } from '../components/common/LanguageSelector';
+import { AnimatedCounter } from '../components/common/AnimatedCounter';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  // Mobile navigation drawer toggle
+  // Mobile menu toggle
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Hero section dual preview selector for small mobile devices
-  const [heroDeviceView, setHeroDeviceView] = useState<'LAPTOP' | 'MOBILE'>('LAPTOP');
+  // Platform Explorer Tab
+  const [explorerTab, setExplorerTab] = useState<'DAHO' | 'TAHO' | 'VO' | 'FW' | 'COOP' | 'FARMER'>('DAHO');
 
-  // Interactive Platform Explorer device switcher
-  const [deviceMode, setDeviceMode] = useState<'DESKTOP' | 'MOBILE'>('DESKTOP');
-  const [desktopTab, setDesktopTab] = useState<number>(0);
-  const [mobileTab, setMobileTab] = useState<number>(0);
+  // Contact form state
+  const [contactForm, setContactForm] = useState({ name: '', email: '', role: 'FARMER', message: '' });
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // Flip cards state for Government SOP guidelines
+  // Flip cards state for SOP
   const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({});
 
   const toggleFlip = (cardKey: string) => {
     setFlippedCards((prev) => ({ ...prev, [cardKey]: !prev[cardKey] }));
   };
-
-  // Contact form state
-  const [contactForm, setContactForm] = useState({ name: '', email: '', role: 'FARMER', message: '' });
-  const [isSubmitted, setIsSubmitted] = useState(false);
 
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,419 +57,187 @@ export const LandingPage: React.FC = () => {
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Desktop How-To-Use Panel Definitions (Laptop Showcase)
-  // --------------------------------------------------------------------------
-  const desktopPanels = [
-    {
-      id: 'daho',
-      title: 'DAHO વહીવટી ઝાંખી',
-      role: 'જિલ્લા પશુપાલન અધિકારી',
-      badge: 'DAHO_SCOPE',
-      desc: 'સમગ્ર બોટાદ જિલ્લાના ૪ તાલુકા અને ૧૯૨ ગામોના રસીકરણ લક્ષ્યાંકો, સ્ટોક સંચાલન અને નીતિ વિષયક ઝુંબેશ મંજૂરી.',
-      highlights: [
-        'તાલુકાવાર લક્ષ્યાંક વિશ્લેષણ (બોટાદ, ગઢડા, બરવાળા, રાણપુર)',
+  // Explorer Mockup Definitions
+  const explorerContent = {
+    DAHO: {
+      title: 'DAHO વહીવટી મોનિટરિંગ (District Oversight)',
+      role: 'જિલ્લા પશુપાલન અધિકારી (DAHO)',
+      desc: 'જિલ્લાના તમામ તાલુકા અને ગામડાઓનું રસીકરણ લક્ષ્યાંક, સ્ટોક સંચાલન, રોગ સર્વેલન્સ અને સરકારી નીતિ વિષયક ઝુંબેશ મંજૂરી.',
+      kpis: [
+        { label: 'કુલ તાલુકા', val: '4', sub: 'બોટાદ જિલ્લો' },
+        { label: 'નોંધાયેલા ગામો', val: '192', sub: 'સત્તાવાર કાર્યક્ષેત્ર' },
+        { label: 'કુલ પશુધન', val: '20,000+', sub: 'નોંધાયેલ હર્ડ' },
+        { label: 'કવરેજ ટકાવારી', val: '83.1%', sub: 'લક્ષિત સિદ્ધિ' },
+      ],
+      points: [
+        'તાલુકાવાર લક્ષ્યાંક વિશ્લેષણ અને દૈનિક પ્રગતિ ટ્રેકિંગ',
         'રોગ સર્વેક્ષણ પૂર્વ ચેતવણી જોખમ નિરીક્ષણ (Early Warning Surveillance)',
         'નવી રસીકરણ ઝુંબેશ રચના અને મંજૂરી (campaign.create)',
         'વેટરનરી ઓફિસર અને ક્ષેત્રીય સ્ટાફ પ્રોવિઝનિંગ & ઓથોરાઇઝેશન',
       ],
-      mockupData: {
-        headerTitle: 'ANIVERA • જિલ્લા ઝાંખી (DAHO Administration)',
-        kpis: [
-          { label: 'કુલ તાલુકા', val: '4', sub: 'બોટાદ જિલ્લો' },
-          { label: 'નોંધાયેલા ગામો', val: '192', sub: 'સત્તાવાર કાર્યક્ષેત્ર' },
-          { label: 'કુલ પશુધન', val: '20,000+', sub: 'નોંધાયેલ હર્ડ' },
-          { label: 'કવરેજ ટકાવારી', val: '83.1%', sub: 'લક્ષિત સિદ્ધિ' },
-        ],
-        statusText: 'જિલ્લા સ્તરીય સત્તા (campaign.create, district.admin) સક્રિય છે.',
-      },
     },
-    {
-      id: 'vo',
-      title: 'VO ક્લિનિકલ રોગ સમીક્ષા',
-      role: 'વેટરનરી અધિકારી',
-      badge: 'VO_SCOPE',
-      desc: 'અધિકૃત ગામડાઓમાંથી મળેલા પશુ રોગ અહેવાલોની ચકાસણી, લેબ નિદાન, અંતિમ રોગ પુષ્ટિ અને પશુ આરોગ્ય કેમ્પનું આયોજન.',
-      highlights: [
+    TAHO: {
+      title: 'TAHO તાલુકા સંકલન (Taluka Coordination)',
+      role: 'તાલુકા પશુપાલન અધિકારી (TAHO)',
+      desc: 'તાલુકા સ્તરે વેટરનરી અધિકારીઓ અને ફીલ્ડ વર્કર્સનું ક્ષેત્રીય સંકલન, ગામવાર રસીકરણ ઝુંબેશ અને સ્થાનિક સુપરવિઝન.',
+      kpis: [
+        { label: 'કાર્યક્ષેત્ર ગામો', val: '48', sub: 'તાલુકો' },
+        { label: 'સક્રિય સ્ટાફ', val: '14', sub: 'VO + FW' },
+        { label: 'ચાલુ ઝુંબેશો', val: '2', sub: 'FMD / Brucella' },
+        { label: 'કવરેજ દર', val: '89.4%', sub: 'તાલુકા સરેરાશ' },
+      ],
+      points: [
+        'ગામવાર રસીકરણ ઝુંબેશ સંચાલન અને લક્ષ્યાંક નિર્ધારણ',
+        'વેટરનરી સ્ટાફ અને ફીલ્ડ વર્કર્સની ગામ મુજબ ફાળવણી',
+        'ગામીણ GIS નકશા દ્વારા રીઅલ-ટાઇમ પ્રગતિ નિરીક્ષણ',
+        'સ્થાનિક પશુપાલક ડિરેક્ટરી અને આરોગ્ય અહેવાલો',
+      ],
+    },
+    VO: {
+      title: 'VO ક્લિનિકલ રોગ સમીક્ષા (Veterinary Clinic)',
+      role: 'વેટરનરી અધિકારી (VO)',
+      desc: 'ગામડાઓમાંથી મળેલા પશુ રોગ અહેવાલોની તપાસ, ક્લિનિકલ નિદાન, સારવાર નોંધણી, અંતિમ રોગ પુષ્ટિ અને પશુ આરોગ્ય કેમ્પ.',
+      kpis: [
+        { label: 'સોંપાયેલ ગામડાં', val: '3', sub: 'અધિકૃત કાર્યક્ષેત્ર' },
+        { label: 'રોગ અહેવાલો', val: '5', sub: '૩ સમીક્ષા બાકી' },
+        { label: 'પુષ્ટિ થયેલ કેસ', val: '1', sub: 'FMD સંકલન' },
+        { label: 'રસીકરણ દર', val: '88.5%', sub: 'ચોમાસુ રસીકરણ' },
+      ],
+      points: [
         'ક્લિનિકલ રોગ સમીક્ષા ઇનબોક્સ (FMD, HS, BQ શંકાસ્પદ કેસ)',
         'વિભાગીય રોગ પુષ્ટિ અથવા નકારવાની સત્તા (disease.confirm)',
         'પશુ આરોગ્ય કેમ્પ દરખાસ્તોની મંજૂરી અને તારીખ ફાળવણી',
         'સ્થાનિક રસી સ્ટોક સબ-ડેપો વિતરણ અને કોલ્ડ-ચેઈન ઓડિટ',
       ],
-      mockupData: {
-        headerTitle: 'ANIVERA • ક્લિનિકલ ઝાંખી (Veterinary Officer)',
-        kpis: [
-          { label: 'સોંપાયેલ ગામડાં', val: '3', sub: 'અધિકૃત કાર્યક્ષેત્ર' },
-          { label: 'રોગ અહેવાલો', val: '5', sub: '3 સમીક્ષા બાકી' },
-          { label: 'પુષ્ટિ થયેલ કેસ', val: '1', sub: 'FMD બરવાળા સીમ' },
-          { label: 'રસીકરણ દર', val: '88.5%', sub: 'ચોમાસુ રસીકરણ' },
-        ],
-        statusText: 'ક્લિનિકલ રોગ પુષ્ટિ સત્તા (disease.confirm) સક્રિય છે.',
-      },
     },
-    {
-      id: 'gis',
-      title: 'GIS ભૌગોલિક ગૂગલ નકશો',
-      role: 'જિલ્લા અને ક્લિનિકલ સ્ટાફ',
-      badge: 'GIS_LAYER',
-      desc: 'બોટાદ જિલ્લાનો વાસ્તવિક ગૂગલ મેપ જેમાં દરેક ગામ રસીકરણ ટકાવારી મુજબ રંગીન પિન સાથે લાઈવ દેખાય છે.',
-      highlights: [
-        '૧૦૦% વાસ્તવિક ગૂગલ રોડ મેપ અને સેટેલાઇટ હાઇબ્રિડ લેયર',
-        'ગ્રીન (≥70%), પીળો (30-69%), લાલ (<30%) અને ગ્રે (0%) પિન્સ',
-        'ટોચ પર સીધું જ ગૂગલ મેપ ખોલવા માટે Open in Maps બટન',
-        'ગામ પર ક્લિક કરતાં પશુ સંખ્યા, રસીકરણ પ્રગતિ અને સર્ચ ફિલ્ટર',
+    FW: {
+      title: 'FW ક્ષેત્રીય નોંધણી & રસીકરણ (Field Operations)',
+      role: 'ફીલ્ડ વર્કર (Field Worker)',
+      desc: 'ઘર-ઘર જઈને પશુ નોંધણી, કાનમાં RFID/QR ટૅગિંગ, રસીકરણ નોંધણી અને ૧૦૦% ઓફલાઇન સિંક ક્ષમતા સાથે ક્ષેત્રીય કામગીરી.',
+      kpis: [
+        { label: 'સોંપાયેલ ગામ', val: '2', sub: 'ક્ષેત્રીય કવરેજ' },
+        { label: 'આજે રસીકરણ', val: '38', sub: 'ડોઝ આપેલા' },
+        { label: 'બાકી સિંક', val: '0', sub: 'બધા ડેટા સિંક' },
+        { label: 'પશુ ટેગિંગ', val: '100%', sub: 'સંપૂર્ણ વેરિફાઇડ' },
       ],
-      mockupData: {
-        headerTitle: 'ANIVERA • કાર્યક્ષેત્ર ભૌગોલિક નકશો (Geospatial Map)',
-        kpis: [
-          { label: 'બોટાદ ગ્રામ', val: '84%', sub: 'લીલો પિન (સફળ)' },
-          { label: 'ગઢડા ઉત્તર', val: '74%', sub: 'લીલો પિન (સફળ)' },
-          { label: 'બરવાળા સીમ', val: '84%', sub: 'લીલો પિન (સફળ)' },
-          { label: 'પાળિયાદ', val: '10%', sub: 'લાલ પિન (તાકીદ)' },
-        ],
-        statusText: 'રીઅલ-ટાઇમ જીઓસ્પેશિયલ બોટાદ મોનિટરિંગ સક્રિય.',
-      },
+      points: [
+        '૧૦૦% ઓફલાઇન કામગીરી — ઇન્ટરનેટ વગર ગામમાં ડેટા એન્ટ્રી',
+        'QR સ્કેનિંગ દ્વારા પશુ પ્રોફાઇલ અને ઇતિહાસની ત્વરિત ઓળખ',
+        'તાત્કાલિક રોગ લક્ષણ ફોટો સાથે પ્રાથમિક અહેવાલ સબમિશન',
+        'સ્વયંસંચાલિત રીકનેક્શન સિંક (Auto conflict-free sync)',
+      ],
     },
-    {
-      id: 'coop',
-      title: 'દૂધ સહકારી મંડળી',
-      role: 'ડેરી સ્ટાફ અને સહકારી સંઘ',
-      badge: 'COOP_AGGREGATE',
-      desc: 'દૂધ સપ્લાયર પરિવારોના પશુધનને રોગમુક્ત રાખવા માટે એકત્રિત કવરેજ ડેટા અને સામુદાયિક રસીકરણ કેમ્પનું આયોજન.',
-      highlights: [
+    COOP: {
+      title: 'ડેરી સહકારી મંડળી (Dairy Cooperative)',
+      role: 'દૂધ સહકારી મંડળી (Dairy Cooperative)',
+      desc: 'દૂધ ઉત્પાદક ખેડૂતોના પશુધનને રોગમુક્ત રાખવા માટે એકત્રિત કવરેજ ડેટા, સામુદાયિક રસીકરણ કેમ્પ અને દૂધ ઉત્પાદકતા સુરક્ષા.',
+      kpis: [
+        { label: 'જોડાયેલ ગામો', val: '15', sub: 'સહકારી કાર્યક્ષેત્ર' },
+        { label: 'સભ્ય પશુઓ', val: '4,850', sub: 'નોંધાયેલ દુધાળા પશુ' },
+        { label: 'કુલ કવરેજ', val: '89.2%', sub: 'ડેરી રસીકરણ કવરેજ' },
+        { label: 'સહકારી કેમ્પ', val: '3', sub: 'આયોજિત કેમ્પ' },
+      ],
+      points: [
         'સહકારી મંડળીના જોડાયેલ ગામોની એકત્રિત પ્રગતિ (Aggregate Progress)',
-        'દૂધ ઉત્પાદક ખેડૂત રસીકરણ વલણ ગ્રાફ',
-        'સહકારી ડેરી સપ્લાય ચેઈન પશુ સુરક્ષા',
+        'દૂધ ઉત્પાદક ખેડૂત રસીકરણ વલણ ગ્રાફ અને રોગ સુરક્ષા',
+        'ડેરી સપ્લાય ચેઈન પશુ સુરક્ષા અને સામુદાયિક કેમ્પ દરખાસ્ત',
         'પશુપાલકની ગોપનીયતા જાળવીને ફક્ત ગ્રામ્ય સ્તરનો અહેવાલ',
       ],
-      mockupData: {
-        headerTitle: 'ANIVERA • દૂધ સહકારી મંડળી ડેશબોર્ડ',
-        kpis: [
-          { label: 'જોડાયેલ ગામો', val: '15', sub: 'સહકારી કાર્યક્ષેત્ર' },
-          { label: 'સભ્ય પશુઓ', val: '4,850', sub: 'નોંધાયેલ દુધાળા પશુ' },
-          { label: 'કુલ કવરેજ', val: '89.2%', sub: 'ડેરી રસીકરણ કવરેજ' },
-          { label: 'આરોગ્ય કેમ્પ', val: '3', sub: 'આયોજિત કેમ્પ' },
-        ],
-        statusText: 'સહકારી ડેટા ગોપનીયતા નીતિ સક્રિય (Aggregate Only).',
-      },
     },
-    {
-      id: 'admin',
-      title: 'સિસ્ટમ એડમિન અને સુરક્ષા',
-      role: 'તકનીકી વહીવટકર્તા',
-      badge: 'SYS_ADMIN',
-      desc: 'ઉપકરણ મંજૂરી (Device Provisioning), 7-દિવસીય ક્રિપ્ટોગ્રાફિક ગ્રાન્ટ્સ, અફર ઓડિટ લોગ અને સર્વર મોનિટરિંગ.',
-      highlights: [
-        'ક્ષેત્રીય સ્ટાફ મોબાઈલ ડિવાઇસ મંજૂરી અને કી વિતરણ',
-        'અફર સરકારી ઓડિટ લોગ્સ (Immutable SHA-256 Audit)',
-        'સિસ્ટમ હેલ્થ, CPU, મેમરી અને ડેટાબેઝ બેકઅપ',
-        'ઓફલાઇન ડેટા કોન્ફ્લિક્ટ રીઝોલ્યુશન મોનિટરિંગ',
+    FARMER: {
+      title: 'પશુપાલક / ખેડૂત પોર્ટલ (Farmer Direct Portal)',
+      role: 'પશુપાલક / ખેડૂત (Livestock Owner)',
+      desc: 'પોતાના પશુધનની ડિજિટલ પ્રોફાઇલ, રસીકરણ પ્રમાણપત્રો, આગામી બૂસ્ટર તારીખો અને બીમાર પશુ માટે તાત્કાલિક રોગ અહેવાલ.',
+      kpis: [
+        { label: 'મારા પશુઓ', val: '4', sub: 'નોંધાયેલ પશુધન' },
+        { label: 'આરોગ્ય સ્થિતિ', val: 'ઉત્તમ', sub: 'સંપૂર્ણ રસીકરણ' },
+        { label: 'બૂસ્ટર ડ્યુ', val: '15 દિવસ', sub: 'HS/BQ રસી' },
+        { label: 'સેવા વિનંતી', val: 'સક્રિય', sub: 'VO મુલાકાત' },
       ],
-      mockupData: {
-        headerTitle: 'ANIVERA • સિસ્ટમ એડમિનિસ્ટ્રેશન & સિક્યુરિટી',
-        kpis: [
-          { label: 'માન્ય ઉપકરણો', val: '28', sub: 'ચકાસાયેલ સ્માર્ટફોન' },
-          { label: 'ઓડિટ ઇવેન્ટ્સ', val: '14,892', sub: 'અફર સુરક્ષિત લોગ' },
-          { label: 'સિંક સફળતા', val: '99.98%', sub: 'Zero Data Loss' },
-          { label: 'સર્વર સ્થિતિ', val: 'Healthy', sub: 'Latency < 24ms' },
-        ],
-        statusText: 'Zero-Trust સુરક્ષા મોડેલ સક્રિય.',
-      },
+      points: [
+        'સરળ ઓટીપી આધારિત લૉગિન (OTP Login with Registered Mobile)',
+        'પશુના કાનના ટેગ નંબરથી સંપૂર્ણ આરોગ્ય ઇતિહાસ અને રસીકરણ કાર્ડ',
+        'પશુ બીમાર પડે ત્યારે ફોટો અને લક્ષણો સાથે ત્વરિત સહાય વિનંતી',
+        'આગામી રસીકરણ તારીખ માટે સ્વયંસંચાલિત ગુજરાતી એલર્ટ',
+      ],
     },
-  ];
+  };
 
-  // --------------------------------------------------------------------------
-  // Mobile Workflows Definitions (Phone Mockup Showcase)
-  // --------------------------------------------------------------------------
-  const mobileWorkflows = [
-    {
-      id: 'scan',
-      title: '૧. QR સ્કેન & પશુ ટેગિંગ',
-      role: 'Field Worker (FW)',
-      desc: 'પશુના કાન પર લાગેલા ૧૨-અંકના Barcode/QR કોડને મોબાઈલ કેમેરાથી તુરંત સ્કેન કરીને પશુની ઓળખ મેળવો.',
-      screenHeader: 'પશુ QR ટેગ સ્કેનર',
-      screenBody: (
-        <div className="space-y-3">
-          <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-center shadow-xs">
-            <div className="w-14 h-14 mx-auto rounded-xl border-2 border-dashed border-[#135D43] flex items-center justify-center bg-emerald-50">
-              <QrCode className="w-7 h-7 text-[#135D43]" />
-            </div>
-            <p className="text-xs font-mono text-[#135D43] mt-2 font-bold tracking-wider">9001 8274 6190</p>
-            <p className="text-[11px] text-slate-500 font-medium">ટેગ સફળતાપૂર્વક ચકાસાયેલ છે</p>
-          </div>
-          <div className="p-3 rounded-xl bg-white border border-slate-200 text-xs space-y-1.5 shadow-xs">
-            <div className="flex justify-between text-slate-600">
-              <span>પશુપાલક:</span>
-              <span className="font-semibold text-slate-900">રમેશભાઈ ડાભી</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>ગામ:</span>
-              <span className="font-semibold text-slate-900">બોટાદ ગ્રામ</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>પ્રજાતિ:</span>
-              <span className="font-bold text-[#135D43]">ગીર ગાય • માદા</span>
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: 'vaccinate',
-      title: '૨. ઘેર-ઘેર ઓફલાઇન રસીકરણ',
-      role: 'Field Worker (FW)',
-      desc: 'ઇન્ટરનેટ ન હોય તો પણ ઘેર-ઘેર જઈને રસીનો પ્રકાર, વાયલ બેચ નંબર અને ડોઝ તુરંત સેવ કરો.',
-      screenHeader: 'રસીકરણ એન્ટ્રી (ઓફલાઇન સક્ષમ)',
-      screenBody: (
-        <div className="space-y-2.5">
-          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs shadow-xs">
-            <div className="flex items-center gap-2 text-[#135D43] font-bold">
-              <Syringe className="w-4 h-4" />
-              <span>FMD (ખરવા-મોવાસા) રસી</span>
-            </div>
-            <p className="text-[11px] text-emerald-800 mt-1">બેચ: FMD-2026-B08 • મુદત: 2027</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1 text-xs shadow-xs">
-            <span className="text-[11px] text-slate-500">કોલ્ડ-ચેઈન ચકાસણી:</span>
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-slate-600">તાપમાન:</span>
-              <span className="text-[#135D43] font-bold">4.2°C (માન્ય 2-8°C)</span>
-            </div>
-          </div>
-          <button className="w-full py-2.5 bg-[#135D43] text-white rounded-lg text-xs font-semibold hover:bg-[#0F4C37] transition-all shadow-xs flex items-center justify-center gap-1.5">
-            <Check className="w-3.5 h-3.5" />
-            <span>રસીકરણ રેકોર્ડ સેવ કરો</span>
-          </button>
-        </div>
-      ),
-    },
-    {
-      id: 'report',
-      title: '૩. તાત્કાલિક રોગ અહેવાલ',
-      role: 'Field Worker / Farmer',
-      desc: 'પશુમાં રોગના લક્ષણ દેખાય તો તરત જ ફોટો પાડી GPS લોકેશન સાથે VO સમીક્ષા માટે અહેવાલ મોકલો.',
-      screenHeader: 'શંકાસ્પદ રોગ પ્રાથમિક રિપોર્ટ',
-      screenBody: (
-        <div className="space-y-2.5 text-xs">
-          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 shadow-xs">
-            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide">લક્ષણો:</span>
-            <p className="text-xs font-medium text-amber-900 mt-0.5">મોઢામાં ફોલ્લા, વધુ પડતી લાળ, લંગડાપણું</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs shadow-xs">
-            <span className="text-slate-500">GPS લોકેશન:</span>
-            <span className="font-mono font-medium text-slate-800">22.1850° N, 71.6850° E</span>
-          </div>
-          <div className="p-2 rounded-lg bg-slate-100 border border-slate-200 text-[10px] text-slate-600">
-            ફોટો SHA-256 હેશિંગ સાથે જોડાશે
-          </div>
-          <button className="w-full py-2.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 transition-all shadow-xs flex items-center justify-center gap-1.5">
-            <span>વેટરનરી ઓફિસરને મોકલો</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
-    {
-      id: 'sync',
-      title: '૪. બેકગ્રાઉન્ડ ઓટો-સિંક',
-      role: 'System PWA Background',
-      desc: 'નેટવર્ક આવે ત્યારે એક પણ ક્લિક કર્યા વિના તમામ રેકોર્ડ્સ સરકારી સર્વર સાથે ઓટો-સિંક થાય છે.',
-      screenHeader: 'ઓફલાઇન ડેટા સિંક્રનાઇઝેશન',
-      screenBody: (
-        <div className="space-y-3 text-center py-2">
-          <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#135D43] border border-emerald-200 flex items-center justify-center mx-auto shadow-xs">
-            <RefreshCw className="w-6 h-6 animate-spin" />
-          </div>
-          <div>
-            <h5 className="text-xs font-bold text-slate-900">ઓટોમેટિક સિંક ચાલુ છે</h5>
-            <p className="text-[11px] text-slate-500 mt-0.5">8 ઇવેન્ટ્સ • 2 ફોટોગ્રાફ્સ અપલોડ થઈ રહ્યાં છે</p>
-          </div>
-          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-[#135D43] h-1.5 rounded-full" style={{ width: '85%' }} />
-          </div>
-          <span className="text-[11px] font-mono text-[#135D43] block font-bold">Zero Data Loss Guaranteed</span>
-        </div>
-      ),
-    },
-    {
-      id: 'farmer',
-      title: '૫. ખેડૂત ડિજિટલ પાસબુક',
-      role: 'Farmer / પશુપાલક',
-      desc: 'પશુપાલક પોતાના મોબાઈલ નંબર વડે OTP લૉગિન કરીને પોતાના તમામ પશુઓની ડિજિટલ રસીકરણ પાસબુક જોઈ શકે છે.',
-      screenHeader: 'મારી પશુધન હેલ્થ પાસબુક',
-      screenBody: (
-        <div className="space-y-2 text-xs">
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1 shadow-xs">
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-slate-900">ગાય (કાન ટેગ #6190)</span>
-              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200">
-                સુરક્ષિત
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">છેલ્લી રસી: FMD બૂસ્ટર (૧૪ ફેબ્રુઆરી)</p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1 shadow-xs">
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-slate-900">ભેંસ (કાન ટેગ #5520)</span>
-              <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-bold border border-amber-200">
-                આગામી રસી બાકી
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">HS રસીકરણ કેમ્પ: ૨૫ માર્ચ (ગામ શાળા)</p>
-          </div>
-          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-center text-[10px] text-[#135D43] font-medium">
-            સરકારી સહાય અને દૂધ મંડળી બોનસ માટે માન્ય પાસબુક
-          </div>
-        </div>
-      ),
-    },
-  ];
-
-  // --------------------------------------------------------------------------
-  // Government SOP Role Guides (Flip Cards)
-  // --------------------------------------------------------------------------
-  const govFlipCards = [
-    {
-      key: 'daho_sop',
-      roleTitle: 'DAHO — જિલ્લા પશુપાલન અધિકારી',
-      dept: 'જિલ્લા પંચાયત, બોટાદ',
-      icon: <Award className="w-5 h-5 text-[#135D43]" />,
-      frontBadge: 'સર્વોચ્ચ જિલ્લા વહીવટકર્તા',
-      frontSummary: 'જિલ્લા સ્તરે તમામ ૪ તાલુકાઓના રસીકરણ લક્ષ્યાંકો નક્કી કરવા, નવી ઝુંબેશ શરૂ કરવી અને રસી સ્ટોકનું નિરીક્ષણ કરવું.',
-      backTitle: 'DAHO સત્તાવાર SOP પ્રોટોકોલ:',
-      backPoints: [
-        '૧. નવી રસીકરણ ઝુંબેશ રચના અને મંજૂરી (campaign.create)',
-        '૨. તાલુકાવાર રસી બેચ સ્ટોક અને કોલ્ડ-ચેઈન લોજિસ્ટિક્સ મંજૂરી',
-        '૩. રોગચાળાની સ્થિતિમાં કટોકટી જાહેર કરવી અને ક્વોરેન્ટાઇન સીમા નક્કી કરવી',
-        '૪. સમગ્ર સ્ટાફ (VO અને FW) નું પ્રોવિઝનિંગ અને મોનિટરિંગ',
-      ],
-      authorityTag: 'STATUTORY_AUTHORITY: DISTRICT_ADMIN',
-    },
-    {
-      key: 'vo_sop',
-      roleTitle: 'VO — વેટરનરી અધિકારી',
-      dept: 'પશુ દવાખાનું / પ્રાથમિક આરોગ્ય કેન્દ્ર',
-      icon: <Stethoscope className="w-5 h-5 text-[#135D43]" />,
-      frontBadge: 'ક્લિનિકલ નિર્ણય સત્તા',
-      frontSummary: 'ગામડાંઓમાંથી આવતા શંકાસ્પદ કેસની લેબ ચકાસણી, રોગ પુષ્ટિ / નકાર અને સામૂહિક પશુ આરોગ્ય કેમ્પનું સંચાલન.',
-      backTitle: 'VO સત્તાવાર SOP પ્રોટોકોલ:',
-      backPoints: [
-        '૧. રોગ અહેવાલની સત્તાવાર પુષ્ટિ અથવા નકાર (disease.confirm)',
-        '૨. પશુ આરોગ્ય કેમ્પનું આયોજન અને સ્ટાફ ડ્યુટી ફાળવણી (camp.create)',
-        '૩. સબ-સેન્ટર રસી સ્ટોકની ચકાસણી અને કોલ્ડ-ચેઈન (2-8°C) ઓડિટ',
-        '૪. ક્ષેત્રીય સ્ટાફની સારવાર અને રસીકરણ કામગીરીની ટેકનિકલ ચકાસણી',
-      ],
-      authorityTag: 'CLINICAL_AUTHORITY: DISEASE_CONFIRM',
-    },
-    {
-      key: 'fw_sop',
-      roleTitle: 'Field Worker — ક્ષેત્રીય કાર્યકર',
-      dept: 'ઘેર-ઘેર રસીકરણ અને સર્વેક્ષણ ટીમ',
-      icon: <Syringe className="w-5 h-5 text-[#135D43]" />,
-      frontBadge: 'ગ્રાઉન્ડ લેવલ એક્ઝિક્યુશન',
-      frontSummary: 'ગામડાંઓમાં ઘેર-ઘેર જઈ પશુઓની QR ટેગિંગ નોંધણી, રસીકરણ ડોઝ આપવો અને શંકાસ્પદ રોગના લક્ષણો નોંધવા.',
-      backTitle: 'FW સત્તાવાર SOP પ્રોટોકોલ:',
-      backPoints: [
-        '૧. ૧૨-અંકના QR બારકોડ વડે પશુ અને પશુપાલકની નોંધણી (animal.register)',
-        '૨. કોલ્ડ-બોક્સમાંથી રસી લઈ ઘેર-ઘેર ડોઝ આપવો (vaccination.record)',
-        '૩. રોગચાળાના લક્ષણો જણાતાં તુરંત ફોટો સાથે અહેવાલ મોકલવો',
-        '૪. નેટવર્ક આવતાં તમામ ઓફલાઇન રેકોર્ડ્સ ઓટો-સિંક કરવા',
-      ],
-      authorityTag: 'FIELD_AUTHORITY: VACCINATION_RECORD',
-    },
-    {
-      key: 'coop_sop',
-      roleTitle: 'દૂધ સહકારી & પશુપાલક',
-      dept: 'દૂધ ઉત્પાદક સહકારી મંડળી / ખેડૂત પરિવાર',
-      icon: <Building2 className="w-5 h-5 text-[#135D43]" />,
-      frontBadge: 'સહકારી સંકલન & પશુ રક્ષણ',
-      frontSummary: 'દૂધ સપ્લાય કરતા ખેડૂતોના પશુધનનું રસીકરણ કવરેજ સુનિશ્ચિત કરવું જેથી દૂધ ઉત્પાદનમાં ઘટાડો ન થાય.',
-      backTitle: 'સહકારી મંડળી SOP પ્રોટોકોલ:',
-      backPoints: [
-        '૧. મંડળી હેઠળના તમામ સભ્ય પશુપાલકોનું રસીકરણ કવરેજ મોનિટરિંગ',
-        '૨. ગામમાં પશુ આરોગ્ય કેમ્પ માટે સ્થળ અને વ્યવસ્થાનું આયોજન',
-        '૩. ખેડૂતને આગામી રસીકરણ તારીખ અંગે માહિતગાર કરવા',
-        '૪. ગોપનીયતા જાળવીને ફક્ત એકત્રિત (Aggregate) આંકડા ચકાસવા',
-      ],
-      authorityTag: 'COOP_AUTHORITY: AGGREGATE_REVIEW',
-    },
-  ];
-
-  const currentDesktop = desktopPanels[desktopTab];
-  const currentMobile = mobileWorkflows[mobileTab];
+  const currentTab = explorerContent[explorerTab];
 
   return (
-    <div className="min-h-screen bg-white text-slate-800 font-body selection:bg-[#135D43] selection:text-white">
-      {/* ==================================================================== */}
-      {/* 1. TOP STICKY NAVBAR (Luxurious Chocolate Black Theme #171210)       */}
-      {/* ==================================================================== */}
-      <header className="sticky top-0 z-50 bg-[#171210] border-b border-[#2C211D] shadow-md transition-all">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Brand Logo & State Tag */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2D211C] to-[#140F0D] border border-[#44332B] text-emerald-400 flex items-center justify-center font-bold text-sm tracking-tight shadow-sm shrink-0">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+    <div className="min-h-screen bg-[#F0F4F8] text-[#172033] font-body selection:bg-[#135D43] selection:text-white antialiased">
+      {/* ---------------------------------------------------------------------- */}
+      {/* 1. TOP MODERN AGTECH NAVBAR (Inspired by DRN-OS Reference)              */}
+      {/* ---------------------------------------------------------------------- */}
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#E2E8F0] shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
+          {/* Logo & Branding */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#135D43] to-[#0A3828] flex items-center justify-center text-white shadow-xs border border-emerald-600/30">
+              <ShieldCheck className="w-6 h-6 text-emerald-200" />
             </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-base font-extrabold text-white font-heading tracking-tight">
-                  ANIVERA
-                </span>
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#2C211D] text-emerald-300 border border-[#44332B]">
-                  બોટાદ પાઇલટ
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-heading font-black text-xl tracking-tight text-[#0F172A]">ANIVERA</span>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-mono">
+                  પશુરક્ષક
                 </span>
               </div>
-              <span className="text-[10px] text-[#A89A92] hidden md:block">
-                પશુપાલન વિભાગ, ગુજરાત સરકાર
-              </span>
+              <p className="text-[10px] text-slate-500 font-medium tracking-wide uppercase">
+                GUJARAT LIVESTOCK HEALTH & EPIDEMIC SURVEILLANCE
+              </p>
             </div>
           </div>
 
-          {/* Center Links (Desktop) */}
-          <nav className="hidden lg:flex items-center gap-7 text-xs font-semibold text-[#D5CBC5]">
-            <a href="#how-to-use" className="hover:text-white transition-colors duration-150">
-              ઉપયોગ પદ્ધતિ (How To Use)
+          {/* Desktop Navigation Links */}
+          <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-700">
+            <a href="#about" className="hover:text-[#135D43] transition-colors">
+              ઝાંખી (About)
             </a>
-            <a href="#features" className="hover:text-white transition-colors duration-150">
-              મુખ્ય સુવિધાઓ
+            <a href="#capabilities" className="hover:text-[#135D43] transition-colors">
+              ટેકનોલોજી & ક્ષમતાઓ
             </a>
-            <a href="#security" className="hover:text-white transition-colors duration-150">
-              સુરક્ષા & SOP
+            <a href="#surveillance" className="hover:text-[#135D43] transition-colors">
+              રોગ સર્વેલન્સ
             </a>
-            <a href="#analytics" className="hover:text-white transition-colors duration-150">
-              લાઇવ એનાલિટિક્સ
+            <a href="#explorer" className="hover:text-[#135D43] transition-colors">
+              વિભાગીય પોર્ટલ્સ
             </a>
-            <a href="#contact" className="hover:text-white transition-colors duration-150">
-              સંપર્ક
+            <a href="#impact" className="hover:text-[#135D43] transition-colors">
+              રાજ્યવ્યાપી આંકડા
+            </a>
+            <a href="#contact" className="hover:text-[#135D43] transition-colors">
+              સહાય હેલ્પલાઇન
             </a>
           </nav>
 
-          {/* Right Action Buttons */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <LanguageSelector variant="dark" />
+          {/* Action Buttons & Language Toggle */}
+          <div className="hidden sm:flex items-center gap-2.5">
+            <LanguageSelector />
 
             <button
               onClick={() => navigate('/farmer/login')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-200 bg-[#261E1A] hover:bg-[#342924] border border-[#3E302A] rounded-lg transition-all shadow-xs cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors shadow-2xs"
             >
-              <Smartphone className="w-3.5 h-3.5 text-amber-300" />
-              <span>{t('auth.farmerTab')}</span>
+              <span>ખેડૂત લૉગિન</span>
             </button>
 
             <button
               onClick={() => navigate('/login')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#135D43] hover:bg-[#0E4A35] rounded-lg transition-all shadow-xs cursor-pointer border border-emerald-600/40"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#135D43] hover:bg-[#0E4632] text-white text-xs font-bold transition-all shadow-xs"
             >
-              <LogIn className="w-3.5 h-3.5 text-emerald-200" />
-              <span>{t('auth.staffTab')}</span>
+              <LogIn className="w-3.5 h-3.5" />
+              <span>અધિકારી પ્રવેશ</span>
             </button>
+          </div>
 
-            {/* Mobile Hamburger Toggle Button */}
+          {/* Mobile Menu Button */}
+          <div className="flex sm:hidden items-center gap-2">
+            <LanguageSelector />
             <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-              className="lg:hidden p-2 rounded-lg text-[#D5CBC5] hover:text-white hover:bg-[#261E1A] border border-[#3E302A] transition-colors"
-              aria-label="Toggle navigation menu"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 text-slate-700 hover:text-slate-900 rounded-lg border border-slate-200"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -488,1139 +246,800 @@ export const LandingPage: React.FC = () => {
 
         {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
-          <div className="lg:hidden bg-[#1C1613] border-t border-[#2C211D] px-4 pt-3 pb-5 space-y-3 shadow-xl animate-fade-in text-xs font-medium">
-            <div className="flex flex-col space-y-2 text-[#D5CBC5]">
-              <a
-                href="#how-to-use"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#261E1A] hover:text-white transition-colors"
-              >
-                ઉપયોગ પદ્ધતિ (How To Use)
-              </a>
-              <a
-                href="#features"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#261E1A] hover:text-white transition-colors"
-              >
-                મુખ્ય સુવિધાઓ
-              </a>
-              <a
-                href="#security"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#261E1A] hover:text-white transition-colors"
-              >
-                સુરક્ષા & SOP
-              </a>
-              <a
-                href="#analytics"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#261E1A] hover:text-white transition-colors"
-              >
-                લાઇવ એનાલિટિક્સ
-              </a>
-              <a
-                href="#contact"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-[#261E1A] hover:text-white transition-colors"
-              >
-                સંપર્ક કાર્યાલય
-              </a>
-            </div>
-
-            <div className="pt-3 border-t border-[#2C211D] grid grid-cols-2 gap-2">
+          <div className="sm:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 animate-fade-in shadow-lg">
+            <div className="grid grid-cols-2 gap-2 pb-2">
               <button
                 onClick={() => {
                   setIsMobileMenuOpen(false);
                   navigate('/farmer/login');
                 }}
-                className="w-full py-2.5 px-3 rounded-lg bg-[#261E1A] text-amber-200 border border-[#3E302A] font-semibold text-center flex items-center justify-center gap-1.5"
+                className="w-full py-2 px-3 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold text-center"
               >
-                <Smartphone className="w-3.5 h-3.5 text-amber-300" />
-                <span>ખેડૂત લૉગિન</span>
+                ખેડૂત લૉગિન
               </button>
               <button
                 onClick={() => {
                   setIsMobileMenuOpen(false);
                   navigate('/login');
                 }}
-                className="w-full py-2.5 px-3 rounded-lg bg-[#135D43] text-white font-semibold text-center flex items-center justify-center gap-1.5"
+                className="w-full py-2 px-3 rounded-lg bg-[#135D43] text-white text-xs font-bold text-center"
               >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>સ્ટાફ લૉગિન</span>
+                અધિકારી પ્રવેશ
               </button>
+            </div>
+            <div className="space-y-2 text-xs font-semibold text-slate-700 pt-2 border-t border-slate-100">
+              <a
+                href="#about"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                ઝાંખી (About)
+              </a>
+              <a
+                href="#capabilities"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                ટેકનોલોજી & ક્ષમતાઓ
+              </a>
+              <a
+                href="#surveillance"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                રોગ સર્વેલન્સ & રસીકરણ
+              </a>
+              <a
+                href="#explorer"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                વિભાગીય પોર્ટલ્સ
+              </a>
+              <a
+                href="#impact"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                રાજ્યવ્યાપી આંકડા
+              </a>
+              <a
+                href="#contact"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block py-1.5 hover:text-[#135D43]"
+              >
+                સહાય હેલ્પલાઇન (1800-BOTAD)
+              </a>
             </div>
           </div>
         )}
       </header>
 
-      {/* ==================================================================== */}
-      {/* 2. HERO SECTION — PURE WHITE BACKDROP & DUAL HARDWARE SHOWCASE       */}
-      {/* ==================================================================== */}
-      <section className="relative pt-10 pb-16 sm:pt-16 sm:pb-24 bg-white border-b border-slate-200 overflow-hidden">
-        {/* Subtle grid accent background */}
-        <div className="absolute inset-0 bg-[radial-gradient(#E2E8F0_1px,transparent_1px)] [background-size:24px_24px] opacity-60 pointer-events-none" />
+      {/* ---------------------------------------------------------------------- */}
+      {/* 2. CINEMATIC HERO SECTION (Directly Inspired by DRN-OS AgTech Reference) */}
+      {/* ---------------------------------------------------------------------- */}
+      <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24">
+        {/* Subtle Ambient Decorative Gradients & Mesh */}
+        <div className="absolute top-0 inset-x-0 h-96 bg-gradient-to-b from-emerald-100/50 via-teal-50/20 to-transparent pointer-events-none -z-10" />
+        <div className="absolute top-20 right-10 w-96 h-96 rounded-full bg-emerald-300/15 blur-3xl pointer-events-none animate-pulse-glow -z-10" />
+        <div className="absolute top-40 left-10 w-80 h-80 rounded-full bg-sky-200/20 blur-3xl pointer-events-none -z-10" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6 relative z-10">
-          {/* Micro-Pill Tag */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 text-xs font-semibold shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-[#135D43]" />
-            <span>ગુજરાત પશુપાલન વિભાગ • બોટાદ પાઇલટ પ્રોજેક્ટ</span>
-          </div>
-
-          {/* Minimal, High-Contrast Headline — ZERO EMOJIS */}
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-[#0F172A] font-heading tracking-tight leading-[1.18] max-w-4xl mx-auto">
-            ટ્રેક કરો. રક્ષણ આપો. સશક્ત બનાવો.
-            <span className="block mt-2 text-[#135D43]">
-              ANIVERA — અદ્યતન ડિજિટલ પશુ સ્વાસ્થ્ય પ્રણાલી
-            </span>
-          </h1>
-
-          {/* Minimal Subtitle */}
-          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl mx-auto leading-relaxed font-normal">
-            બોટાદ જિલ્લાના ૪ તાલુકા અને ૧૯૨ ગામો માટે અત્યાધુનિક પશુ રસીકરણ ટ્રેકિંગ, ક્ષેત્ર આધારિત રોગ દેખરેખ અને સંપૂર્ણ
-            ઓફલાઇન-ફર્સ્ટ ડિજિટલ પશુ સ્વાસ્થ્ય વ્યવસ્થાપન પ્રણાલી.
-          </p>
-
-          {/* Action Buttons */}
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <button
-              onClick={() => navigate('/login')}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-[#135D43] text-white text-xs sm:text-sm font-semibold hover:bg-[#0F4C37] transition-all shadow-xs cursor-pointer"
-            >
-              <span>સિસ્ટમ પ્રવેશ કરો</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <a
-              href="#how-to-use"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs sm:text-sm font-semibold hover:bg-slate-50 transition-all shadow-xs"
-            >
-              <Laptop className="w-4 h-4 text-[#135D43]" />
-              <span>કેવી રીતે ઉપયોગ કરવો?</span>
-            </a>
-
-            <button
-              onClick={() => navigate('/farmer/login')}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-emerald-50 text-[#135D43] border border-emerald-200 text-xs sm:text-sm font-semibold hover:bg-emerald-100 transition-all shadow-xs cursor-pointer"
-            >
-              <Smartphone className="w-4 h-4 text-[#135D43]" />
-              <span>પશુપાલક OTP પ્રવેશ</span>
-            </button>
-          </div>
-
-          {/* Key Assurance Indicators */}
-          <div className="pt-3 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-600 font-medium">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-              <span>૧૦૦% ઓફલાઇન સક્ષમ (PWA)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-              <span>રીઅલ-ટાઇમ GIS ગૂગલ નકશો</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-              <span>અફર સરકારી ઓડિટ લોગ</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Top Pill Badge */}
+          <div className="flex items-center justify-center lg:justify-start">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 border border-emerald-200 shadow-2xs backdrop-blur-md mb-6">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#135D43]" />
+              </span>
+              <span className="text-[11px] font-bold text-emerald-900 tracking-wide uppercase">
+                સશક્ત પશુપાલન • ડિજિટલ રોગ નિયંત્રણ પ્લેટફોર્મ (ANIVERA-OS)
+              </span>
             </div>
           </div>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* DUAL HARDWARE MOCKUP PRESENTATION (LAPTOP + MOBILE PROPERLY)      */}
-          {/* Responsive side-by-side on desktop, toggleable or stacked mobile   */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="pt-8 max-w-6xl mx-auto">
-            {/* Small screen device switcher (visible only on mobile) */}
-            <div className="flex sm:hidden items-center justify-center mb-4">
-              <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setHeroDeviceView('LAPTOP')}
-                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                    heroDeviceView === 'LAPTOP'
-                      ? 'bg-[#135D43] text-white shadow-xs'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  <Laptop className="w-3.5 h-3.5" />
-                  <span>ડેસ્કટોપ ડેશબોર્ડ</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHeroDeviceView('MOBILE')}
-                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                    heroDeviceView === 'MOBILE'
-                      ? 'bg-[#135D43] text-white shadow-xs'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>મોબાઇલ એપ્લિકેશન</span>
-                </button>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            {/* Left Content Column */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              <h1 className="text-3xl sm:text-5xl lg:text-[54px] font-black tracking-tight text-[#0F172A] font-heading leading-[1.12]">
+                Smarter Farming Starts With{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#135D43] via-[#0E7A57] to-[#0284C7]">
+                  Livestock Care
+                </span>
+                <span className="block text-2xl sm:text-3xl lg:text-[34px] font-bold text-[#1E293B] mt-2 font-body font-normal">
+                  આધુનિક પશુ આરોગ્ય, રસીકરણ અને રોગ નિયંત્રણ
+                </span>
+              </h1>
 
-            {/* Desktop & Tablet: Dual Composition; Mobile: Responsive Active View */}
-            <div className="relative flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-8">
-              {/* 1. LAPTOP MOCKUP (DAHO / VO Overview) */}
-              <div
-                className={`w-full lg:max-w-3xl transition-all duration-300 ${
-                  heroDeviceView === 'MOBILE' ? 'hidden sm:block' : 'block'
-                }`}
-              >
-                <div className="w-full shadow-2xl rounded-t-2xl border border-slate-300 bg-slate-900 p-2 sm:p-2.5 pb-0 text-left">
-                  {/* Screen Bezel */}
-                  <div className="rounded-t-xl overflow-hidden bg-white border border-slate-300 shadow-inner">
-                    {/* macOS Window Top Bar */}
-                    <div className="h-9 bg-slate-100 border-b border-slate-200 px-3.5 flex items-center justify-between text-slate-600 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]" />
-                        <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]" />
-                        <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]" />
-                      </div>
-                      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-3 py-1 text-[11px] text-slate-600 font-mono shadow-xs max-w-xs sm:max-w-sm w-full mx-2 justify-center truncate">
-                        <Lock className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span className="truncate">anivera.gujarat.gov.in/botad/overview</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#135D43] font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="hidden sm:inline">LIVE • બોટાદ પાઇલટ</span>
-                      </div>
-                    </div>
+              <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto lg:mx-0 leading-relaxed font-normal">
+                ગુજરાત સરકારનું એકીકૃત ડિજિટલ પશુધન સુરક્ષા નેટવર્ક — ૩૪ જિલ્લાઓ, વેટરનરી અધિકારીઓ, ડેરી સહકારી મંડળીઓ અને પશુપાલકોને વાસ્તવિક સમયના રસીકરણ ટ્રેકિંગ, GIS સ્થાનિક રોગ સર્વેલન્સ અને કોલ્ડ-ચેઈન ઓડિટ સાથે જોડે છે.
+              </p>
 
-                    {/* Live Pilot Data Content in Clean White/Light Theme */}
-                    <div className="p-4 sm:p-6 text-slate-900 bg-slate-50/50 space-y-4">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                        <div>
-                          <h4 className="text-sm sm:text-base font-bold text-slate-900 font-heading">
-                            ANIVERA — બોટાદ જિલ્લો લાઇવ પશુ સ્વાસ્થ્ય ઝાંખી
-                          </h4>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            ૪ તાલુકા • ૧૯૨ ગામો • રસીકરણ પ્રગતિ મોનિટરિંગ
-                          </p>
-                        </div>
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#135D43] border border-emerald-200">
-                          83.1% પૂર્ણ
-                        </span>
-                      </div>
-
-                      {/* 4 Mini KPIs Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                          <span className="text-[11px] text-slate-500 font-medium block">સોંપાયેલ પશુધન</span>
-                          <span className="text-lg sm:text-xl font-bold text-slate-900 font-heading block mt-0.5">3,480</span>
-                          <span className="text-[10px] sm:text-[11px] text-slate-600 block mt-0.5 font-medium">3 ગામ • બોટાદ</span>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                          <span className="text-[11px] text-slate-500 font-medium block">રસીકરણ ડોઝ</span>
-                          <span className="text-lg sm:text-xl font-bold text-[#135D43] font-heading block mt-0.5">2,892</span>
-                          <span className="text-[10px] sm:text-[11px] text-slate-600 block mt-0.5 font-medium">83.1% સિદ્ધિ</span>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                          <span className="text-[11px] text-slate-500 font-medium block">બાકી / મુદત</span>
-                          <span className="text-lg sm:text-xl font-bold text-amber-600 font-heading block mt-0.5">248</span>
-                          <span className="text-[10px] sm:text-[11px] text-amber-700 block mt-0.5 font-medium">18 તાત્કાલિક</span>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
-                          <span className="text-[11px] text-slate-500 font-medium block">રોગ સર્વેક્ષણ</span>
-                          <span className="text-lg sm:text-xl font-bold text-slate-900 font-heading block mt-0.5">3</span>
-                          <span className="text-[10px] sm:text-[11px] text-slate-600 block mt-0.5 font-medium">VO સમીક્ષા</span>
-                        </div>
-                      </div>
-
-                      {/* Village Distribution Mini Bars */}
-                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-2 text-xs">
-                        <div className="flex justify-between items-center text-slate-700 font-semibold text-[11px]">
-                          <span>ગામવાર રસીકરણ કવરેજ દર:</span>
-                          <span className="text-[#135D43]">સરેરાશ 83.1%</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-slate-600">
-                              <span>બોટાદ ગ્રામ</span>
-                              <span className="font-bold text-[#135D43]">84%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-[#135D43] h-1.5 rounded-full" style={{ width: '84%' }} />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-slate-600">
-                              <span>ગઢડા ઉત્તર</span>
-                              <span className="font-bold text-blue-600">74%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: '74%' }} />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-slate-600">
-                              <span>બરવાળા સીમ</span>
-                              <span className="font-bold text-[#135D43]">84%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-[#135D43] h-1.5 rounded-full" style={{ width: '84%' }} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bottom ticker bar */}
-                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                          <span className="truncate">તાજેતરનું રસીકરણ: <strong className="text-slate-800">ANM-BOT-000891 (FMD ડોઝ)</strong></span>
-                        </div>
-                        <span className="font-mono text-[#135D43] font-semibold hidden sm:inline">ઓટો-સિંક: 100% સક્રિય</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Laptop Aluminum Base / Chin */}
-                  <div className="h-5 sm:h-6 bg-gradient-to-b from-slate-200 via-slate-300 to-slate-400 rounded-b-xl border-t border-slate-300/80 flex items-center justify-center shadow-md relative">
-                    <div className="w-16 sm:w-24 h-1.5 bg-slate-500/40 rounded-full" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. SMARTPHONE MOCKUP (Field Worker Mobile App) */}
-              <div
-                className={`w-full max-w-[280px] sm:max-w-[310px] shrink-0 transition-all duration-300 text-left ${
-                  heroDeviceView === 'LAPTOP' ? 'hidden sm:block' : 'block'
-                }`}
-              >
-                <div className="rounded-[44px] bg-slate-900 p-3 shadow-2xl border-[4px] border-slate-700 relative">
-                  {/* Hardware buttons */}
-                  <div className="absolute -left-[6px] top-20 w-[3px] h-8 bg-slate-600 rounded-l" />
-                  <div className="absolute -left-[6px] top-30 w-[3px] h-8 bg-slate-600 rounded-l" />
-                  <div className="absolute -right-[6px] top-24 w-[3px] h-11 bg-slate-600 rounded-r" />
-
-                  {/* Phone Screen Display */}
-                  <div className="bg-slate-50 rounded-[36px] p-3 text-slate-900 min-h-[440px] flex flex-col justify-between overflow-hidden border border-slate-200 relative shadow-inner">
-                    <div className="space-y-2.5">
-                      {/* Dynamic Island Header */}
-                      <div className="w-24 h-4.5 bg-black rounded-full mx-auto mb-2 flex items-center justify-between px-2 text-[8px] text-white">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="font-mono text-[9px] text-white">09:41</span>
-                        <span className="text-[7px]">5G 98%</span>
-                      </div>
-
-                      {/* Screen Header Badge */}
-                      <div className="py-1.5 border-b border-slate-200 flex items-center justify-between">
-                        <div>
-                          <h5 className="text-xs font-bold text-slate-900 font-heading">ક્ષેત્રીય રસીકરણ PWA</h5>
-                          <p className="text-[10px] text-slate-500">બોટાદ ગ્રામ • FW પોર્ટલ</p>
-                        </div>
-                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-[#135D43] border border-emerald-200">
-                          ઓફલાઇન સક્રિય
-                        </span>
-                      </div>
-
-                      {/* Barcode / Animal Card Preview */}
-                      <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-9 h-9 rounded-lg bg-emerald-50 text-[#135D43] flex items-center justify-center shrink-0 border border-emerald-100">
-                            <QrCode className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-500 block">પશુ ટેગ નંબર (RFID/QR)</span>
-                            <span className="font-mono font-bold text-xs text-[#135D43]">9001 8274 6190</span>
-                          </div>
-                        </div>
-                        <div className="pt-1.5 border-t border-slate-100 text-[11px] flex justify-between text-slate-700">
-                          <span>માલિક: રમેશભાઈ</span>
-                          <span className="font-semibold text-emerald-800">ગીર ગાય (માદા)</span>
-                        </div>
-                      </div>
-
-                      {/* Vaccine Batch Entry Preview */}
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs space-y-1 shadow-2xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-[#135D43] flex items-center gap-1 text-[11px]">
-                            <Syringe className="w-3.5 h-3.5" />
-                            FMD રસીકરણ ડોઝ
-                          </span>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white text-emerald-800 border border-emerald-200 font-bold">
-                            4.2°C Cold
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-emerald-900 font-mono">બેચ: FMD-2026-B08 • સમાપ્તિ: 2027</p>
-                      </div>
-
-                      {/* Action CTA */}
-                      <button className="w-full py-2 bg-[#135D43] text-white rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>રસીકરણ સાચવો (1-Click)</span>
-                      </button>
-                    </div>
-
-                    {/* Bottom Virtual Home Indicator */}
-                    <div className="pt-2 text-center">
-                      <div className="w-24 h-1 bg-slate-300 rounded-full mx-auto" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 3. SECTION 3 — HIGHLIGHT FEATURE: HOW TO USE (LAPTOP vs MOBILE)      */}
-      {/* ==================================================================== */}
-      <section id="how-to-use" className="py-16 sm:py-24 bg-slate-50 border-b border-slate-200 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-          {/* Section Header */}
-          <div className="text-center max-w-3xl mx-auto space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#135D43] block font-mono">
-              INTERACTIVE PLATFORM EXPLORER
-            </span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 font-heading tracking-tight">
-              ANIVERA કેવી રીતે કાર્ય કરે છે?
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600">
-              ડેસ્કટોપ (Laptop) પર વહીવટી અને ક્લિનિકલ પેનલ્સ તથા સ્માર્ટફોન (Mobile) પર ક્ષેત્રીય કામગીરી
-              કેવી રીતે થાય છે તે નીચે હાર્ડવેર ફ્રેમ દ્વારા સમજો:
-            </p>
-          </div>
-
-          {/* Device Toggle Buttons (Laptop vs Mobile) — ZERO EMOJIS */}
-          <div className="flex items-center justify-center">
-            <div className="inline-flex bg-slate-200/80 p-1 rounded-xl shadow-inner border border-slate-300/60">
-              <button
-                type="button"
-                onClick={() => setDeviceMode('DESKTOP')}
-                className={`flex items-center gap-2 px-4 sm:px-6 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-200 ${
-                  deviceMode === 'DESKTOP'
-                    ? 'bg-[#135D43] text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Laptop className="w-4 h-4" />
-                <span>Laptop Desktop (વહીવટી અને ક્લિનિકલ પેનલ્સ)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDeviceMode('MOBILE')}
-                className={`flex items-center gap-2 px-4 sm:px-6 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-200 ${
-                  deviceMode === 'MOBILE'
-                    ? 'bg-[#135D43] text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Smartphone className="w-4 h-4" />
-                <span>Mobile Phone (ક્ષેત્રીય સ્ટાફ & ખેડૂત મોબાઇલ)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* ---------------------------------------------------------------- */}
-          {/* OPTION A: LAPTOP DESKTOP SHOWCASE (5 Core Panels)                */}
-          {/* ---------------------------------------------------------------- */}
-          {deviceMode === 'DESKTOP' && (
-            <div className="space-y-6">
-              {/* 5 Tab Selector Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {desktopPanels.map((panel, idx) => (
-                  <button
-                    key={panel.id}
-                    onClick={() => setDesktopTab(idx)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border ${
-                      desktopTab === idx
-                        ? 'bg-[#135D43] text-white border-[#135D43] shadow-xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900 shadow-2xs'
-                    }`}
-                  >
-                    {panel.title}
-                  </button>
-                ))}
-              </div>
-
-              {/* Panel Details & Description Banner */}
-              <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs max-w-4xl mx-auto shadow-xs">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900 text-sm">{currentDesktop.title}</span>
-                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-semibold border border-slate-200">
-                      {currentDesktop.badge}
-                    </span>
-                  </div>
-                  <p className="text-slate-600 mt-1">{currentDesktop.desc}</p>
-                </div>
+              {/* Action Buttons Group */}
+              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 pt-2">
                 <button
                   onClick={() => navigate('/login')}
-                  className="px-4 py-2 bg-[#135D43] text-white font-semibold rounded-lg text-xs hover:bg-[#0F4C37] shrink-0 self-start md:self-auto shadow-xs transition-all flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-[#135D43] hover:bg-[#0E4632] text-white text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer group"
                 >
-                  <span>આ પેનલમાં પ્રવેશ કરો</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <LogIn className="w-4 h-4 text-emerald-200 group-hover:translate-x-0.5 transition-transform" />
+                  <span>અધિકારી પ્રવેશ (Staff Login)</span>
+                  <ArrowRight className="w-4 h-4 text-emerald-200 group-hover:translate-x-1 transition-transform" />
                 </button>
+
+                <button
+                  onClick={() => navigate('/farmer/login')}
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-white hover:bg-emerald-50 text-[#135D43] border border-emerald-300 text-sm font-bold flex items-center justify-center gap-2 shadow-xs hover:border-emerald-500 transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-emerald-600" />
+                  <span>ખેડૂત લૉગિન (Farmer Direct)</span>
+                </button>
+
+                <a
+                  href="#capabilities"
+                  className="text-xs font-bold text-slate-600 hover:text-[#135D43] px-3 py-2 transition-colors flex items-center gap-1"
+                >
+                  <span>વિશેષતાઓ જુઓ</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </a>
               </div>
 
-              {/* Responsive Laptop Frame Hosting Active Desktop Tab */}
-              <div className="max-w-4xl mx-auto">
-                <div className="w-full shadow-2xl rounded-t-2xl border border-slate-300 bg-slate-900 p-2 sm:p-2.5 pb-0">
-                  {/* Screen Bezel */}
-                  <div className="rounded-t-xl overflow-hidden bg-white border border-slate-300 shadow-inner">
-                    {/* Window Top Bar */}
-                    <div className="h-9 bg-slate-100 border-b border-slate-200 px-3.5 flex items-center justify-between text-slate-600 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#FF5F56] border border-[#E0443E]" />
-                        <span className="w-3 h-3 rounded-full bg-[#FFBD2E] border border-[#DEA123]" />
-                        <span className="w-3 h-3 rounded-full bg-[#27C93F] border border-[#1AAB29]" />
-                        <span className="ml-2 font-bold text-slate-800 text-xs font-heading">
-                          {currentDesktop.mockupData.headerTitle}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono text-[#135D43] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
-                        ANIVERA • v0.3
-                      </span>
+              {/* Interactive Feature Pills (Like DRN-OS bottom badges) */}
+              <div className="pt-4 flex flex-wrap items-center justify-center lg:justify-start gap-2 text-xs font-semibold text-slate-700">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors">
+                  <QrCode className="w-3.5 h-3.5 text-[#135D43]" />
+                  <span>RFID & QR Ear Tagging</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors">
+                  <MapPin className="w-3.5 h-3.5 text-[#0284C7]" />
+                  <span>GIS Village-Level Spatial Maps</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Cold-Chain Integrity</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition-colors">
+                  <Wifi className="w-3.5 h-3.5 text-amber-600" />
+                  <span>100% Offline Edge Sync</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Right Visual & Floating Cards Column (Inspired by reference photo) */}
+            <div className="lg:col-span-5 relative mt-6 lg:mt-0 flex justify-center">
+              {/* Outer Card Shell with Subtle Glass Effect */}
+              <div className="relative w-full max-w-md bg-gradient-to-br from-emerald-800 via-[#135D43] to-[#0A3828] rounded-3xl p-6 text-white shadow-2xl overflow-hidden border border-emerald-500/30">
+                {/* Background AgTech Decorative Elements */}
+                <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none" />
+                <div className="absolute -bottom-8 -left-8 w-44 h-44 rounded-full bg-sky-400/20 blur-2xl pointer-events-none" />
+
+                {/* Header in Mockup */}
+                <div className="flex items-center justify-between border-b border-white/15 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center font-bold">
+                      🐄
                     </div>
+                    <div>
+                      <div className="text-xs font-bold font-heading">ANIVERA Livestock Console</div>
+                      <div className="text-[10px] text-emerald-200">State Animal Health Registry</div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30">
+                    LIVE TELEMETRY
+                  </span>
+                </div>
 
-                    {/* Screen Viewport with Active Panel Content */}
-                    <div className="p-4 sm:p-6 text-slate-900 bg-slate-50/50 text-left space-y-4">
-                      {/* 4 KPIs in one row */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {currentDesktop.mockupData.kpis.map((kpi, kIdx) => (
-                          <div key={kIdx} className="p-3 rounded-xl bg-white border border-slate-200 shadow-xs">
-                            <span className="text-[11px] text-slate-500 font-medium block">{kpi.label}</span>
-                            <span className="text-base sm:text-lg font-bold text-slate-900 font-heading block mt-0.5">
-                              {kpi.val}
-                            </span>
-                            <span className="text-[11px] text-[#135D43] block mt-0.5 font-medium">
-                              {kpi.sub}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Feature Highlights Grid */}
-                      <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs">
-                        <p className="text-xs font-bold text-slate-800 mb-2">
-                          મુખ્ય ક્ષમતાઓ અને સરકારી પ્રોટોકોલ:
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          {currentDesktop.highlights.map((h, hIdx) => (
-                            <div key={hIdx} className="flex items-start gap-2 text-slate-700">
-                              <Check className="w-4 h-4 text-[#135D43] shrink-0 mt-0.5" />
-                              <span className="text-xs leading-snug">{h}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Integrated Status Footer */}
-                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                        <span className="truncate">{currentDesktop.mockupData.statusText}</span>
-                        <span className="text-[#135D43] font-semibold shrink-0">૧૦૦% સુરક્ષિત ડેટાબેઝ</span>
-                      </div>
+                {/* Central Visual Telemetry */}
+                <div className="py-6 space-y-4">
+                  <div className="p-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-emerald-100 font-medium">રાજ્યવ્યાપી રસીકરણ સિદ્ધિ</span>
+                      <span className="font-mono font-bold text-white text-sm">94.8%</span>
+                    </div>
+                    {/* Animated Progress Bar */}
+                    <div className="w-full h-2.5 bg-black/25 rounded-full overflow-hidden p-0.5">
+                      <div className="h-full bg-gradient-to-r from-teal-300 to-emerald-400 rounded-full w-[94.8%] transition-all duration-1000" />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-emerald-200">
+                      <span>લક્ષ્યાંક: ૨૦,૦૦,૦૦૦ પશુધન</span>
+                      <span className="text-emerald-300 font-bold">FMD મુક્ત ઝુંબેશ</span>
                     </div>
                   </div>
 
-                  {/* Laptop Aluminum Base */}
-                  <div className="h-5 sm:h-6 bg-gradient-to-b from-slate-200 via-slate-300 to-slate-400 rounded-b-xl border-t border-slate-300/80 flex items-center justify-center shadow-md relative">
-                    <div className="w-16 sm:w-24 h-1.5 bg-slate-500/40 rounded-full" />
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div className="p-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/15">
+                      <div className="text-xl font-bold font-heading text-white">૩૪</div>
+                      <div className="text-[10px] text-emerald-200">સક્રિય જિલ્લાઓ</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white/10 backdrop-blur-md border border-white/15">
+                      <div className="text-xl font-bold font-heading text-white">૧૮,૫૦૦+</div>
+                      <div className="text-[10px] text-emerald-200">આવરી લીધેલા ગામો</div>
+                    </div>
                   </div>
+                </div>
+
+                {/* Bottom Status */}
+                <div className="pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-emerald-100">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>રોગ સર્વેલન્સ એલર્ટ: સામાન્ય</span>
+                  </div>
+                  <span className="font-mono text-emerald-300 text-[10px]">100% ONLINE</span>
+                </div>
+              </div>
+
+              {/* Floating Glass Information Card 1 (Top Right - Matches Reference Card) */}
+              <div className="hidden sm:block absolute -top-6 -right-6 w-64 p-3.5 rounded-2xl bg-white/90 backdrop-blur-md border border-white/80 shadow-xl text-slate-800 animate-float-slow">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Outbreak Prevention
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                </div>
+                <div className="text-xs font-bold text-[#0F172A] font-heading">
+                  રોગ નિવારણ & સર્વેક્ષણ
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-lg font-black text-emerald-700 font-heading">૦ હોટસ્પોટ</span>
+                  <span className="text-[10px] text-slate-500">સમગ્ર તાલુકો નિયંત્રિત</span>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                  ૧૦૦% શંકાસ્પદ કેસ વેટરનરી ઓફિસર દ્વારા પ્રમાણિત
+                </div>
+              </div>
+
+              {/* Floating Glass Information Card 2 (Bottom Left - Matches Reference Smart Tag) */}
+              <div className="hidden sm:block absolute -bottom-6 -left-8 w-68 p-3.5 rounded-2xl bg-white/95 backdrop-blur-md border border-white/80 shadow-xl text-slate-800 animate-float-reverse">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-[#135D43] flex items-center justify-center font-bold text-xs shrink-0">
+                    🏷️
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-slate-500 truncate">TAG: IN-GJ-BOT-00001</div>
+                    <div className="text-xs font-bold text-slate-900 truncate">મુર્રાહ ભેંસ • બોટાદ જિલ્લો</div>
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                  <span className="font-semibold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    FMD/Brucella રસીકૃત
+                  </span>
+                  <span className="text-slate-400 font-mono">VO વેરિફાઇડ</span>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      </section>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* OPTION B: MOBILE PHONE SHOWCASE (5 Mobile Workflows)             */}
-          {/* ---------------------------------------------------------------- */}
-          {deviceMode === 'MOBILE' && (
-            <div className="space-y-6">
-              {/* Mobile Tab Selector Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {mobileWorkflows.map((wf, idx) => (
-                  <button
-                    key={wf.id}
-                    onClick={() => setMobileTab(idx)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border ${
-                      mobileTab === idx
-                        ? 'bg-[#135D43] text-white border-[#135D43] shadow-xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900 shadow-2xs'
-                    }`}
-                  >
-                    {wf.title}
-                  </button>
+      {/* ---------------------------------------------------------------------- */}
+      {/* 3. STATEWIDE IMPACT & TELEMETRY COUNTER SECTION                        */}
+      {/* ---------------------------------------------------------------------- */}
+      <section id="impact" className="py-12 bg-white border-y border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <span className="text-xs font-bold text-[#135D43] uppercase tracking-wider">
+              ગુજરાત રાજ્ય વહીવટી સ્કોપ
+            </span>
+            <h2 className="text-2xl font-bold text-slate-900 font-heading mt-1">
+              રાજ્યવ્યાપી પશુધન રક્ષણ પ્રગતિ (Statewide Live Progress)
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="bg-[#F8FAFC] border border-slate-200 p-4 rounded-xl text-center space-y-1 hover:border-emerald-300 transition-colors shadow-2xs">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#135D43] mx-auto flex items-center justify-center">
+                <Compass className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-heading text-slate-900 mt-2">
+                <AnimatedCounter value={34} />
+              </div>
+              <div className="text-xs font-bold text-slate-700">જિલ્લાઓ (Districts)</div>
+              <p className="text-[10px] text-slate-500">સત્તાવાર રાજ્યવ્યાપી કવરેજ</p>
+            </div>
+
+            <div className="bg-[#F8FAFC] border border-slate-200 p-4 rounded-xl text-center space-y-1 hover:border-emerald-300 transition-colors shadow-2xs">
+              <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#0284C7] mx-auto flex items-center justify-center">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-heading text-slate-900 mt-2">
+                <AnimatedCounter value={252} />
+              </div>
+              <div className="text-xs font-bold text-slate-700">તાલુકાઓ (Talukas)</div>
+              <p className="text-[10px] text-slate-500">તાલુકા પશુપાલન અધિકારીઓ</p>
+            </div>
+
+            <div className="bg-[#F8FAFC] border border-slate-200 p-4 rounded-xl text-center space-y-1 hover:border-emerald-300 transition-colors shadow-2xs">
+              <div className="w-8 h-8 rounded-lg bg-teal-50 text-[#176B5B] mx-auto flex items-center justify-center">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-heading text-slate-900 mt-2">
+                <AnimatedCounter value="18,500+" />
+              </div>
+              <div className="text-xs font-bold text-slate-700">ગામો (Villages Mapped)</div>
+              <p className="text-[10px] text-slate-500">GIS સીમાઓ સાથે સંલગ્ન</p>
+            </div>
+
+            <div className="bg-[#F8FAFC] border border-slate-200 p-4 rounded-xl text-center space-y-1 hover:border-emerald-300 transition-colors shadow-2xs">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">
+                <Syringe className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-heading text-slate-900 mt-2">
+                <AnimatedCounter value="20,00,000+" />
+              </div>
+              <div className="text-xs font-bold text-slate-700">પશુધન રક્ષણ (Protected)</div>
+              <p className="text-[10px] text-slate-500">ટેગ થયેલ ગાય, ભેંસ, ઘેટાં-બકરાં</p>
+            </div>
+
+            <div className="bg-[#F8FAFC] border border-slate-200 p-4 rounded-xl text-center space-y-1 hover:border-emerald-300 transition-colors shadow-2xs col-span-2 sm:col-span-1">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 mx-auto flex items-center justify-center">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-heading text-slate-900 mt-2">
+                <AnimatedCounter value="99.8%" />
+              </div>
+              <div className="text-xs font-bold text-slate-700">કોલ્ડ-ચેઈન ઓડિટ</div>
+              <p className="text-[10px] text-slate-500">રસી ગુણવત્તા વિશ્વસનીયતા</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 4. 6 CORE AGTECH CAPABILITIES PILLARS                                  */}
+      {/* ---------------------------------------------------------------------- */}
+      <section id="capabilities" className="py-16 bg-[#F0F4F8]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+          <div className="text-center max-w-3xl mx-auto space-y-2">
+            <span className="text-xs font-bold text-[#135D43] uppercase tracking-wider">
+              હાઈ-ટેક પશુ આરોગ્ય ઇન્ફ્રાસ્ટ્રક્ચર
+            </span>
+            <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 font-heading">
+              આધુનિક કૃષિ ટેકનોલોજી & ક્ષેત્રીય ક્ષમતાઓ
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600">
+              સરકારી વહીવટ, લેબોરેટરી નિદાન, અને છેવાડાના ખેડૂત સુધી પારદર્શક સેવા વિતરણ
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Pillar 1 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-[#135D43] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Syringe className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૧. રસીકરણ & કોલ્ડ-ચેઈન મેનેજમેન્ટ
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                રાજ્ય કક્ષાના વેરહાઉસથી લઈને છેવાડાના ગામ સુધી રસીના દરેક લોટ (Batch/Lot) અને તાપમાનનું ડિજિટલ ટ્રેકિંગ, જેથી રસીની અસરકારકતા જળવાય.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                <span>લોટ નંબર & એક્સપાયરી ઓડિટ</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+
+            {/* Pillar 2 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-sky-50 text-[#0284C7] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <HeartPulse className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૨. રોગ સર્વેલન્સ & તાત્કાલિક એલર્ટ
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                FMD, લમ્પી, HS કે એન્થ્રેક્સ જેવા ચેપી રોગના લક્ષણો ખેડૂત કે ફીલ્ડ વર્કર દ્વારા સબમિટ થતાં જ વેટરનરી અધિકારી પાસે પહોંચે છે અને ક્વોરેન્ટાઇન ત્રિજ્યા નક્કી થાય છે.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-sky-800 flex items-center gap-1">
+                <span>રોગ પુષ્ટિ & કેસ ક્લોઝર</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+
+            {/* Pillar 3 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#176B5B] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <MapPin className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૩. ગ્રામીણ GIS નકશા & હીટમેપ્સ
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                રાજ્ય, જિલ્લો, તાલુકો અને ૧૯૨+ ગામોનું ભૌગોલિક મેપિંગ. કયા ગામમાં રસીકરણ ઓછું છે તેનું લાલ/પીળા પિન સાથે લાઈવ સેટેલાઇટ મોનિટરિંગ.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-teal-800 flex items-center gap-1">
+                <span>ઓન-ક્લિક સેટેલાઇટ વિશ્લેષણ</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+
+            {/* Pillar 4 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <QrCode className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૪. QR & RFID આધારિત પશુ પાસપોર્ટ
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                ભારત પશુધન સ્ટાન્ડર્ડ મુજબ કાનના ટેગનું સ્કેનિંગ. પશુની જાતિ, ઉંમર, દૂધ ઉત્પાદન અને સંપૂર્ણ રસીકરણ હિસ્ટ્રી એક જ ક્લિકમાં ઉપલબ્ધ.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-amber-800 flex items-center gap-1">
+                <span>ડિજિટલ હેલ્થ પાસપોર્ટ</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+
+            {/* Pillar 5 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Wifi className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૫. ૧૦૦% ઓફલાઇન ફીલ્ડ વર્કર સિંક
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                ઇન્ટરનેટ વગરના અંતરિયાળ સીમ વિસ્તારોમાં પણ એપ્લિકેશન અટક્યા વિના ચાલે છે. નેટવર્ક આવતાં જ સેકન્ડોમાં ડેટાબેઝ સાથે સુરક્ષિત ઓટો-સિંક.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-indigo-800 flex items-center gap-1">
+                <span>એજ કમ્પ્યુટિંગ & કોન્ફ્લિક્ટ રીસોલ્યુશન</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+
+            {/* Pillar 6 */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-3.5 shadow-2xs hover:shadow-md hover:border-emerald-300 transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold font-heading text-slate-900">
+                ૬. સત્તાવાર RBAC સુરક્ષા & ઓડિટ
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                સુપર એડમિન દ્વારા નિયંત્રિત ૮ અધિકૃત ભૂમિકાઓ અને ૫૫ પરવાનગીઓ. કોઈપણ અનધિકૃત એક્સેસ બ્લોક થાય છે અને સુરક્ષા ઓડિટ લૉગ સાચવાય છે.
+              </p>
+              <div className="pt-2 text-[11px] font-bold text-purple-800 flex items-center gap-1">
+                <span>ડાયનેમિક મેટ્રિક્સ સિક્યોરિટી</span> <ArrowRight className="w-3 h-3" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 5. INTERACTIVE PLATFORM EXPLORER (Laptop & Mobile Showcase)            */}
+      {/* ---------------------------------------------------------------------- */}
+      <section id="explorer" className="py-16 bg-white border-t border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <span className="text-xs font-bold text-[#135D43] uppercase tracking-wider">
+              વિભાગીય પોર્ટલ અન્વેષણ
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
+              દરેક હોદ્દા માટેનું ખાસ તૈયાર કરેલું પોર્ટલ
+            </h2>
+            <p className="text-xs text-slate-600">
+              નીચેના ટેબ્સ પર ક્લિક કરીને વિવિધ ભૂમિકાઓ માટેની કન્સોલ ક્ષમતાઓ જુઓ:
+            </p>
+          </div>
+
+          {/* Role Tabs */}
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            {(['DAHO', 'TAHO', 'VO', 'FW', 'COOP', 'FARMER'] as const).map((roleKey) => (
+              <button
+                key={roleKey}
+                onClick={() => setExplorerTab(roleKey)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  explorerTab === roleKey
+                    ? 'bg-[#135D43] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {roleKey === 'DAHO'
+                  ? 'DAHO (જિલ્લા)'
+                  : roleKey === 'TAHO'
+                  ? 'TAHO (તાલુકા)'
+                  : roleKey === 'VO'
+                  ? 'VO (વેટરનરી)'
+                  : roleKey === 'FW'
+                  ? 'FW (ફીલ્ડ વર્કર)'
+                  : roleKey === 'COOP'
+                  ? 'ડેરી સહકારી'
+                  : 'ખેડૂત પોર્ટલ'}
+              </button>
+            ))}
+          </div>
+
+          {/* Explorer Display Card */}
+          <div className="bg-[#F8FAFC] border border-slate-200 rounded-3xl p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center shadow-xs">
+            <div className="lg:col-span-5 space-y-4">
+              <div className="inline-block px-2.5 py-1 rounded-md bg-emerald-100 text-[#135D43] font-bold text-xs font-heading">
+                {currentTab.role}
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">
+                {currentTab.title}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                {currentTab.desc}
+              </p>
+
+              <div className="space-y-2 pt-2">
+                {currentTab.points.map((pt, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs text-slate-700">
+                    <CheckCircle2 className="w-4 h-4 text-[#135D43] shrink-0 mt-0.5" />
+                    <span>{pt}</span>
+                  </div>
                 ))}
               </div>
 
-              {/* Mobile Description Banner */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 max-w-2xl mx-auto text-center space-y-1 shadow-xs">
-                <span className="text-xs font-bold text-slate-900 block">{currentMobile.title}</span>
-                <p className="text-xs text-slate-600">{currentMobile.desc}</p>
+              <div className="pt-4">
+                <button
+                  onClick={() => navigate(explorerTab === 'FARMER' ? '/farmer/login' : '/login')}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#135D43] hover:bg-[#0E4632] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>આ પોર્ટલમાં પ્રવેશ કરો</span>
+                </button>
               </div>
+            </div>
 
-              {/* Realistic Smartphone Hardware Mockup Frame */}
-              <div className="max-w-xs mx-auto">
-                <div className="w-[290px] sm:w-[320px] mx-auto rounded-[46px] bg-slate-900 p-3 shadow-2xl border-[4px] border-slate-700 relative">
-                  {/* Side buttons */}
-                  <div className="absolute -left-[6px] top-24 w-[3px] h-9 bg-slate-600 rounded-l" />
-                  <div className="absolute -left-[6px] top-36 w-[3px] h-9 bg-slate-600 rounded-l" />
-                  <div className="absolute -right-[6px] top-28 w-[3px] h-12 bg-slate-600 rounded-r" />
-
-                  {/* Phone Screen Display */}
-                  <div className="bg-slate-50 rounded-[38px] p-3.5 text-slate-900 min-h-[440px] flex flex-col justify-between overflow-hidden border border-slate-200 relative shadow-inner">
-                    <div>
-                      {/* Dynamic Island Header */}
-                      <div className="w-24 h-5 bg-black rounded-full mx-auto mb-2 flex items-center justify-between px-2 text-[8px] text-white">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="font-mono text-[9px] text-white">09:41</span>
-                        <span className="text-[7px]">5G 98%</span>
-                      </div>
-
-                      {/* Screen Title */}
-                      <div className="py-2 border-b border-slate-200 mb-2.5 flex items-center justify-between">
-                        <h4 className="text-xs font-bold text-slate-900 font-heading">{currentMobile.screenHeader}</h4>
-                        <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-[#135D43] border border-emerald-200">
-                          PWA OFFLINE
-                        </span>
-                      </div>
-
-                      {/* Interactive Mobile Workflow Body */}
-                      {currentMobile.screenBody}
-                    </div>
-
-                    {/* Bottom Virtual Home Indicator */}
-                    <div className="pt-2 text-center">
-                      <div className="w-28 h-1 bg-slate-300 rounded-full mx-auto" />
-                    </div>
-                  </div>
+            {/* Right KPI Preview */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-[#135D43]" />
+                  <span className="text-xs font-bold text-slate-800 font-heading">
+                    {currentTab.role} ડેશબોર્ડ ટેલિમેટ્રી
+                  </span>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* ---------------------------------------------------------------- */}
-          {/* FLIP CARDS: Official Government SOP & Role Operational Guides    */}
-          {/* ---------------------------------------------------------------- */}
-          <div className="pt-10 space-y-4">
-            <div className="text-center space-y-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#135D43] block font-mono">
-                GOVERNMENT STANDARD OPERATING PROCEDURES
-              </span>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 font-heading">
-                સરકારી SOP કાર્ડ્સ (ક્લિક કરીને ફ્લિપ કરો)
-              </h3>
-              <p className="text-xs text-slate-600">
-                દરેક કાર્ડ પર ક્લિક કરીને અધિકૃત સરકારી પ્રોટોકોલ અને Standard Operating Procedures જુઓ:
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-              {govFlipCards.map((card) => {
-                const isFlipped = !!flippedCards[card.key];
-                return (
-                  <div
-                    key={card.key}
-                    onClick={() => toggleFlip(card.key)}
-                    className="relative cursor-pointer min-h-[280px] rounded-2xl border border-slate-200 bg-white p-5 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-300 flex flex-col justify-between shadow-2xs"
-                  >
-                    {!isFlipped ? (
-                      // FRONT OF CARD
-                      <div className="space-y-3 flex flex-col justify-between h-full">
-                        <div>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
-                              {card.icon}
-                            </div>
-                            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
-                              CLICK TO FLIP
-                            </span>
-                          </div>
-
-                          <h4 className="text-sm font-bold text-slate-900 font-heading">
-                            {card.roleTitle}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{card.dept}</p>
-
-                          <div className="my-2.5">
-                            <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                              {card.frontBadge}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-slate-600 leading-relaxed mt-1">
-                            {card.frontSummary}
-                          </p>
-                        </div>
-
-                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-[#135D43] font-semibold">
-                          <span>SOP પ્રોટોકોલ જુઓ</span>
-                          <span className="flex items-center gap-1">
-                            <span>ફ્લિપ કરો</span>
-                            <RotateCw className="w-3.5 h-3.5" />
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      // BACK OF CARD (SOP Details)
-                      <div className="space-y-3 flex flex-col justify-between h-full bg-slate-50 -m-5 p-5 rounded-2xl border border-[#135D43]/40">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-mono text-[#135D43] font-bold">
-                              OFFICIAL SOP PROTOCOL
-                            </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200 flex items-center gap-1">
-                              <RotateCw className="w-3 h-3 text-[#135D43]" />
-                              <span>BACK</span>
-                            </span>
-                          </div>
-
-                          <h5 className="text-xs font-bold text-slate-900 font-heading">
-                            {card.backTitle}
-                          </h5>
-
-                          <div className="space-y-1.5 mt-2.5 text-slate-700 text-xs leading-snug">
-                            {card.backPoints.map((pt, pIdx) => (
-                              <p key={pIdx} className="flex items-start gap-1.5">
-                                <span className="text-[#135D43] mt-0.5 font-bold">•</span>
-                                <span>{pt}</span>
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-200">
-                          <span className="text-[9px] font-mono text-slate-500 block truncate">
-                            {card.authorityTag}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 4. CORE VALUE PILLARS (6 Capability Cards)                           */}
-      {/* ==================================================================== */}
-      <section id="features" className="py-16 sm:py-24 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-          <div className="text-center max-w-2xl mx-auto space-y-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#135D43] block font-mono">
-              SYSTEM CAPABILITIES
-            </span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 font-heading tracking-tight">
-              પશુ સ્વાસ્થ્ય સંચાલનના ૬ આધારસ્તંભ
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600">
-              સરકારી વહીવટથી માંડીને છેવાડાના ખેડૂત સુધી વિશ્વસનીય અને પારદર્શક સેવા:
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-[#135D43] border border-emerald-100 flex items-center justify-center font-bold">
-                <Syringe className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૧. ઘેર-ઘેર રસીકરણ ટ્રેકિંગ
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                ૧૨-અંકના Barcode/QR કોડ વડે દરેક પશુની ઓળખ અને રસીકરણનો વાસ્તવિક સમયનો રેકોર્ડ.
-                કોઈપણ ખોટા કે અમાન્ય રેકોર્ડિંગની શક્યતા શૂન્ય.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center font-bold">
-                <MapPin className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૨. જીઓસ્પેશિયલ GIS નકશો & સરહદ
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                ગૂગલ મેપ આધારિત લાઇવ જીઓ-વિઝ્યુલાઇઝેશન: ગામવાર રસીકરણ કવરેજ ટકાવારી (લીલો, પીળો, લાલ)
-                અને રોગચાળાના સંકેતોનું તાત્કાલિક મેપિંગ.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-teal-50 text-teal-700 border border-teal-100 flex items-center justify-center font-bold">
-                <WifiOff className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૩. ૧૦૦% ઓફલાઇન-ફર્સ્ટ PWA ટેકનોલોજી
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                સીમ વિસ્તારો કે અંતરિયાળ ગામડાંઓમાં ઇન્ટરનેટ ન હોય તો પણ સંપૂર્ણ કાર્યરત રહે છે. નેટવર્ક આવતાં
-                આપમેળે બેકગ્રાઉન્ડમાં ડેટા સિંક થાય છે.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center font-bold">
-                <Stethoscope className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૪. ક્લિનિકલ વહીવટી માળખું (DAHO • VO • FW)
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                રોગની પુષ્ટિ ફક્ત અધિકૃત વેટરનરી અધિકારી જ કરી શકે છે અને ઝુંબેશ નીતિ ફક્ત DAHO દ્વારા મંજૂર થાય છે.
-                સખત સરકારી પ્રોટોકોલનું પાલન.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-[#135D43] border border-emerald-100 flex items-center justify-center font-bold">
-                <Thermometer className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૫. રસી લોટ અને કોલ્ડ ચેઇન સ્ટોરેજ (2-8°C)
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                દરેક રસીની એક્સપાયરી ડેટ, ઉત્પાદક બેચ નંબર અને આદર્શ સ્ટોરેજ તાપમાનનું સતત મોનિટરિંગ.
-                ગુણવત્તાયુક્ત રસીકરણની ખાતરી.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 hover:border-[#135D43]/50 hover:shadow-md transition-all duration-200 space-y-3 shadow-2xs">
-              <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-800 border border-slate-200 flex items-center justify-center font-bold">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 font-heading">
-                ૬. દૂધ ઉત્પાદક સહકારી મંડળી સંકલન
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                દૂધ મંડળીઓ પોતાના સભ્ય ખેડૂતોના પશુઓની એકત્રિત રસીકરણ પ્રગતિ જોઈ શકે છે અને સામુદાયિક આરોગ્ય કેમ્પનું
-                આયોજન કરી શકે છે.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 5. ENTERPRISE GOVERNANCE & SECURITY MATRIX                           */}
-      {/* ==================================================================== */}
-      <section id="security" className="py-16 sm:py-24 bg-slate-50 text-slate-900 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-          <div className="text-center max-w-2xl mx-auto space-y-2">
-            <span className="text-xs font-mono font-semibold tracking-wider text-[#135D43] uppercase block">
-              ENTERPRISE GOVERNANCE & SECURITY
-            </span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold font-heading text-slate-900 tracking-tight">
-              અત્યાધુનિક સરકારી ડેટા સુરક્ષા અને ઓડિટ નિયંત્રણ
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-600">
-              સરકારી નિયમો અનુસાર ડેટાની વિશ્વસનીયતા, ગોપનીયતા અને અધિકૃતતા સુનિશ્ચિત કરવા માટે નિર્મિત:
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#135D43] border border-emerald-100 flex items-center justify-center">
-                <Shield className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">અફર ઓડિટ ટ્રેઇલ (Immutable Audit)</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                દરેક રસીકરણ અને રોગ સમીક્ષા યુઝર આઈડી, ડિવાઇસ આઈડી અને ટાઇમસ્ટેમ્પ સાથે કાયમી નોંધાય છે જેને બદલી શકાતી નથી.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center">
-                <Lock className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">Multi-Tier RBAC અધિકારક્ષેત્ર</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                કોઈપણ ક્ષેત્રીય કાર્યકર સીધી રોગ પુષ્ટિ કરી શકતો નથી. ફક્ત અધિકૃત વેટરનરી અધિકારી જ ક્લિનિકલ નિર્ણય લઈ શકે છે.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 border border-purple-100 flex items-center justify-center">
-                <Smartphone className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">7-Day ઓફલાઇન ઉપકરણ માન્યતા</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                ઓફલાઇન કાર્ય માટે ઉપકરણને 7 દિવસની ક્રિપ્ટોગ્રાફિક ગ્રાન્ટ મળે છે. મુદત વીત્યા પછી પુનઃ પ્રમાણીકરણ ફરજિયાત બને છે.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 border border-amber-100 flex items-center justify-center">
-                <Eye className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">ડેટા એન્ક્રિપ્શન અને SHA-256</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                રોગ અહેવાલના ફોટોગ્રાફ્સનું SHA-256 હેશિંગ થાય છે અને તમામ કનેક્શન SSL એન્ક્રિપ્ટેડ ટનલ વડે સુરક્ષિત રહે છે.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#135D43] border border-emerald-100 flex items-center justify-center">
-                <Compass className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">કાર્યક્ષેત્ર સીમા સુરક્ષા (Geo-Fencing)</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                દરેક સ્ટાફ સભ્ય ફક્ત પોતાને સોંપાયેલા ગામડાંઓમાં જ ડેટા એન્ટ્રી કરી શકે છે. ક્રોસ-વિલેજ અનધિકૃત એન્ટ્રી અટકાવેલ છે.
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2.5 shadow-2xs">
-              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-800 border border-slate-200 flex items-center justify-center">
-                <Database className="w-4 h-4" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-900 font-heading">Zero Data Loss ગેરંટી</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                સિંક નિષ્ફળ જાય કે લોગઆઉટ થાય તો પણ લોકલ IndexedDB માં સંગ્રહાયેલ એક પણ રસી કે પશુનો રેકોર્ડ ક્યારેય ડીલીટ થતો નથી.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 6. REAL-TIME SPECIES ANALYTICS & PILOT PROGRESS                      */}
-      {/* ==================================================================== */}
-      <section id="analytics" className="py-16 sm:py-24 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-            {/* Left Column: Visual Chart Card */}
-            <div className="lg:col-span-7 bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 font-heading">
-                    બોટાદ જિલ્લો: પ્રજાતિવાર અને રોગવાર સિદ્ધિ
-                  </h4>
-                  <p className="text-[11px] text-slate-500">વાસ્તવિક ક્ષેત્રીય રસીકરણ મોનિટરિંગ</p>
-                </div>
-                <span className="text-xs font-bold text-[#135D43] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                  83.1% કવરેજ
+                <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                  LIVE CONSOLE
                 </span>
               </div>
 
-              {/* Progress Bars */}
-              <div className="space-y-3.5 text-xs">
-                <div>
-                  <div className="flex justify-between font-medium text-slate-700 mb-1">
-                    <span>ગાય (Cattle) — દૂધાળા પશુ</span>
-                    <span className="font-mono font-bold text-[#135D43]">1,420 / 1,650 (86%)</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {currentTab.kpis.map((k, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-[#F8FAFC] border border-slate-100 text-center">
+                    <div className="text-[10px] text-slate-500 font-semibold">{k.label}</div>
+                    <div className="text-lg font-bold font-heading text-slate-900 mt-1">{k.val}</div>
+                    <div className="text-[9px] text-[#135D43] font-medium">{k.sub}</div>
                   </div>
-                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                    <div className="bg-[#135D43] h-2 rounded-full" style={{ width: '86%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-medium text-slate-700 mb-1">
-                    <span>ભેંસ (Buffalo) — દૂધાળા પશુ</span>
-                    <span className="font-mono font-bold text-blue-700">1,180 / 1,400 (84%)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{ width: '84%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between font-medium text-slate-700 mb-1">
-                    <span>નાના પશુ (બકરી/ઘેટાં)</span>
-                    <span className="font-mono font-bold text-amber-700">292 / 430 (68%)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                    <div className="bg-amber-500 h-2 rounded-full" style={{ width: '68%' }} />
-                  </div>
-                </div>
+                ))}
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                <span>કુલ રક્ષિત પશુ: <strong className="text-slate-900 font-mono">2,892 ડોઝ</strong></span>
-                <span>તાલુકા: <strong className="text-slate-900">બોટાદ • ગઢડા • બરવાળા • રાણપુર</strong></span>
-              </div>
-            </div>
-
-            {/* Right Column: Analytics Capabilities */}
-            <div className="lg:col-span-5 space-y-4">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#135D43] block font-mono">
-                DATA-DRIVEN GOVERNANCE
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading tracking-tight">
-                પારદર્શક, સચોટ અને તાત્કાલિક નિર્ણય શક્તિ
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                કાગળ આધારિત રજીસ્ટરોની ભૂલો અને વિલંબ દૂર કરી, ANIVERA પ્લેટફોર્મ ક્ષણે-ક્ષણનો ડેટા રજૂ કરે છે જેથી
-                કોઈપણ ગામમાં રોગચાળો ફેલાય તે પહેલાં જ પગલાં લઈ શકાય.
-              </p>
-
-              <div className="space-y-2 pt-2 text-xs text-slate-700">
+              <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-                  <span>રોગચાળો ફેલાતા અટકાવવા Early Warning Alert સિસ્ટમ</span>
+                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>અધિકૃત RBAC સ્કોપ નિયંત્રણ દ્વારા સંપૂર્ણ સુરક્ષિત કન્સોલ.</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-                  <span>દૈનિક અને સાપ્તાહિક રસીકરણ ઝડપ ટ્રેકિંગ (Velocity Chart)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#135D43]" />
-                  <span>સરકારી અહેવાલો માટે 1-ક્લિક Excel/PDF નિકાસ</span>
-                </div>
+                <span className="text-[10px] font-bold text-emerald-800 uppercase font-mono">ENCRYPTED</span>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ==================================================================== */}
-      {/* 7. VERIFIED PILOT METRICS COUNTER                                    */}
-      {/* ==================================================================== */}
-      <section className="py-12 bg-slate-50 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center shadow-2xs">
-              <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading font-mono">
-                20,000+
-              </p>
-              <p className="text-xs font-medium text-slate-600 mt-1">લક્ષિત પશુધન નોંધણી</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center shadow-2xs">
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#135D43] font-heading font-mono">
-                192
-              </p>
-              <p className="text-xs font-medium text-slate-600 mt-1">બોટાદ જિલ્લાના ગામો</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center shadow-2xs">
-              <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading font-mono">
-                4
-              </p>
-              <p className="text-xs font-medium text-slate-600 mt-1">વહીવટી તાલુકા</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 text-center shadow-2xs">
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#135D43] font-heading font-mono">
-                100%
-              </p>
-              <p className="text-xs font-medium text-slate-600 mt-1">ઓફલાઇન ફિલ્ડ સક્ષમ</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================================== */}
-      {/* 8. CONTACT & GOVERNMENT QUERY SECTION                                */}
-      {/* ==================================================================== */}
-      <section id="contact" className="py-16 sm:py-24 bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-xl mx-auto mb-10 space-y-1">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#135D43] block font-mono">
-              OFFICIAL ASSISTANCE & QUERIES
+      {/* ---------------------------------------------------------------------- */}
+      {/* 6. SOP GUIDELINES FLIP CARDS SECTION                                   */}
+      {/* ---------------------------------------------------------------------- */}
+      <section className="py-16 bg-[#F0F4F8] border-t border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <span className="text-xs font-bold text-[#135D43] uppercase tracking-wider">
+              સરકારી SOP માર્ગદર્શિકા
             </span>
-            <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
-              જિલ્લા પશુપાલન વિભાગનો સંપર્ક કરો
-            </h3>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-heading">
+              ક્ષેત્રીય સ્ટાફ અને ખેડૂતો માટે સત્તાવાર પ્રોટોકોલ
+            </h2>
             <p className="text-xs text-slate-600">
-              સિસ્ટમ ઉપયોગ, રસીકરણ કેમ્પ અથવા કટોકટી રોગચાળા સહાય માટે સંદેશ મોકલો:
+              કાર્ડ પર ક્લિક કરીને નિયમો અને અધિકારોની વિગતો જુઓ (Click to Flip):
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-            {/* Left Office Info (5 cols) */}
-            <div className="md:col-span-5 bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4 text-xs shadow-2xs">
-              <h4 className="text-sm font-bold text-slate-900 font-heading">સત્તાવાર કાર્યાલય સરનામું</h4>
-              <p className="text-slate-700 leading-relaxed">
-                જિલ્લા પશુપાલન અધિકારીશ્રીની કચેરી (DAHO),<br />
-                જિલ્લા સેવા સદન, બોટાદ - 364710,<br />
-                ગુજરાત, ભારત.
-              </p>
-
-              <div className="pt-2 border-t border-slate-200 space-y-2 text-slate-600">
-                <div>
-                  <span className="text-slate-500 block text-[10px]">ઈમેલ:</span>
-                  <span className="font-mono font-medium text-slate-900">daho-botad@gujarat.gov.in</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1 */}
+            <div
+              onClick={() => toggleFlip('sop1')}
+              className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-2xs hover:shadow-md transition-all cursor-pointer relative min-h-[180px] flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
+                  <span>પ્રોટોકોલ ૧</span>
+                  <RotateCw className="w-3.5 h-3.5 text-slate-400" />
                 </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px]">પશુ સંજીવની ઇમરજન્સી હેલ્પલાઇન:</span>
-                  <span className="font-mono font-bold text-[#135D43]">1962 (ટોલ ફ્રી)</span>
-                </div>
+                <h4 className="text-sm font-bold font-heading text-slate-900">
+                  {flippedCards['sop1'] ? 'સત્તાવાર રસીકરણ નિયમ' : 'રસીકરણ યોગ્યતા (Eligibility)'}
+                </h4>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {flippedCards['sop1']
+                    ? 'બીમાર કે તાવવાળા પશુને રસી આપવી નહીં. ગર્ભવતી પશુઓ માટે વેટરનરી અધિકારીની સલાહ ફરજિયાત છે.'
+                    : 'તંદુરસ્ત પશુઓની જ રસીકરણ માટે પસંદગી કરવી. કાનમાં ટૅગ નંબર અનિવાર્ય છે.'}
+                </p>
               </div>
-
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[#135D43] text-[11px] leading-tight font-medium">
-                નોંધ: આ પોર્ટલ ગુજરાત સરકારના પશુપાલન વિભાગના બોટાદ પાયલોટ પ્રોજેક્ટ હેઠળ કાર્યરત છે.
+              <div className="text-[10px] text-emerald-800 font-bold">
+                {flippedCards['sop1'] ? '← પાછા ફરો' : 'વિગત જોવા ક્લિક કરો →'}
               </div>
             </div>
 
-            {/* Right Contact Form (7 cols) */}
-            <div className="md:col-span-7 bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs">
-              {isSubmitted ? (
-                <div className="py-12 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#135D43] border border-emerald-200 flex items-center justify-center mx-auto shadow-xs">
-                    <Check className="w-6 h-6" />
+            {/* Card 2 */}
+            <div
+              onClick={() => toggleFlip('sop2')}
+              className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-2xs hover:shadow-md transition-all cursor-pointer relative min-h-[180px] flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
+                  <span>પ્રોટોકોલ ૨</span>
+                  <RotateCw className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+                <h4 className="text-sm font-bold font-heading text-slate-900">
+                  {flippedCards['sop2'] ? 'કોલ્ડ ચેઈન સ્ટાન્ડર્ડ' : 'તાપમાન જાળવણી (2°C - 8°C)'}
+                </h4>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {flippedCards['sop2']
+                    ? 'રસી બોટલ સીધા સૂર્યપ્રકાશમાં ન રાખવી. આઇસ પેક વાળા વેક્સિન કેરિયરમાં જ ક્ષેત્રમાં લઈ જવી.'
+                    : 'વેક્સિન સ્ટોકનું તાપમાન ૨ થી ૮ ડિગ્રી સેલ્સિયસ વચ્ચે જ રહેવું જોઈએ.'}
+                </p>
+              </div>
+              <div className="text-[10px] text-emerald-800 font-bold">
+                {flippedCards['sop2'] ? '← પાછા ફરો' : 'વિગત જોવા ક્લિક કરો →'}
+              </div>
+            </div>
+
+            {/* Card 3 */}
+            <div
+              onClick={() => toggleFlip('sop3')}
+              className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-2xs hover:shadow-md transition-all cursor-pointer relative min-h-[180px] flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
+                  <span>પ્રોટોકોલ ૩</span>
+                  <RotateCw className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+                <h4 className="text-sm font-bold font-heading text-slate-900">
+                  {flippedCards['sop3'] ? 'ત્વરિત રોગ અહેવાલ' : 'શંકાસ્પદ રોગ રિપોર્ટિંગ'}
+                </h4>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {flippedCards['sop3']
+                    ? 'લક્ષણો દેખાયાના ૨૪ કલાકમાં પોર્ટલ પર રોગ અહેવાલ નોંધવો જેથી અન્ય પશુઓમાં ફેલાવો અટકે.'
+                    : 'મોં કે ખરીમાં ચાંદા, તીવ્ર લાળ કે ગાંઠો દેખાય તો તરત અહેવાલ મોકલો.'}
+                </p>
+              </div>
+              <div className="text-[10px] text-emerald-800 font-bold">
+                {flippedCards['sop3'] ? '← પાછા ફરો' : 'વિગત જોવા ક્લિક કરો →'}
+              </div>
+            </div>
+
+            {/* Card 4 */}
+            <div
+              onClick={() => toggleFlip('sop4')}
+              className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-2xs hover:shadow-md transition-all cursor-pointer relative min-h-[180px] flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
+                  <span>પ્રોટોકોલ ૪</span>
+                  <RotateCw className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+                <h4 className="text-sm font-bold font-heading text-slate-900">
+                  {flippedCards['sop4'] ? 'ડિજિટલ પ્રમાણપત્ર' : 'રસીકરણ પ્રમાણપત્ર (Certificate)'}
+                </h4>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {flippedCards['sop4']
+                    ? 'ખેડૂત પોતાના મોબાઇલમાં ખેડૂત પોર્ટલથી રસીકરણ પ્રમાણપત્ર ગમે ત્યારે ડાઉનલોડ કરી શકે છે.'
+                    : 'દરેક રસીકરણ પૂર્ણ થયા બાદ પશુના ટેગ સાથે કાયમી ડિજિટલ રેકોર્ડ બને છે.'}
+                </p>
+              </div>
+              <div className="text-[10px] text-emerald-800 font-bold">
+                {flippedCards['sop4'] ? '← પાછા ફરો' : 'વિગત જોવા ક્લિક કરો →'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 7. CONTACT & EMERGENCY HELPLINE (1800-BOTAD & 1962)                   */}
+      {/* ---------------------------------------------------------------------- */}
+      <section id="contact" className="py-16 bg-white border-t border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-gradient-to-br from-[#135D43] to-[#0A3828] rounded-3xl p-8 sm:p-12 text-white grid grid-cols-1 lg:grid-cols-12 gap-8 items-center shadow-xl">
+            <div className="lg:col-span-6 space-y-4">
+              <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider font-mono">
+                સરકારી પશુપાલન સહાય કેન્દ્ર
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-extrabold font-heading text-white">
+                પશુ આપાતકાલીન હેલ્પલાઇન અને સહાયતા
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed">
+                કોઈપણ રોગચાળો, તાકીદની સારવાર કે રસીકરણ સહાય માટે અમારા ટોલ-ફ્રી નંબર પર તાત્કાલિક સંપર્ક કરો:
+              </p>
+
+              <div className="pt-2 space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-md rounded-xl border border-white/15">
+                  <PhoneCall className="w-5 h-5 text-emerald-300 shrink-0" />
+                  <div>
+                    <div className="text-[10px] text-emerald-200">ટોલ ફ્રી વહીવટી હેલ્પલાઇન</div>
+                    <div className="text-base font-bold font-mono text-white">1800-BOTAD (1800-26823)</div>
                   </div>
-                  <h4 className="text-base font-bold text-slate-900">તમારો સંદેશ સફળતાપૂર્વક મોકલાઈ ગયો છે!</h4>
-                  <p className="text-xs text-slate-600">
-                    જિલ્લા કચેરી સ્ટાફ ટૂંક સમયમાં તમારો સંપર્ક કરશે.
-                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-md rounded-xl border border-white/15">
+                  <Activity className="w-5 h-5 text-amber-300 shrink-0" />
+                  <div>
+                    <div className="text-[10px] text-amber-200">ગુજરાત પશુ સંજીવની એમ્બ્યુલન્સ</div>
+                    <div className="text-base font-bold font-mono text-white">1962 (ટોલ ફ્રી ઈમરજન્સી)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Contact / Feedback Form */}
+            <div className="lg:col-span-6 bg-white text-slate-800 rounded-2xl p-6 shadow-md">
+              <h3 className="text-sm font-bold text-slate-900 font-heading mb-1">
+                સહાય વિનંતી / પ્રશ્ન મોકલો
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">
+                અમારી વેટરનરી ટીમ તમારા પ્રશ્નનો ઝડપથી નિકાલ કરશે.
+              </p>
+
+              {isSubmitted ? (
+                <div className="p-6 text-center space-y-2 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <div className="text-xs font-bold text-emerald-900">તમારી વિનંતી નોંધાઈ ગઈ છે!</div>
+                  <p className="text-[11px] text-emerald-700">તાલુકા વેટરનરી અધિકારી ટૂંક સમયમાં સંપર્ક કરશે.</p>
                 </div>
               ) : (
-                <form onSubmit={handleContactSubmit} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="font-semibold text-slate-700">તમારું નામ *</label>
+                <form onSubmit={handleContactSubmit} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">આપનું પૂરું નામ *</label>
                       <input
                         type="text"
                         required
-                        placeholder="નામ દાખલ કરો..."
+                        placeholder="દા.ત. રમેશભાઈ પટેલ"
                         value={contactForm.name}
                         onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                        className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:border-[#135D43] focus:ring-1 focus:ring-[#135D43] text-xs shadow-2xs"
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-[#135D43]"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="font-semibold text-slate-700">ઈમેલ અથવા મોબાઇલ નંબર</label>
-                      <input
-                        type="text"
-                        placeholder="સંપર્ક વિગત..."
-                        value={contactForm.email}
-                        onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                        className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:border-[#135D43] focus:ring-1 focus:ring-[#135D43] text-xs shadow-2xs"
-                      />
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">આપનો હોદ્દો / ભૂમિકા</label>
+                      <select
+                        value={contactForm.role}
+                        onChange={(e) => setContactForm({ ...contactForm, role: e.target.value })}
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-[#135D43]"
+                      >
+                        <option value="FARMER">પશુપાલક / ખેડૂત</option>
+                        <option value="VO">વેટરનરી ઓફિસર</option>
+                        <option value="FW">ફીલ્ડ વર્કર</option>
+                        <option value="COOP">દૂધ મંડળી પ્રતિનિધિ</option>
+                        <option value="OTHER">અન્ય નાગરિક</option>
+                      </select>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">તમારો હોદ્દો / ભૂમિકા</label>
-                    <select
-                      value={contactForm.role}
-                      onChange={(e) => setContactForm({ ...contactForm, role: e.target.value })}
-                      className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:border-[#135D43] text-xs shadow-2xs"
-                    >
-                      <option value="FARMER">પશુપાલક / ખેડૂત</option>
-                      <option value="FW">ક્ષેત્રીય કાર્યકર (Field Worker)</option>
-                      <option value="VO">વેટરનરી ઓફિસર (VO)</option>
-                      <option value="COOP">દૂધ સહકારી મંડળી સભ્ય</option>
-                      <option value="OTHER">અન્ય સરકારી અધિકારી</option>
-                    </select>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">મોબાઇલ નંબર કે ઇમેઇલ</label>
+                    <input
+                      type="text"
+                      placeholder="+91 98XXX XXXXX"
+                      value={contactForm.email}
+                      onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-[#135D43]"
+                    />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">સંદેશ / પ્રશ્ન *</label>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">આપનો સંદેશ / પ્રશ્ન *</label>
                     <textarea
                       required
                       rows={3}
-                      placeholder="તમારી વિગત અહીં લખો..."
+                      placeholder="પશુ રસીકરણ કે આરોગ્ય વિષયક પ્રશ્ન દાખલ કરો..."
                       value={contactForm.message}
                       onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                      className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 focus:border-[#135D43] text-xs shadow-2xs"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-[#135D43]"
                     />
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-[#135D43] text-white font-semibold rounded-lg text-xs hover:bg-[#0F4C37] transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-[#135D43] hover:bg-[#0E4632] text-white text-xs font-bold transition-colors cursor-pointer"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>સંદેશ મોકલો</span>
+                    સંદેશ મોકલો (Submit Request)
                   </button>
                 </form>
               )}
@@ -1629,51 +1048,100 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* ==================================================================== */}
-      {/* 9. GOVERNMENT & ANIVERA OFFICIAL FOOTER                              */}
-      {/* ==================================================================== */}
-      <footer className="bg-[#171210] border-t border-[#2C211D] py-10 text-xs text-[#A89A92]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#2D211C] to-[#140F0D] border border-[#44332B] text-emerald-400 flex items-center justify-center font-bold text-xs shadow-sm">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+      {/* ---------------------------------------------------------------------- */}
+      {/* 8. MODERN AGTECH GOVERNMENT FOOTER                                     */}
+      {/* ---------------------------------------------------------------------- */}
+      <footer className="bg-slate-900 text-slate-400 text-xs py-12 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-white">
+                <div className="w-7 h-7 rounded-lg bg-[#135D43] flex items-center justify-center font-bold">
+                  <ShieldCheck className="w-4 h-4 text-emerald-200" />
+                </div>
+                <span className="font-heading font-black text-base text-white">ANIVERA • પશુરક્ષક</span>
               </div>
-              <div>
-                <span className="font-bold text-white font-heading text-sm">ANIVERA</span>
-                <span className="text-[11px] text-[#A89A92] block">
-                  ડિજિટલ પશુ સ્વાસ્થ્ય અને રસીકરણ વ્યવસ્થાપન પ્રણાલી
-                </span>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                પશુપાલન નિયામકની કચેરી, કૃષિ, ખેડૂત કલ્યાણ અને સહકાર વિભાગ, ગુજરાત સરકાર.
+              </p>
+              <div className="text-[10px] font-mono text-emerald-400">
+                GOVERNMENT OF GUJARAT LIVESTOCK HEALTH
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-[#D5CBC5]">
-              <a href="#how-to-use" className="hover:text-white transition-colors duration-150">
-                ઉપયોગ પદ્ધતિ
-              </a>
-              <a href="#features" className="hover:text-white transition-colors duration-150">
-                સુવિધાઓ
-              </a>
-              <a href="#security" className="hover:text-white transition-colors duration-150">
-                સુરક્ષા SOP
-              </a>
-              <a href="#analytics" className="hover:text-white transition-colors duration-150">
-                એનાલિટિક્સ
-              </a>
-              <button onClick={() => navigate('/login')} className="hover:text-white transition-colors duration-150 cursor-pointer">
-                સ્ટાફ લોગિન
-              </button>
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-white uppercase tracking-wider font-heading">
+                વિભાગીય પોર્ટલ્સ
+              </div>
+              <ul className="space-y-1.5 text-[11px]">
+                <li>
+                  <button onClick={() => navigate('/login')} className="hover:text-emerald-400 transition-colors">
+                    સુપર એડમિન પોર્ટલ (State Admin)
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/login')} className="hover:text-emerald-400 transition-colors">
+                    DAHO જિલ્લા કન્સોલ
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/login')} className="hover:text-emerald-400 transition-colors">
+                    TAHO તાલુકા કન્સોલ
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/login')} className="hover:text-emerald-400 transition-colors">
+                    વેટરનરી અધિકારી (VO) પોર્ટલ
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/farmer/login')} className="hover:text-emerald-400 transition-colors">
+                    ખેડૂત / પશુપાલક પોર્ટલ (Farmer)
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-white uppercase tracking-wider font-heading">
+                પ્રોટોકોલ & સેવાઓ
+              </div>
+              <ul className="space-y-1.5 text-[11px]">
+                <li>FMD / બ્રુસેલોસિસ રસીકરણ ઝુંબેશ</li>
+                <li>લમ્પી સ્કિન ડીસીઝ સર્વેક્ષણ</li>
+                <li>ભારત પશુધન RFID/QR ટેગ સંકલન</li>
+                <li>કોલ્ડ-ચેઈન વેક્સિન ડેપો મોનિટરિંગ</li>
+                <li>ઓફલાઇન એજ સિંક્રોનાઇઝેશન</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-white uppercase tracking-wider font-heading">
+                સુરક્ષા & માર્ગદર્શન
+              </div>
+              <ul className="space-y-1.5 text-[11px]">
+                <li>ભૂમિકા આધારિત ઍક્સેસ (RBAC Matrix)</li>
+                <li>સુરક્ષા ઓડિટ લૉગ & એન્ક્રિપ્શન</li>
+                <li>ટોલ-ફ્રી હેલ્પલાઇન: 1800-BOTAD</li>
+                <li>પશુ સંજીવની એમ્બ્યુલન્સ: 1962</li>
+              </ul>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-[#2C211D] flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#8C7E76]">
-            <p>© 2026 ANIVERA — પશુપાલન વિભાગ, બોટાદ જિલ્લો, ગુજરાત સરકાર. All Rights Reserved.</p>
-            <p>Designed for Gujarat Livestock Health Governance</p>
+          <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500">
+            <div>
+              © 2026 ANIVERA (PashuRakshak). પશુપાલન વિભાગ, ગુજરાત સરકાર. તમામ હકો અનામત.
+            </div>
+            <div className="flex items-center gap-4">
+              <span>Security Audited</span>
+              <span>•</span>
+              <span>ISO 27001 Protocol</span>
+              <span>•</span>
+              <span>Made with ❤️ for Gujarat Farmers</span>
+            </div>
           </div>
         </div>
       </footer>
     </div>
   );
 };
-
-export default LandingPage;

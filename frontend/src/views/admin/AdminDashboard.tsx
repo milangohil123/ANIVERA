@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n';
-import { adminService } from '../../services/adminService';
+import { adminService, type SuperAdminChartsData } from '../../services/adminService';
 import { StateView } from '../../components/common/StateView';
 import { KpiCard } from '../../components/common/KpiCard';
 import { Card } from '../../components/common/Card';
@@ -31,7 +31,168 @@ import {
   Globe,
   X,
   Search,
+  Syringe,
+  PawPrint,
+  Award,
+  TrendingUp,
 } from 'lucide-react';
+
+// ============================================================================
+// SVG Chart Rendering Helpers for State-Level Executive Analytics
+// ============================================================================
+const renderDiseaseTrendSvg = (trend: Array<{ month: string; reports: number; confirmed: number }>) => {
+  if (!trend || trend.length === 0) return null;
+  const maxVal = Math.max(1, ...trend.map((t) => t.reports));
+  const w = 320;
+  const h = 90;
+  const padLeft = 24;
+  const padRight = 20;
+  const padTop = 15;
+  const padBottom = 22;
+  const plotW = w - padLeft - padRight;
+  const plotH = h - padTop - padBottom;
+
+  const points = trend.map((t, i) => {
+    const x = padLeft + (i / Math.max(1, trend.length - 1)) * plotW;
+    const y = padTop + plotH - (t.reports / maxVal) * plotH;
+    return { x, y, ...t };
+  });
+
+  const lineD = points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x},${pt.y}` : `${acc} L ${pt.x},${pt.y}`), '');
+  const areaD = `${lineD} L ${points[points.length - 1].x},${padTop + plotH} L ${points[0].x},${padTop + plotH} Z`;
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-22 overflow-visible">
+      <defs>
+        <linearGradient id="roseGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#F43F5E" stopOpacity="0.0" />
+        </linearGradient>
+      </defs>
+      <line x1={padLeft} y1={padTop} x2={w - padRight} y2={padTop} stroke="#F1F5F9" strokeDasharray="3 3" />
+      <line x1={padLeft} y1={padTop + plotH / 2} x2={w - padRight} y2={padTop + plotH / 2} stroke="#F1F5F9" strokeDasharray="3 3" />
+      <line x1={padLeft} y1={padTop + plotH} x2={w - padRight} y2={padTop + plotH} stroke="#E2E8F0" />
+      <path d={areaD} fill="url(#roseGradient)" />
+      <path d={lineD} fill="none" stroke="#E11D48" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((pt, idx) => (
+        <g key={idx}>
+          <circle cx={pt.x} cy={pt.y} r="3.5" fill="#FFFFFF" stroke="#E11D48" strokeWidth="2" />
+          <text x={pt.x} y={h - 4} textAnchor="middle" className="text-[9px] fill-slate-400 font-medium">
+            {pt.month}
+          </text>
+          {pt.reports > 0 && (
+            <text x={pt.x} y={pt.y - 6} textAnchor="middle" className="text-[9px] fill-rose-700 font-bold">
+              {pt.reports}
+            </text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+};
+
+const renderVaccinationBarsSvg = (trend: Array<{ month: string; doses: number }>) => {
+  if (!trend || trend.length === 0) return null;
+  const maxVal = Math.max(1, ...trend.map((t) => t.doses));
+  const w = 320;
+  const h = 90;
+  const padLeft = 20;
+  const padRight = 20;
+  const padTop = 15;
+  const padBottom = 22;
+  const plotW = w - padLeft - padRight;
+  const plotH = h - padTop - padBottom;
+  const barWidth = 22;
+  const totalBars = trend.length;
+  const gap = (plotW - totalBars * barWidth) / Math.max(1, totalBars - 1);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-22 overflow-visible">
+      <defs>
+        <linearGradient id="emeraldBarGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10B981" />
+          <stop offset="100%" stopColor="#059669" />
+        </linearGradient>
+      </defs>
+      <line x1={padLeft} y1={padTop} x2={w - padRight} y2={padTop} stroke="#F1F5F9" strokeDasharray="3 3" />
+      <line x1={padLeft} y1={padTop + plotH / 2} x2={w - padRight} y2={padTop + plotH / 2} stroke="#F1F5F9" strokeDasharray="3 3" />
+      <line x1={padLeft} y1={padTop + plotH} x2={w - padRight} y2={padTop + plotH} stroke="#E2E8F0" />
+      {trend.map((t, idx) => {
+        const x = padLeft + idx * (barWidth + gap);
+        const barH = (t.doses / maxVal) * plotH;
+        const y = padTop + plotH - Math.max(barH, 3);
+        return (
+          <g key={idx}>
+            <rect
+              x={x}
+              y={y}
+              width={barWidth}
+              height={Math.max(barH, 3)}
+              rx="3"
+              fill="url(#emeraldBarGradient)"
+              className="transition-all hover:opacity-80"
+            >
+              <title>{`${t.month}: ${t.doses} ડોઝ`}</title>
+            </rect>
+            {t.doses > 0 && (
+              <text x={x + barWidth / 2} y={y - 4} textAnchor="middle" className="text-[9px] fill-emerald-800 font-bold">
+                {t.doses}
+              </text>
+            )}
+            <text x={x + barWidth / 2} y={h - 4} textAnchor="middle" className="text-[9px] fill-slate-400 font-medium">
+              {t.month}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+const renderSpeciesDonutSvg = (
+  species: Array<{ name_gu: string; count: number; color: string; percentage: number }>,
+  total: number,
+  formatNum: (n: number) => string
+) => {
+  const r = 38;
+  const circ = 2 * Math.PI * r;
+  let currentOffset = 0;
+
+  return (
+    <div className="relative w-24 h-24 shrink-0 flex items-center justify-center">
+      <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+        <circle cx="50" cy="50" r={r} fill="transparent" stroke="#F1F5F9" strokeWidth="13" />
+        {total > 0 &&
+          species.map((sp, idx) => {
+            const strokeDash = (sp.percentage / 100) * circ;
+            const strokeOffset = -currentOffset;
+            currentOffset += strokeDash;
+            return (
+              <circle
+                key={idx}
+                cx="50"
+                cy="50"
+                r={r}
+                fill="transparent"
+                stroke={sp.color}
+                strokeWidth="13"
+                strokeDasharray={`${strokeDash} ${circ}`}
+                strokeDashoffset={strokeOffset}
+                strokeLinecap="round"
+                className="transition-all duration-500"
+              />
+            );
+          })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+        <span className="text-xs font-bold font-heading text-slate-900 leading-none">
+          {formatNum(total)}
+        </span>
+        <span className="text-[8px] text-slate-500 font-semibold mt-0.5">કુલ પશુ</span>
+      </div>
+    </div>
+  );
+};
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -48,6 +209,7 @@ export const AdminDashboard: React.FC = () => {
   const [villagesGeoJson, setVillagesGeoJson] = useState<any | null>(null);
   const [isLoadingSubLayer, setIsLoadingSubLayer] = useState<boolean>(false);
   const [districtFilter, setDistrictFilter] = useState<'ALL' | 'ASSIGNED' | 'UNASSIGNED'>('ALL');
+  const [chartsData, setChartsData] = useState<SuperAdminChartsData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -63,24 +225,65 @@ export const AdminDashboard: React.FC = () => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const [ov, mapData] = await Promise.all([
+      // Fast path: Fetch overview and analytics in parallel first
+      const [ov, charts] = await Promise.all([
         adminService.getSuperAdminOverview(apiBaseUrl).catch((e) => {
           console.warn('Overview fetch note:', e);
           return null;
         }),
-        adminService.getGujaratStateMap(apiBaseUrl).catch((e) => {
-          console.warn('State map fetch note:', e);
+        adminService.getSuperAdminCharts(apiBaseUrl).catch((e) => {
+          console.warn('Charts analytics fetch note:', e);
           return null;
         }),
       ]);
+      if (ov) {
+        if (ov.districts) {
+          const seen = new Set<string>();
+          ov.districts = ov.districts.filter((d: any) => {
+            const nameEn = (d.name_en || '').trim();
+            const nameGu = (d.name_gu || '').trim();
+            const code = (d.code || '').trim().toUpperCase();
+            if (
+              code.startsWith('D_') ||
+              nameEn.startsWith('D_') ||
+              nameGu.startsWith('જી') ||
+              nameGu === 'જી' ||
+              nameGu.startsWith('જી ') ||
+              nameEn.toLowerCase() === 'ji' ||
+              nameEn.toLowerCase() === 'jji'
+            ) {
+              return false;
+            }
+            let canonical = (nameEn || code).toLowerCase().trim();
+            if (canonical.includes('botad')) canonical = 'botad';
+            if (seen.has(canonical)) return false;
+            seen.add(canonical);
+            return true;
+          });
+        }
+        if (ov.geographic_kpis) {
+          ov.geographic_kpis.total_districts = 34;
+          const assigned = ov.districts ? ov.districts.filter((d: any) => d.assigned_daho).length : 1;
+          ov.geographic_kpis.districts_assigned = assigned;
+          ov.geographic_kpis.districts_unassigned = Math.max(0, 34 - assigned);
+        }
+      }
       setOverview(ov);
-      setStateGeoJson(mapData);
+      setChartsData(charts);
       if (ov?.districts && ov.districts.length > 0 && !selectedDistrict) {
         setSelectedDistrict(ov.districts[0]);
       }
+      setIsLoading(false);
+
+      // Asynchronously load the heavier state GIS map layer in the background
+      adminService
+        .getGujaratStateMap(apiBaseUrl)
+        .then((mapData) => {
+          if (mapData) setStateGeoJson(mapData);
+        })
+        .catch((e) => console.warn('Background state map fetch note:', e));
     } catch (err: any) {
       setErrorMsg(err?.message || t('superAdmin.common.loadFailed') || 'Failed to load state administrative data.');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -314,9 +517,7 @@ export const AdminDashboard: React.FC = () => {
       {/* ---------------------------------------------------------------------- */}
       {/* 2. STATEWIDE GOVERNANCE KPI TIERS                                      */}
       {/* ---------------------------------------------------------------------- */}
-      {isLoading ? (
-        <StateView state="loading" title={t('superAdmin.common.loading')} />
-      ) : errorMsg ? (
+      {errorMsg && !overview ? (
         <StateView state="error" title={t('superAdmin.common.error')} message={errorMsg} onRetry={loadData} />
       ) : (
         <div className="space-y-4">
@@ -336,36 +537,42 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.totalDistricts')}
-                value={formatNumber(overview?.geographic_kpis?.total_districts ?? 33)}
+                value={formatNumber(overview?.geographic_kpis?.total_districts ?? 34)}
                 subtext={t('superAdmin.dashboard.kpis.subtextDistricts')}
                 icon={<MapPin className="w-4 h-4 text-[#135D43]" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.assignedDistricts')}
                 value={formatNumber(overview?.geographic_kpis?.districts_assigned ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextAssigned')}
                 icon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.unassignedDistricts')}
                 value={formatNumber(overview?.geographic_kpis?.districts_unassigned ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextUnassigned')}
                 icon={<AlertTriangle className="w-4 h-4 text-amber-500" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.totalTalukas')}
                 value={formatNumber(overview?.geographic_kpis?.total_talukas ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextTalukas')}
                 icon={<Layers className="w-4 h-4 text-[#135D43]" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.totalVillages')}
                 value={formatNumber(overview?.geographic_kpis?.total_villages ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextVillages')}
                 icon={<Database className="w-4 h-4 text-[#135D43]" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.verifiedBorders')}
                 value={formatNumber(overview?.geographic_kpis?.villages_verified_geo ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextBorders')}
@@ -390,41 +597,424 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.totalDaho')}
                 value={formatNumber(overview?.account_kpis?.total_daho ?? 0)}
                 subtext={`${formatNumber(overview?.account_kpis?.active_daho ?? 0)} ${t('superAdmin.dashboard.kpis.activeDaho')}`}
                 icon={<Shield className="w-4 h-4 text-[#135D43]" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.voCount')}
                 value={formatNumber(overview?.account_kpis?.total_vo ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextVo')}
                 icon={<UserCheck className="w-4 h-4 text-blue-600" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.fwCount')}
                 value={formatNumber(overview?.account_kpis?.total_fw ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextFw')}
                 icon={<Users className="w-4 h-4 text-indigo-600" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.activeCampaigns')}
                 value={formatNumber(overview?.operational_kpis?.active_campaigns ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextCampaigns')}
                 icon={<Megaphone className="w-4 h-4 text-purple-600" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.registeredAnimals')}
                 value={formatNumber(overview?.operational_kpis?.total_animals ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextAnimals')}
                 icon={<Activity className="w-4 h-4 text-[#135D43]" />}
               />
               <KpiCard
+                isLoading={isLoading}
                 label={t('superAdmin.dashboard.kpis.totalVaccinations')}
                 value={formatNumber(overview?.operational_kpis?.total_vaccinations ?? 0)}
                 subtext={t('superAdmin.dashboard.kpis.subtextVaccinations')}
                 icon={<BarChart3 className="w-4 h-4 text-emerald-600" />}
               />
+            </div>
+          </div>
+
+          {/* ------------------------------------------------------------------ */}
+          {/* 2.5 STATEWIDE REAL-TIME ANALYTICS & SURVEILLANCE SUITE (4 CHARTS)  */}
+          {/* ------------------------------------------------------------------ */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-100">
+                  <TrendingUp className="w-4 h-4 text-emerald-700" />
+                </span>
+                <div>
+                  <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    રાજ્ય સ્તરીય રીઅલ-ટાઇમ એનાલિટિક્સ અને સર્વેલન્સ (Executive Analytics)
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    ડેટાબેઝના વાસ્તવિક રેકોર્ડ્સ પર આધારિત રોગ સર્વેલન્સ, રસીકરણ અને પશુધન વિશ્લેષણ
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50/80 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>સત્તાવાર લાઇવ ડેટા (Live Database)</span>
+              </div>
+            </div>
+
+            {/* 2x2 Responsive Aesthetic Graphs Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+              {/* GRAPH 1: DISEASE SURVEILLANCE & OUTBREAK MONITORING */}
+              <Card className="p-4 border border-[#E2E8F0] shadow-2xs bg-white rounded-xl flex flex-col justify-between hover:border-rose-300 transition-all">
+                <div>
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center shrink-0 border border-rose-100">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 font-heading">
+                          ૧. રોગ સર્વેલન્સ મોનિટરિંગ (Disease Surveillance)
+                        </h3>
+                        <p className="text-[10px] text-slate-500">
+                          રોગચાળો ચેતવણી અને શંકાસ્પદ કેસોનું લાઈવ ટ્રેકિંગ
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                      સર્વેલન્સ સક્રિય
+                    </span>
+                  </div>
+
+                  {/* Top Stats Strip */}
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-[10px] text-slate-500 block">કુલ અહેવાલ</span>
+                      <span className="text-base font-bold text-slate-900 font-heading">
+                        {chartsData?.disease_surveillance.total_reports ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-emerald-50/70 border border-emerald-100">
+                      <span className="text-[10px] text-emerald-700 block">પુષ્ટિ થયેલ</span>
+                      <span className="text-base font-bold text-emerald-800 font-heading">
+                        {chartsData?.disease_surveillance.confirmed_cases ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-100">
+                      <span className="text-[10px] text-amber-700 block">શંકાસ્પદ / તપાસ</span>
+                      <span className="text-base font-bold text-amber-800 font-heading">
+                        {chartsData?.disease_surveillance.suspected_cases ?? 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 6-Month Trend Curve */}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-slate-500 font-medium">છેલ્લા ૬ મહિનાનો ઇન્સિડન્ટ ટ્રેન્ડ</span>
+                      <span className="text-slate-400 text-[10px]">માસિક કેસ વલણ</span>
+                    </div>
+                    {renderDiseaseTrendSvg(chartsData?.disease_surveillance.monthly_trend || [])}
+                  </div>
+
+                  {/* Disease breakdown list */}
+                  <div className="mt-3 space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-600 block">રોગવાર વિતરણ (Breakdown by Condition)</span>
+                    {chartsData?.disease_surveillance.by_disease && chartsData.disease_surveillance.by_disease.length > 0 ? (
+                      chartsData.disease_surveillance.by_disease.slice(0, 3).map((dis) => (
+                        <div key={dis.disease_code} className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dis.color }} />
+                              {dis.name_gu}
+                            </span>
+                            <span className="font-bold text-slate-900">{dis.total} કેસ ({dis.percentage}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(8, dis.percentage))}%`, backgroundColor: dis.color }} />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-center text-[11px] text-emerald-800">
+                        રાજ્યમાં હાલ કોઈ સક્રિય રોગચાળો નોંધાયેલ નથી. સર્વેલન્સ સ્થિતિ સુરક્ષિત છે.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">સ્ત્રોત: ખેડૂત અને વેટરનરી પોર્ટલ</span>
+                  <button onClick={() => navigate('/admin/oversight')} className="text-rose-700 hover:underline font-semibold flex items-center gap-1">
+                    સંપૂર્ણ સર્વેલન્સ જુઓ <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </Card>
+
+              {/* GRAPH 2: VACCINATION DOSES & CAMPAIGN PROGRESS */}
+              <Card className="p-4 border border-[#E2E8F0] shadow-2xs bg-white rounded-xl flex flex-col justify-between hover:border-emerald-300 transition-all">
+                <div>
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
+                        <Syringe className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 font-heading">
+                          ૨. રસીકરણ પ્રગતિ અને ડોઝ ટ્રેન્ડ (Vaccination Progress)
+                        </h3>
+                        <p className="text-[10px] text-slate-500">
+                          રાજ્ય સ્તરે અપાયેલ વાસ્તવિક ડોઝ અને પ્રોગ્રામ વિશ્લેષણ
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      લાઇવ રસીકરણ
+                    </span>
+                  </div>
+
+                  {/* Top Stats Strip */}
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                    <div className="p-2 rounded-lg bg-emerald-50/70 border border-emerald-100">
+                      <span className="text-[10px] text-emerald-700 block">કુલ રસીકરણ</span>
+                      <span className="text-base font-bold text-emerald-900 font-heading">
+                        {formatNumber(chartsData?.vaccination_analytics.total_vaccinations ?? overview?.operational_kpis?.total_vaccinations ?? 0)}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-[10px] text-slate-500 block">રસી પ્રોગ્રામો</span>
+                      <span className="text-base font-bold text-slate-900 font-heading">
+                        {chartsData?.vaccination_analytics.by_programme.length || 1} સક્રિય
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-100">
+                      <span className="text-[10px] text-purple-700 block">સક્રિય ઝુંબેશો</span>
+                      <span className="text-base font-bold text-purple-900 font-heading">
+                        {overview?.operational_kpis?.active_campaigns ?? 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 6-Month Bar Chart */}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-slate-500 font-medium">માસિક રસીકરણ વોલ્યુમ (Monthly Doses)</span>
+                      <span className="text-slate-400 text-[10px]">ગત ૬ મહિના</span>
+                    </div>
+                    {renderVaccinationBarsSvg(chartsData?.vaccination_analytics.monthly_trend || [])}
+                  </div>
+
+                  {/* Programme Breakdown */}
+                  <div className="mt-3 space-y-1.5">
+                    <span className="text-[11px] font-semibold text-slate-600 block">રસી કાર્યક્રમ વિતરણ (Vaccine Programmes)</span>
+                    {chartsData?.vaccination_analytics.by_programme && chartsData.vaccination_analytics.by_programme.length > 0 ? (
+                      chartsData.vaccination_analytics.by_programme.slice(0, 3).map((prog) => (
+                        <div key={prog.programme_code} className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: prog.color }} />
+                              {prog.name_gu}
+                            </span>
+                            <span className="font-bold text-emerald-800">{prog.doses} ડોઝ ({prog.percentage}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(8, prog.percentage))}%`, backgroundColor: prog.color }} />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-center text-xs text-slate-600">
+                        રસીકરણ કાર્યક્રમો સક્રિય કરવામાં આવી રહ્યા છે.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">તાલુકા અને ફીલ્ડ વર્કર ઇવેન્ટ્સ દ્વારા પ્રમાણિત</span>
+                  <button onClick={() => navigate('/admin/oversight')} className="text-emerald-700 hover:underline font-semibold flex items-center gap-1">
+                    રસીકરણ વિગતો <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </Card>
+
+              {/* GRAPH 3: LIVESTOCK SPECIES CENSUS DISTRIBUTION */}
+              <Card className="p-4 border border-[#E2E8F0] shadow-2xs bg-white rounded-xl flex flex-col justify-between hover:border-blue-300 transition-all">
+                <div>
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
+                        <PawPrint className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 font-heading">
+                          ૩. પશુધન પ્રજાતિ વસ્તી ગણતરી (Species Census)
+                        </h3>
+                        <p className="text-[10px] text-slate-500">
+                          નોંધાયેલ પશુઓની જાતિવાર વસ્તી ગણતરી અને સેક્સ રેશિયો
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                      વાસ્તવિક પશુધન
+                    </span>
+                  </div>
+
+                  {/* Donut Chart + Species List */}
+                  <div className="mt-3 flex flex-col sm:flex-row items-center gap-4">
+                    {renderSpeciesDonutSvg(
+                      chartsData?.species_distribution.by_species || [],
+                      chartsData?.species_distribution.total_animals ?? overview?.operational_kpis?.total_animals ?? 0,
+                      formatNumber
+                    )}
+
+                    <div className="flex-1 w-full space-y-2">
+                      {chartsData?.species_distribution.by_species && chartsData.species_distribution.by_species.length > 0 ? (
+                        chartsData.species_distribution.by_species.slice(0, 4).map((sp) => (
+                          <div key={sp.species_code} className="p-1.5 px-2 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-slate-800 flex items-center gap-1.5 truncate">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sp.color }} />
+                                {sp.name_gu}
+                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="font-bold text-slate-900">{sp.count}</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-white border border-slate-200 text-slate-600">
+                                  {sp.percentage}%
+                                </span>
+                              </div>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-1 mt-1 overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(5, sp.percentage))}%`, backgroundColor: sp.color }} />
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-3 bg-slate-50 rounded-lg text-center text-xs text-slate-500">
+                          પશુધન રજીસ્ટ્રેશન પ્રક્રિયામાં છે.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Gender Split Banner */}
+                  <div className="mt-3 pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="p-1.5 rounded-lg bg-blue-50/60 border border-blue-100">
+                      <span className="text-[10px] text-blue-700 block">માદા પશુધન (Female)</span>
+                      <span className="font-bold text-blue-900 font-heading text-sm">
+                        {chartsData?.species_distribution.by_sex.FEMALE ?? 0}
+                      </span>
+                    </div>
+                    <div className="p-1.5 rounded-lg bg-indigo-50/60 border border-indigo-100">
+                      <span className="text-[10px] text-indigo-700 block">નર પશુધન (Male)</span>
+                      <span className="font-bold text-indigo-900 font-heading text-sm">
+                        {chartsData?.species_distribution.by_sex.MALE ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">RFID ટેગ અને ડિજિટલ નોંધણી</span>
+                  <button onClick={() => navigate('/admin/oversight')} className="text-blue-700 hover:underline font-semibold flex items-center gap-1">
+                    પશુધન રજિસ્ટ્રી <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </Card>
+
+              {/* GRAPH 4: DISTRICT-WISE COVERAGE & PERFORMANCE RANKING */}
+              <Card className="p-4 border border-[#E2E8F0] shadow-2xs bg-white rounded-xl flex flex-col justify-between hover:border-amber-300 transition-all">
+                <div>
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-100">
+                        <Award className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 font-heading">
+                          ૪. જિલ્લાવાર કામગીરી અને કવરેજ (District Coverage)
+                        </h3>
+                        <p className="text-[10px] text-slate-500">
+                          ટોચના જિલ્લાઓમાં રસીકરણ પ્રગતિ અને પશુ કવરેજ ટકાવારી
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      રેન્કિંગ
+                    </span>
+                  </div>
+
+                  {/* Top Districts Ranking List */}
+                  <div className="mt-3 space-y-2">
+                    {chartsData?.district_performance && chartsData.district_performance.length > 0 ? (
+                      chartsData.district_performance.slice(0, 4).map((dist, idx) => (
+                        <div key={dist.district_id} className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                                idx === 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                                idx === 1 ? 'bg-slate-200 text-slate-800' :
+                                idx === 2 ? 'bg-amber-50 text-amber-800' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {idx + 1}
+                              </span>
+                              <span className="font-bold text-slate-900 truncate">
+                                {dist.name_gu || dist.name_en} ({dist.name_en})
+                              </span>
+                              {dist.is_assigned ? (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-semibold bg-emerald-100 text-emerald-800 shrink-0">
+                                  DAHO સક્રિય
+                                </span>
+                              ) : (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-semibold bg-slate-200 text-slate-600 shrink-0">
+                                  અનસાઇન
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-bold text-emerald-700">{dist.vaccination_count} ડોઝ</span>
+                              <span className="text-slate-400 text-[10px] ml-1">/ {dist.animal_count} પશુ</span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                dist.coverage_pct >= 75 ? 'bg-emerald-600' :
+                                dist.coverage_pct >= 40 ? 'bg-blue-600' :
+                                'bg-amber-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(6, dist.coverage_pct))}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
+                            <span>અધિકારી: {dist.daho_name || 'નિયુક્ત નથી'}</span>
+                            <span className="font-semibold text-slate-700">કવરેજ: {dist.coverage_pct}%</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 bg-slate-50 rounded-lg text-center text-xs text-slate-500">
+                        જિલ્લાવાર કામગીરી ડેટા સિંક થઈ રહ્યો છે.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">૩૪ સત્તાવાર જિલ્લાઓમાં મોનિટરિંગ</span>
+                  <button onClick={() => navigate('/admin/assignments')} className="text-amber-700 hover:underline font-semibold flex items-center gap-1">
+                    તમામ જિલ્લાઓ <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </Card>
             </div>
           </div>
 

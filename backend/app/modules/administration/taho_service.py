@@ -16,6 +16,7 @@ Provides comprehensive Taluka-level operational administration:
 
 import json
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -44,6 +45,34 @@ from app.core.email_service import (
     send_vo_activation_email,
     send_fw_activation_email,
 )
+
+
+def normalize_mobile_to_e164(raw_mobile: Optional[str]) -> Optional[str]:
+    """Normalize raw mobile number to strict E.164 (+<country><digits>) or None."""
+    if not raw_mobile:
+        return None
+    raw_str = str(raw_mobile).strip()
+    if not raw_str:
+        return None
+    cleaned = re.sub(r"[^\d+]", "", raw_str)
+    if not cleaned:
+        return None
+    if cleaned.startswith("+"):
+        num = cleaned[1:]
+        if 8 <= len(num) <= 15 and num[0] != "0":
+            return f"+{num}"
+    else:
+        digits = cleaned.lstrip("0")
+        if len(digits) == 10:
+            return f"+91{digits}"
+        elif len(digits) == 12 and digits.startswith("91"):
+            return f"+{digits}"
+        elif 8 <= len(digits) <= 15:
+            return f"+{digits}"
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="અમાન્ય મોબાઇલ નંબર: કૃપા કરીને ૧૦ અંકનો યોગ્ય મોબાઇલ નંબર દાખલ કરો (દા.ત. 9876543210)",
+    )
 
 
 class TahoService:
@@ -1247,7 +1276,7 @@ class TahoService:
                 "assigned_village_ids": [str(vid) for vid in v_id_list if vid],
                 "assigned_village_names_gu": [v for v in v_gu_list if v],
                 "assigned_village_names_en": [v for v in v_en_list if v],
-                "village_count": len([v for v in v_id_list if vid]),
+                "village_count": len([v for v in v_id_list if v]),
                 "vaccinations_count": vax_done,
                 "created_at": u.created_at.isoformat() if u.created_at else None
             })
@@ -1266,13 +1295,19 @@ class TahoService:
         full_name = payload["full_name"].strip()
         username = payload["username"].strip().lower()
         email_clean = payload.get("email", "").strip().lower() or None
-        mobile = payload.get("mobile_e164", "").strip() or None
+        raw_mobile = payload.get("mobile_e164") or payload.get("mobile")
+        mobile = normalize_mobile_to_e164(raw_mobile)
         assigned_village_ids = payload.get("village_ids", [])
 
         # Validate unique username
         existing_u = (await self.db.execute(select(User).where(User.username == username))).scalar_one_or_none()
         if existing_u:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Username '{username}' already exists.")
+
+        if mobile:
+            existing_m = (await self.db.execute(select(User).where(User.mobile_e164 == mobile))).scalar_one_or_none()
+            if existing_m:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"મોબાઇલ નંબર '{mobile}' સાથે અન્ય એકાઉન્ટ પહેલેથી જ નોંધાયેલ છે.")
 
         # Validate assigned villages belong to taluka
         valid_villages = []
@@ -1445,7 +1480,7 @@ class TahoService:
                 "assigned_village_ids": [str(vid) for vid in v_id_list if vid],
                 "assigned_village_names_gu": [v for v in v_gu_list if v],
                 "assigned_village_names_en": [v for v in v_en_list if v],
-                "village_count": len([v for v in v_id_list if vid]),
+                "village_count": len([v for v in v_id_list if v]),
                 "vaccinations_count": vax_done,
                 "created_at": u.created_at.isoformat() if u.created_at else None
             })
@@ -1464,12 +1499,18 @@ class TahoService:
         full_name = payload["full_name"].strip()
         username = payload["username"].strip().lower()
         email_clean = payload.get("email", "").strip().lower() or None
-        mobile = payload.get("mobile_e164", "").strip() or None
+        raw_mobile = payload.get("mobile_e164") or payload.get("mobile")
+        mobile = normalize_mobile_to_e164(raw_mobile)
         assigned_village_ids = payload.get("village_ids", [])
 
         existing_u = (await self.db.execute(select(User).where(User.username == username))).scalar_one_or_none()
         if existing_u:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Username '{username}' already exists.")
+
+        if mobile:
+            existing_m = (await self.db.execute(select(User).where(User.mobile_e164 == mobile))).scalar_one_or_none()
+            if existing_m:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"મોબાઇલ નંબર '{mobile}' સાથે અન્ય એકાઉન્ટ પહેલેથી જ નોંધાયેલ છે.")
 
         valid_villages = []
         if assigned_village_ids:
@@ -1747,7 +1788,7 @@ class TahoService:
         # 1. Notify Parent District DAHO
         daho_stmt = (
             select(User)
-            .join(DahoDistrictAssignment, DahoDistrictAssignment.user_id == User.id)
+            .join(DahoDistrictAssignment, DahoDistrictAssignment.daho_user_id == User.id)
             .where(
                 DahoDistrictAssignment.district_id == taluka.district_id,
                 DahoDistrictAssignment.ended_at.is_(None),

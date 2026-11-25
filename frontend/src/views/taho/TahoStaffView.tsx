@@ -10,21 +10,14 @@ import {
   Users,
   UserPlus,
   Search,
-  CheckCircle2,
-  XCircle,
   Mail,
   Phone,
   RotateCcw,
-  AlertTriangle,
-  Layers,
-  Shield,
-  Briefcase,
-  KeyRound,
   ChevronRight,
 } from 'lucide-react';
 
 export const TahoStaffView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState<'VO' | 'FW'>('VO');
   const [vos, setVos] = useState<any[]>([]);
   const [fws, setFws] = useState<any[]>([]);
@@ -100,11 +93,30 @@ export const TahoStaffView: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      let cleanMobile = formData.mobile_e164 ? formData.mobile_e164.trim().replace(/[^\d+]/g, '') : '';
+      if (cleanMobile) {
+        if (!cleanMobile.startsWith('+')) {
+          const raw = cleanMobile.replace(/^0+/, '');
+          if (raw.length === 10) {
+            cleanMobile = `+91${raw}`;
+          } else if (raw.length === 12 && raw.startsWith('91')) {
+            cleanMobile = `+${raw}`;
+          } else {
+            cleanMobile = `+91${raw}`;
+          }
+        }
+      }
+
+      const submitPayload = {
+        ...formData,
+        mobile_e164: cleanMobile || undefined,
+      };
+
       if (createRole === 'VET_OFFICER') {
-        await adminService.createTahoVo(apiBaseUrl, formData);
+        await adminService.createTahoVo(apiBaseUrl, submitPayload);
         setActionSuccess('વેટરનરી અધિકારીનું ખાતું સફળતાપૂર્વક બનાવવામાં આવ્યું અને ઇમેઇલ મોકલવામાં આવ્યો.');
       } else {
-        await adminService.createTahoFw(apiBaseUrl, formData);
+        await adminService.createTahoFw(apiBaseUrl, submitPayload);
         setActionSuccess('ફીલ્ડ વર્કરનું ખાતું સફળતાપૂર્વક બનાવવામાં આવ્યું અને ઇમેઇલ મોકલવામાં આવ્યો.');
       }
       setIsCreateModalOpen(false);
@@ -189,19 +201,30 @@ export const TahoStaffView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleOpenCreate(activeTab === 'VO' ? 'VET_OFFICER' : 'FIELD_WORKER')}
-            leftIcon={<UserPlus className="w-3.5 h-3.5" />}
-          >
-            {activeTab === 'VO' ? 'નવા VO ઉમેરો' : 'નવા FW ઉમેરો'}
-          </Button>
+          {hasPermission(activeTab === 'VO' ? 'user.vo.create' : 'user.fw.create') && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleOpenCreate(activeTab === 'VO' ? 'VET_OFFICER' : 'FIELD_WORKER')}
+              leftIcon={<UserPlus className="w-3.5 h-3.5" />}
+            >
+              {activeTab === 'VO' ? 'નવા VO ઉમેરો' : 'નવા FW ઉમેરો'}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={loadStaffData} leftIcon={<RotateCcw className="w-3.5 h-3.5" />}>
             રીફ્રેશ
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="p-3 rounded-lg text-xs font-medium flex items-center justify-between border bg-red-50 text-red-900 border-red-200">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-xs font-bold underline ml-2">
+            બંધ કરો
+          </button>
+        </div>
+      )}
 
       {actionSuccess && (
         <div className="p-3 rounded-lg text-xs font-medium flex items-center justify-between border bg-emerald-50 text-emerald-900 border-emerald-200">
@@ -481,7 +504,7 @@ export const TahoStaffView: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 sticky bottom-0 bg-white pb-1 z-10">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsCreateModalOpen(false)}>
               રદ કરો
             </Button>

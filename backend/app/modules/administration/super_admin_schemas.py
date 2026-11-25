@@ -1,8 +1,9 @@
 """Pydantic schemas for SUPER_ADMIN State-Level Administration Module."""
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SuperAdminGeographicKPIs(BaseModel):
@@ -102,13 +103,29 @@ class SuperAdminOverviewResponse(BaseModel):
 class DahoAccountCreateRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     username: str = Field(..., min_length=3, max_length=64)
-    email: Optional[str] = None
+    email: str = Field(..., min_length=5, max_length=255, description="Official email address of the DAHO")
     mobile_e164: str = Field(..., min_length=10, max_length=20)
     designation: Optional[str] = "જિલ્લા પશુપાલન અધિકારી (DAHO)"
     organisation: Optional[str] = "જિલ્લા પંચાયત પશુપાલન શાખા"
     district_id: Optional[uuid.UUID] = None
     district_ids: Optional[List[uuid.UUID]] = None
-    password: Optional[str] = None  # If omitted, a secure activation token is generated
+    password: str = Field(..., min_length=8, max_length=128, description="Mandatory initial account password")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean):
+            raise ValueError("અમાન્ય ઈમેઈલ સરનામું (Invalid email address format)")
+        return clean
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        clean = v.strip()
+        if len(clean) < 8:
+            raise ValueError("પાસવર્ડ ઓછામાં ઓછો ૮ અક્ષરનો હોવો જોઈએ (Password must be at least 8 characters)")
+        return clean
 
 
 class DahoAccountResponse(BaseModel):

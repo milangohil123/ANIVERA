@@ -4,6 +4,7 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { StateView } from '../../components/common/StateView';
 import { Modal } from '../../components/common/Modal';
+import { KpiCard } from '../../components/common/KpiCard';
 import { adminService, type DistrictSummary, type DistrictItem, type TalukaItem, type VillageItem } from '../../services/adminService';
 import {
   coopService,
@@ -26,6 +27,8 @@ import {
   Sparkles,
   UserCheck,
   UserX,
+  CheckSquare,
+  MapPin,
 } from 'lucide-react';
 
 export const DahoCooperativesView: React.FC = () => {
@@ -84,6 +87,11 @@ export const DahoCooperativesView: React.FC = () => {
     initial_password: '',
   });
   const [addFormVillages, setAddFormVillages] = useState<VillageItem[]>([]);
+  const [selectedTalukaIds, setSelectedTalukaIds] = useState<string[]>([]);
+  const [selectedVillageIds, setSelectedVillageIds] = useState<string[]>([]);
+  const [assignedVillagesMap, setAssignedVillagesMap] = useState<Record<string, string>>({});
+  const [villageSearchQuery, setVillageSearchQuery] = useState<string>('');
+  const [isLoadingVillages, setIsLoadingVillages] = useState<boolean>(false);
   const [isSubmittingAdd, setIsSubmittingAdd] = useState<boolean>(false);
   const [addFormError, setAddFormError] = useState<string | null>(null);
   const [createdCredentialsAlert, setCreatedCredentialsAlert] = useState<{
@@ -152,20 +160,151 @@ export const DahoCooperativesView: React.FC = () => {
     }
   }, [selectedTalukaFilter, apiBaseUrl]);
 
-  // Load villages for Add Form when its taluka changes
-  const handleAddTalukaChange = async (talukaId: string) => {
-    setAddForm((prev) => ({ ...prev, taluka_id: talukaId, village_id: '' }));
-    if (talukaId) {
+  // Open Add Modal & load assigned villages map
+  const handleOpenAddModal = async () => {
+    setAddFormError(null);
+    setSelectedTalukaIds([]);
+    setSelectedVillageIds([]);
+    setAddFormVillages([]);
+    setVillageSearchQuery('');
+    setAddForm((prev) => ({
+      ...prev,
+      district_id: district?.id || '',
+      taluka_id: '',
+      village_id: '',
+      taluka_ids: [],
+      village_ids: [],
+    }));
+    setIsAddModalOpen(true);
+    if (district?.id) {
       try {
-        const vils = await adminService.listVillages(apiBaseUrl, district?.id, talukaId);
-        setAddFormVillages(vils);
-      } catch {
-        setAddFormVillages([]);
+        const asgMap = await coopService.dahoGetAssignedVillages(apiBaseUrl, district.id);
+        setAssignedVillagesMap(asgMap || {});
+      } catch (err) {
+        console.error('Failed to load assigned villages map', err);
+        setAssignedVillagesMap({});
       }
-    } else {
-      setAddFormVillages([]);
     }
   };
+
+  // Load villages for Add Form when selected talukas change
+  const loadVillagesForTalukas = async (talukaIds: string[]) => {
+    if (!talukaIds || talukaIds.length === 0) {
+      setAddFormVillages([]);
+      setSelectedVillageIds([]);
+      return;
+    }
+    setIsLoadingVillages(true);
+    try {
+      const results = await Promise.all(
+        talukaIds.map((tid) =>
+          adminService.listVillages(apiBaseUrl, district?.id, tid).catch(() => [] as VillageItem[])
+        )
+      );
+      const villageMap = new Map<string, VillageItem>();
+      results.flat().forEach((v) => {
+        if (v && v.id) villageMap.set(v.id, v);
+      });
+      const allVils = Array.from(villageMap.values()).sort((a, b) =>
+        (a.name_gu || a.name_en || '').localeCompare(b.name_gu || b.name_en || '')
+      );
+      setAddFormVillages(allVils);
+      // Prune selected village IDs if their taluka is no longer selected
+      const validVillageIds = new Set(allVils.map((v) => v.id));
+      setSelectedVillageIds((prev) => prev.filter((id) => validVillageIds.has(id)));
+    } catch (err) {
+      console.error('Error fetching villages for talukas:', err);
+    } finally {
+      setIsLoadingVillages(false);
+    }
+  };
+
+  // Toggle single taluka
+  const handleToggleTaluka = (talukaId: string) => {
+    const nextTalukas = selectedTalukaIds.includes(talukaId)
+      ? selectedTalukaIds.filter((id) => id !== talukaId)
+      : [...selectedTalukaIds, talukaId];
+    setSelectedTalukaIds(nextTalukas);
+    setAddForm((prev) => ({
+      ...prev,
+      taluka_id: nextTalukas[0] || '',
+      taluka_ids: nextTalukas,
+    }));
+    loadVillagesForTalukas(nextTalukas);
+  };
+
+  // Select/deselect all talukas
+  const handleSelectAllTalukas = () => {
+    if (selectedTalukaIds.length === talukas.length) {
+      setSelectedTalukaIds([]);
+      setAddForm((prev) => ({ ...prev, taluka_id: '', taluka_ids: [] }));
+      loadVillagesForTalukas([]);
+    } else {
+      const allIds = talukas.map((t) => t.id);
+      setSelectedTalukaIds(allIds);
+      setAddForm((prev) => ({ ...prev, taluka_id: allIds[0] || '', taluka_ids: allIds }));
+      loadVillagesForTalukas(allIds);
+    }
+  };
+
+  // Toggle single village
+  const handleToggleVillage = (villageId: string) => {
+    if (assignedVillagesMap[villageId]) return; // Cannot select already assigned village
+    setSelectedVillageIds((prev) => {
+      const next = prev.includes(villageId)
+        ? prev.filter((id) => id !== villageId)
+        : [...prev, villageId];
+      setAddForm((f) => ({
+        ...f,
+        village_id: next[0] || '',
+        village_ids: next,
+      }));
+      return next;
+    });
+  };
+
+  // Select/deselect all eligible unassigned villages
+  const handleSelectAllVillages = () => {
+    const selectableVillages = addFormVillages.filter((v) => !assignedVillagesMap[v.id]);
+    const selectableIds = selectableVillages.map((v) => v.id);
+    const isAllSelected =
+      selectableIds.length > 0 && selectableIds.every((id) => selectedVillageIds.includes(id));
+
+    if (isAllSelected) {
+      setSelectedVillageIds([]);
+      setAddForm((f) => ({ ...f, village_id: '', village_ids: [] }));
+    } else {
+      setSelectedVillageIds(selectableIds);
+      setAddForm((f) => ({
+        ...f,
+        village_id: selectableIds[0] || '',
+        village_ids: selectableIds,
+      }));
+    }
+  };
+
+  // Memoized village counts and filtered search list for Add Modal
+  const { filteredDisplayVillages, selectableVillagesCount, isAllEligibleSelected } = useMemo(() => {
+    const selectable = addFormVillages.filter((v) => !assignedVillagesMap[v.id]);
+    const isAllSelected =
+      selectable.length > 0 && selectable.every((v) => selectedVillageIds.includes(v.id));
+
+    let displayList = addFormVillages;
+    if (villageSearchQuery.trim()) {
+      const q = villageSearchQuery.trim().toLowerCase();
+      displayList = addFormVillages.filter(
+        (v) =>
+          (v.name_gu && v.name_gu.toLowerCase().includes(q)) ||
+          (v.name_en && v.name_en.toLowerCase().includes(q))
+      );
+    }
+
+    return {
+      filteredDisplayVillages: displayList,
+      selectableVillagesCount: selectable.length,
+      isAllEligibleSelected: isAllSelected,
+    };
+  }, [addFormVillages, assignedVillagesMap, selectedVillageIds, villageSearchQuery]);
 
   // Filter cooperatives
   const filteredCooperatives = useMemo(() => {
@@ -200,8 +339,27 @@ export const DahoCooperativesView: React.FC = () => {
     setIsSubmittingAdd(true);
     setAddFormError(null);
     try {
-      if (!addForm.code || !addForm.name_gu || !addForm.name_en || !addForm.contact_person || !addForm.email || !addForm.mobile_e164 || !addForm.taluka_id || !addForm.village_id) {
-        throw new Error('કૃપા કરીને તમામ ફરજિયાત માહિતી ભરો (જિલ્લો, તાલુકો, ગામ, મંડળી નામ, સંપર્ક વ્યક્તિ, ઈમેઇલ, મોબાઇલ)');
+      if (selectedTalukaIds.length === 0) {
+        throw new Error('કૃપા કરીને ઓછામાં ઓછો ૧ તાલુકો પસંદ કરો');
+      }
+      if (selectedVillageIds.length === 0) {
+        throw new Error('કૃપા કરીને ઓછામાં ઓછું ૧ ગામ પસંદ કરો');
+      }
+      if (
+        !addForm.code ||
+        !addForm.name_gu ||
+        !addForm.name_en ||
+        !addForm.contact_person ||
+        !addForm.email ||
+        !addForm.mobile_e164
+      ) {
+        throw new Error('કૃપા કરીને તમામ ફરજિયાત માહિતી ભરો (જિલ્લો, તાલુકાઓ, ગામો, મંડળી નામ, સંપર્ક વ્યક્તિ, ઈમેઇલ, મોબાઇલ)');
+      }
+
+      // Check if any selected village is already assigned
+      const alreadyAssigned = selectedVillageIds.filter((vid) => assignedVillagesMap[vid]);
+      if (alreadyAssigned.length > 0) {
+        throw new Error('પસંદ કરેલ ગામોમાંથી અમુક ગામો પહેલેથી અન્ય મંડળીમાં સોંપાયેલ છે. કૃપા કરીને ફક્ત ઉપલબ્ધ ગામો પસંદ કરો.');
       }
 
       // Normalize mobile to E.164
@@ -216,7 +374,14 @@ export const DahoCooperativesView: React.FC = () => {
           cleanMobile = `+91${raw}`;
         }
       }
-      const payloadToSubmit = { ...addForm, mobile_e164: cleanMobile };
+      const payloadToSubmit = {
+        ...addForm,
+        mobile_e164: cleanMobile,
+        taluka_id: selectedTalukaIds[0],
+        village_id: selectedVillageIds[0],
+        taluka_ids: selectedTalukaIds,
+        village_ids: selectedVillageIds,
+      };
       const created = await coopService.dahoCreateCooperative(apiBaseUrl, payloadToSubmit);
       setSuccessMsg(`સહકારી મંડળી '${created.name_gu}' સફળતાપૂર્વક બનાવવામાં આવી છે.`);
 
@@ -253,6 +418,9 @@ export const DahoCooperativesView: React.FC = () => {
         notes: '',
         initial_password: '',
       });
+      setSelectedTalukaIds([]);
+      setSelectedVillageIds([]);
+      setAddFormVillages([]);
     } catch (err: any) {
       setAddFormError(err?.message || 'મંડળી બનાવવામાં નિષ્ફળ');
     } finally {
@@ -475,10 +643,7 @@ export const DahoCooperativesView: React.FC = () => {
 
           <Button
             variant="primary"
-            onClick={() => {
-              setAddFormError(null);
-              setIsAddModalOpen(true);
-            }}
+            onClick={handleOpenAddModal}
             className="bg-[#135D43] hover:bg-[#114B36] text-white"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -549,53 +714,39 @@ export const DahoCooperativesView: React.FC = () => {
         </div>
       )}
 
-      {/* 4 Summary Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4 bg-white border border-slate-200 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-medium text-slate-500">કુલ ડેરી મંડળીઓ</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{totalCount}</p>
-            <p className="text-xs text-slate-500 mt-1">{activeCount} સક્રિય</p>
-          </div>
-          <div className="w-12 h-12 bg-emerald-50 text-[#135D43] rounded-xl flex items-center justify-center">
-            <Building2 className="w-6 h-6" />
-          </div>
-        </Card>
+      {/* 4 Summary Metric Cards (using compact KpiCard component matching dashboard) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          label="કુલ ડેરી મંડળીઓ"
+          value={totalCount}
+          subtext={`${activeCount} સક્રિય`}
+          icon={<Building2 className="w-4 h-4 text-[#135D43]" />}
+          iconVariant="primary"
+        />
 
-        <Card className="p-4 bg-white border border-slate-200 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-medium text-slate-500">સભાસદ ખેડૂતો</p>
-            <p className="text-2xl font-bold text-[#135D43] mt-1">{totalFarmers.toLocaleString()}</p>
-            <p className="text-xs text-slate-500 mt-1">મંડળી સાથે જોડાયેલ</p>
-          </div>
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6" />
-          </div>
-        </Card>
+        <KpiCard
+          label="સભાસદ ખેડૂતો"
+          value={totalFarmers.toLocaleString()}
+          subtext="મંડળી સાથે જોડાયેલ"
+          icon={<Users className="w-4 h-4 text-blue-600" />}
+          iconVariant="blue"
+        />
 
-        <Card className="p-4 bg-white border border-slate-200 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-medium text-slate-500">સંલગ્ન પશુધન</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{totalAnimals.toLocaleString()}</p>
-            <p className="text-xs text-emerald-600 mt-1">{totalVax.toLocaleString()} રસીકૃત</p>
-          </div>
-          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
-            <PawPrint className="w-6 h-6" />
-          </div>
-        </Card>
+        <KpiCard
+          label="સંલગ્ન પશુધન"
+          value={totalAnimals.toLocaleString()}
+          subtext={`${totalVax.toLocaleString()} રસીકૃત`}
+          icon={<PawPrint className="w-4 h-4 text-amber-600" />}
+          iconVariant="warning"
+        />
 
-        <Card className="p-4 bg-white border border-slate-200 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-medium text-slate-500">સરેરાશ રસીકરણ કવરેજ</p>
-            <p className="text-2xl font-bold text-emerald-700 mt-1">{avgCoverage}%</p>
-            <div className="w-24 bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-              <div className="bg-emerald-600 h-1.5 rounded-full" style={{ width: `${avgCoverage}%` }} />
-            </div>
-          </div>
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-            <Syringe className="w-6 h-6" />
-          </div>
-        </Card>
+        <KpiCard
+          label="સરેરાશ રસીકરણ કવરેજ"
+          value={`${avgCoverage}%`}
+          subtext="કુલ કવરેજ ટકાવારી"
+          icon={<Syringe className="w-4 h-4 text-emerald-600" />}
+          iconVariant="emerald"
+        />
       </div>
 
       {/* Filter and Search Bar */}
@@ -847,7 +998,7 @@ export const DahoCooperativesView: React.FC = () => {
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
           title="નવી ડેરી સહકારી મંડળી ઉમેરો (Add Dairy Cooperative)"
-          maxWidth="lg"
+          maxWidth="xl"
         >
           <form onSubmit={handleCreateCooperative} className="space-y-4 text-xs">
             {addFormError && (
@@ -857,51 +1008,171 @@ export const DahoCooperativesView: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-              <div>
-                <label className="block text-slate-600 font-semibold mb-1">જિલ્લો (District) *</label>
-                <input
-                  type="text"
-                  disabled
-                  value={district?.name_gu || 'બોટાદ'}
-                  className="w-full p-2 border border-slate-200 rounded bg-slate-100 text-slate-700 font-medium"
-                />
+            {/* District Badge */}
+            <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+              <span className="text-slate-600 font-semibold">જિલ્લો (District):</span>
+              <span className="font-bold text-slate-800 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded border border-emerald-200">
+                {district?.name_gu || 'બોટાદ'} ({district?.name_en || 'Botad'})
+              </span>
+            </div>
+
+            {/* 1. Multiple Taluka Selection */}
+            <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <label className="text-slate-700 font-bold flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-[#135D43]" />
+                    તાલુકાઓ પસંદ કરો (Select Talukas) *
+                  </label>
+                  <span className="text-[11px] bg-emerald-100 text-[#135D43] px-2 py-0.5 rounded-full font-semibold">
+                    {selectedTalukaIds.length} / {talukas.length} પસંદ કરેલ
+                  </span>
+                </div>
+                {talukas.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllTalukas}
+                    className="text-xs font-semibold text-[#135D43] hover:text-[#114B36] underline cursor-pointer"
+                  >
+                    {selectedTalukaIds.length === talukas.length
+                      ? 'બધા અનસિલેક્ટ કરો (Deselect All)'
+                      : 'બધા તાલુકા પસંદ કરો (Select All Talukas)'}
+                  </button>
+                )}
               </div>
 
-              <div>
-                <label className="block text-slate-600 font-semibold mb-1">તાલુકો (Taluka) *</label>
-                <select
-                  required
-                  value={addForm.taluka_id}
-                  onChange={(e) => handleAddTalukaChange(e.target.value)}
-                  className="w-full p-2 border border-slate-300 rounded bg-white text-slate-800 focus:ring-1 focus:ring-[#135D43]"
-                >
-                  <option value="">-- તાલુકો પસંદ કરો --</option>
-                  {talukas.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name_gu} ({t.name_en})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 pt-1">
+                {talukas.map((t) => {
+                  const isChecked = selectedTalukaIds.includes(t.id);
+                  return (
+                    <label
+                      key={t.id}
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                        isChecked
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold shadow-2xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleTaluka(t.id)}
+                        className="w-4 h-4 rounded text-[#135D43] border-slate-300 focus:ring-[#135D43]"
+                      />
+                      <span className="truncate" title={`${t.name_gu} (${t.name_en})`}>
+                        {t.name_gu}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Multiple Village Selection & Duplicate Village Assignment Prevention */}
+            <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-slate-700 font-bold flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-[#135D43]" />
+                    ગામો પસંદ કરો (Select Villages) *
+                  </label>
+                  <span className="text-[11px] bg-emerald-100 text-[#135D43] px-2 py-0.5 rounded-full font-semibold">
+                    {selectedVillageIds.length} પસંદ કરેલ
+                  </span>
+                  {addFormVillages.length > 0 && (
+                    <span className="text-[11px] text-slate-500">
+                      ({selectableVillagesCount} ઉપલબ્ધ, {addFormVillages.length - selectableVillagesCount} પહેલેથી સોંપાયેલ)
+                    </span>
+                  )}
+                </div>
+
+                {addFormVillages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllVillages}
+                    disabled={selectableVillagesCount === 0}
+                    className="text-xs font-semibold text-[#135D43] hover:text-[#114B36] underline cursor-pointer disabled:text-slate-400 disabled:no-underline"
+                  >
+                    {isAllEligibleSelected
+                      ? 'બધા અનસિલેક્ટ કરો (Deselect All)'
+                      : 'બધા ઉપલબ્ધ ગામો પસંદ કરો (Select All Villages)'}
+                  </button>
+                )}
               </div>
 
-              <div>
-                <label className="block text-slate-600 font-semibold mb-1">મુખ્ય ગામ (Village) *</label>
-                <select
-                  required
-                  disabled={!addForm.taluka_id}
-                  value={addForm.village_id}
-                  onChange={(e) => setAddForm((prev) => ({ ...prev, village_id: e.target.value }))}
-                  className="w-full p-2 border border-slate-300 rounded bg-white text-slate-800 focus:ring-1 focus:ring-[#135D43] disabled:bg-slate-100"
-                >
-                  <option value="">-- ગામ પસંદ કરો --</option>
-                  {addFormVillages.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name_gu} ({v.name_en})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {selectedTalukaIds.length === 0 ? (
+                <div className="p-4 text-center text-slate-500 bg-white rounded-lg border border-dashed border-slate-300 text-xs">
+                  ગામો જોવા માટે ઉપરથી ઓછામાં ઓછો એક તાલુકો પસંદ કરો.
+                </div>
+              ) : isLoadingVillages ? (
+                <div className="p-4 text-center text-slate-500 bg-white rounded-lg border border-slate-200 text-xs">
+                  પસંદ કરેલ તાલુકાઓના ગામો લોડ થઈ રહ્યા છે...
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Village Search */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="ગામ શોધો (Search village by name)..."
+                      value={villageSearchQuery}
+                      onChange={(e) => setVillageSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#135D43]"
+                    />
+                  </div>
+
+                  {/* Village Checkbox List */}
+                  <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-white space-y-1 divide-y divide-slate-100">
+                    {filteredDisplayVillages.length === 0 ? (
+                      <div className="p-3 text-center text-slate-400 text-xs">
+                        {villageSearchQuery ? 'શોધ અનુસાર કોઈ ગામ મળ્યું નથી' : 'કોઈ ગામ ઉપલબ્ધ નથી'}
+                      </div>
+                    ) : (
+                      filteredDisplayVillages.map((v) => {
+                        const assignedCoopName = assignedVillagesMap[v.id];
+                        const isAssigned = !!assignedCoopName;
+                        const isChecked = selectedVillageIds.includes(v.id);
+
+                        return (
+                          <label
+                            key={v.id}
+                            className={`flex items-center justify-between p-1.5 rounded transition-colors ${
+                              isAssigned
+                                ? 'bg-slate-50 cursor-not-allowed opacity-80'
+                                : isChecked
+                                ? 'bg-emerald-50/70 text-emerald-950 font-medium cursor-pointer'
+                                : 'hover:bg-slate-50 text-slate-800 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                disabled={isAssigned}
+                                checked={isChecked}
+                                onChange={() => handleToggleVillage(v.id)}
+                                className="w-4 h-4 rounded text-[#135D43] border-slate-300 focus:ring-[#135D43] disabled:opacity-40"
+                              />
+                              <span className="truncate text-xs">
+                                {v.name_gu} <span className="text-slate-400 text-[11px]">({v.name_en})</span>
+                              </span>
+                            </div>
+
+                            {isAssigned && (
+                              <span
+                                className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-300 shrink-0 ml-2"
+                                title={`આ ગામ પહેલેથી '${assignedCoopName}' મંડળીમાં સોંપાયેલ છે`}
+                              >
+                                પહેલેથી સોંપાયેલ: {assignedCoopName}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -15,15 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.geography import Taluka, Village
 from app.modules.administration.models import Cooperative
 from app.modules.animals.models import Animal, AnimalExternalIdentifier
-from app.modules.authentication.models import AuditEvent, User
-from app.modules.authorization.models import CooperativeMembership
+from app.modules.authentication.models import AuditEvent, User, TahoTalukaAssignment
+from app.modules.authorization.models import CooperativeMembership, FarmerUserLink
 from app.modules.disease_surveillance.models import (
     DiseaseReport,
     DiseaseReportAttachment,
     DiseaseReportStatusHistory,
     DiseaseReview,
 )
-from app.modules.farmers.models import Farmer
+from app.modules.farmers.models import Farmer, FarmerAccountProvisioning
 from app.modules.health_cases.models import (
     AnimalVaccinationCycle,
     CooperativeVaccinationSchedule,
@@ -74,8 +74,8 @@ class HealthWorkflowService:
             # Look up by tag
             tag_res = await self.db.execute(
                 select(AnimalExternalIdentifier).where(
-                    AnimalExternalIdentifier.identifier_value == payload.animal_tag_id.strip(),
-                    AnimalExternalIdentifier.is_active == True
+                    AnimalExternalIdentifier.id_value == payload.animal_tag_id.strip(),
+                    AnimalExternalIdentifier.status == "ACTIVE"
                 )
             )
             ext_id = tag_res.scalar_one_or_none()
@@ -85,16 +85,17 @@ class HealthWorkflowService:
         # 2. Resolve farmer
         farmer: Optional[Farmer] = None
         if current_user.role == "FARMER":
-            # Lookup linked farmer record
-            f_res = await self.db.execute(
-                select(Farmer).where(
-                    or_(
-                        Farmer.user_id == current_user.id,
-                        Farmer.mobile_e164 == current_user.mobile_e164
-                    )
-                )
-            )
-            farmer = f_res.scalars().first()
+            # Lookup linked farmer record via FarmerUserLink, FarmerAccountProvisioning, or mobile
+            link_stmt = select(FarmerUserLink.farmer_id).where(FarmerUserLink.user_id == current_user.id)
+            linked_fid = (await self.db.execute(link_stmt)).scalar_one_or_none()
+            if not linked_fid:
+                prov_stmt = select(FarmerAccountProvisioning.farmer_id).where(FarmerAccountProvisioning.user_id == current_user.id)
+                linked_fid = (await self.db.execute(prov_stmt)).scalar_one_or_none()
+            if linked_fid:
+                farmer = await self.db.get(Farmer, linked_fid)
+            elif current_user.mobile_e164:
+                m_stmt = select(Farmer).where(Farmer.mobile_e164 == current_user.mobile_e164)
+                farmer = (await self.db.execute(m_stmt)).scalars().first()
 
         if animal and not farmer:
             farmer = await self.db.get(Farmer, animal.farmer_id)
@@ -123,6 +124,9 @@ class HealthWorkflowService:
         if not payload.is_unknown_disease and payload.suspected_disease_code:
             disease_code = payload.suspected_disease_code.strip()
 
+        lat = payload.latitude if (payload.latitude is not None and payload.longitude is not None) else None
+        lng = payload.longitude if (payload.latitude is not None and payload.longitude is not None) else None
+
         # 5. Create DiseaseReport
         report = DiseaseReport(
             report_id=uuid.uuid4(),
@@ -131,12 +135,12 @@ class HealthWorkflowService:
             farmer_id=farmer.id if farmer else None,
             village_id=village_id,
             disease_code=disease_code,
-            report_source="FARMER_PORTAL",
+            report_source="FARMER_APP",
             report_date=payload.symptom_onset_date or date.today(),
             symptoms=payload.symptoms or [],
             observation_text=payload.description or "",
-            latitude=payload.latitude,
-            longitude=payload.longitude,
+            latitude=lat,
+            longitude=lng,
             reported_by=current_user.id,
             status="SUBMITTED",
         )
@@ -152,13 +156,18 @@ class HealthWorkflowService:
 
         # 6. Save photos if provided
         for url in (payload.photo_urls or []):
+            mime = "image/jpeg"
+            if url.startswith("data:image/png"):
+                mime = "image/png"
+            elif url.startswith("data:image/webp"):
+                mime = "image/webp"
             att = DiseaseReportAttachment(
                 id=uuid.uuid4(),
                 report_id=report.report_id,
                 file_path=url,
                 sha256="manual_upload",
-                mime_type="image/jpeg",
-                size_bytes=1024,
+                mime_type=mime,
+                size_bytes=len(url) if len(url) > 0 else 1024,
                 uploaded_by=current_user.id
             )
             self.db.add(att)
@@ -182,14 +191,15 @@ class HealthWorkflowService:
 
     async def list_farmer_reports(self, current_user: User) -> List[FarmerDiseaseReportItem]:
         """List health reports filed by or belonging to current farmer."""
-        f_query = select(Farmer.id).where(
-            or_(
-                Farmer.user_id == current_user.id,
-                Farmer.mobile_e164 == current_user.mobile_e164
-            )
-        )
-        f_res = await self.db.execute(f_query)
-        farmer_ids = f_res.scalars().all()
+        fids = []
+        link_stmt = select(FarmerUserLink.farmer_id).where(FarmerUserLink.user_id == current_user.id)
+        fids.extend((await self.db.execute(link_stmt)).scalars().all())
+        prov_stmt = select(FarmerAccountProvisioning.farmer_id).where(FarmerAccountProvisioning.user_id == current_user.id)
+        fids.extend((await self.db.execute(prov_stmt)).scalars().all())
+        if current_user.mobile_e164:
+            m_stmt = select(Farmer.id).where(Farmer.mobile_e164 == current_user.mobile_e164)
+            fids.extend((await self.db.execute(m_stmt)).scalars().all())
+        farmer_ids = list(set([fid for fid in fids if fid is not None]))
 
         query = select(DiseaseReport).where(
             or_(
@@ -206,6 +216,29 @@ class HealthWorkflowService:
             items.append(await self._to_farmer_report_item(r))
         return items
 
+    async def _get_user_id_for_farmer(self, farmer_id: Optional[uuid.UUID]) -> Optional[uuid.UUID]:
+        """Resolves the user account ID associated with a farmer profile."""
+        if not farmer_id:
+            return None
+        # 1. Check FarmerUserLink
+        link_stmt = select(FarmerUserLink.user_id).where(FarmerUserLink.farmer_id == farmer_id)
+        uid = (await self.db.execute(link_stmt)).scalar_one_or_none()
+        if uid:
+            return uid
+        # 2. Check FarmerAccountProvisioning
+        prov_stmt = select(FarmerAccountProvisioning.user_id).where(FarmerAccountProvisioning.farmer_id == farmer_id)
+        uid = (await self.db.execute(prov_stmt)).scalar_one_or_none()
+        if uid:
+            return uid
+        # 3. Match user by mobile_e164
+        farmer = await self.db.get(Farmer, farmer_id)
+        if farmer and farmer.mobile_e164:
+            user_stmt = select(User.id).where(User.mobile_e164 == farmer.mobile_e164)
+            uid = (await self.db.execute(user_stmt)).scalars().first()
+            if uid:
+                return uid
+        return None
+
     async def _to_farmer_report_item(self, report: DiseaseReport) -> FarmerDiseaseReportItem:
         animal_name = None
         animal_code = None
@@ -221,9 +254,9 @@ class HealthWorkflowService:
                 species_code = animal.species_code
                 # Find tag
                 tag_res = await self.db.execute(
-                    select(AnimalExternalIdentifier.identifier_value).where(
+                    select(AnimalExternalIdentifier.id_value).where(
                         AnimalExternalIdentifier.animal_id == animal.id,
-                        AnimalExternalIdentifier.is_active == True
+                        AnimalExternalIdentifier.status == "ACTIVE"
                     ).limit(1)
                 )
                 animal_tag = tag_res.scalar_one_or_none()
@@ -296,17 +329,21 @@ class HealthWorkflowService:
         limit: int = 100
     ) -> List[FarmerDiseaseReportItem]:
         """List disease reports within TAHO's authorized Taluka."""
-        # Find Taluka villages
-        taluka_id = (current_user.assigned_taluka_ids or [None])[0]
+        # Find Taluka villages via TahoTalukaAssignment
+        taluka_res = await self.db.execute(
+            select(TahoTalukaAssignment.taluka_id).where(TahoTalukaAssignment.taho_user_id == current_user.id)
+        )
+        assigned_taluka_ids = list(taluka_res.scalars().all())
+
         vil_query = select(Village.id)
-        if taluka_id:
-            vil_query = vil_query.where(Village.taluka_id == taluka_id)
+        if assigned_taluka_ids:
+            vil_query = vil_query.where(Village.taluka_id.in_(assigned_taluka_ids))
         vil_res = await self.db.execute(vil_query)
         taluka_village_ids = vil_res.scalars().all()
 
-        query = select(DiseaseReport).where(
-            DiseaseReport.village_id.in_(taluka_village_ids)
-        )
+        query = select(DiseaseReport)
+        if taluka_village_ids:
+            query = query.where(DiseaseReport.village_id.in_(taluka_village_ids))
 
         if village_id:
             query = query.where(DiseaseReport.village_id == village_id)
@@ -564,11 +601,11 @@ class HealthWorkflowService:
 
             # Notify Farmer
             if report.farmer_id:
-                f = await self.db.get(Farmer, report.farmer_id)
-                if f and f.user_id:
+                farmer_user_id = await self._get_user_id_for_farmer(report.farmer_id)
+                if farmer_user_id:
                     notif = Notification(
                         id=uuid.uuid4(),
-                        recipient_user_id=f.user_id,
+                        recipient_user_id=farmer_user_id,
                         kind="TREATMENT_VERIFIED",
                         message_key="notif.treatment.verified",
                         params={
@@ -817,10 +854,13 @@ class HealthWorkflowService:
 
     async def list_taho_schedules(self, current_user: User) -> List[CooperativeScheduleSummary]:
         """List all cooperative schedules in caller's Taluka."""
-        taluka_id = (current_user.assigned_taluka_ids or [None])[0]
+        taluka_res = await self.db.execute(
+            select(TahoTalukaAssignment.taluka_id).where(TahoTalukaAssignment.taho_user_id == current_user.id)
+        )
+        assigned_taluka_ids = list(taluka_res.scalars().all())
         query = select(CooperativeVaccinationSchedule)
-        if taluka_id:
-            query = query.where(CooperativeVaccinationSchedule.taluka_id == taluka_id)
+        if assigned_taluka_ids:
+            query = query.where(CooperativeVaccinationSchedule.taluka_id.in_(assigned_taluka_ids))
 
         query = query.order_by(desc(CooperativeVaccinationSchedule.created_at))
         res = await self.db.execute(query)
@@ -979,14 +1019,19 @@ class HealthWorkflowService:
     async def _notify_taho_of_new_report(self, report: DiseaseReport, animal: Optional[Animal], farmer: Optional[Farmer]):
         vil = await self.db.get(Village, report.village_id)
         if vil and vil.taluka_id:
-            # Find TAHO user
+            # Find TAHO user via TahoTalukaAssignment
             t_res = await self.db.execute(
-                select(User.id).where(
-                    User.role == "TAHO",
-                    User.assigned_taluka_ids.contains([vil.taluka_id])
+                select(TahoTalukaAssignment.taho_user_id).where(
+                    TahoTalukaAssignment.taluka_id == vil.taluka_id
                 ).limit(1)
             )
             taho_id = t_res.scalar_one_or_none()
+            if not taho_id:
+                t_res = await self.db.execute(
+                    select(User.id).where(User.role == "TAHO", User.status == "ACTIVE").limit(1)
+                )
+                taho_id = t_res.scalar_one_or_none()
+
             if taho_id:
                 notif = Notification(
                     id=uuid.uuid4(),
@@ -1009,12 +1054,17 @@ class HealthWorkflowService:
         vil = await self.db.get(Village, report.village_id)
         if vil and vil.taluka_id:
             t_res = await self.db.execute(
-                select(User.id).where(
-                    User.role == "TAHO",
-                    User.assigned_taluka_ids.contains([vil.taluka_id])
+                select(TahoTalukaAssignment.taho_user_id).where(
+                    TahoTalukaAssignment.taluka_id == vil.taluka_id
                 ).limit(1)
             )
             taho_id = t_res.scalar_one_or_none()
+            if not taho_id:
+                t_res = await self.db.execute(
+                    select(User.id).where(User.role == "TAHO", User.status == "ACTIVE").limit(1)
+                )
+                taho_id = t_res.scalar_one_or_none()
+
             if taho_id:
                 notif = Notification(
                     id=uuid.uuid4(),
@@ -1033,13 +1083,20 @@ class HealthWorkflowService:
                 self.db.add(notif)
 
     async def _notify_taho_of_schedule(self, schedule: CooperativeVaccinationSchedule):
-        t_res = await self.db.execute(
-            select(User.id).where(
-                User.role == "TAHO",
-                User.assigned_taluka_ids.contains([schedule.taluka_id])
-            ).limit(1)
-        )
-        taho_id = t_res.scalar_one_or_none()
+        taho_id = None
+        if schedule.taluka_id:
+            t_res = await self.db.execute(
+                select(TahoTalukaAssignment.taho_user_id).where(
+                    TahoTalukaAssignment.taluka_id == schedule.taluka_id
+                ).limit(1)
+            )
+            taho_id = t_res.scalar_one_or_none()
+        if not taho_id:
+            t_res = await self.db.execute(
+                select(User.id).where(User.role == "TAHO", User.status == "ACTIVE").limit(1)
+            )
+            taho_id = t_res.scalar_one_or_none()
+
         if taho_id:
             coop = await self.db.get(Cooperative, schedule.cooperative_id)
             notif = Notification(
@@ -1088,13 +1145,13 @@ class HealthWorkflowService:
         coop_name = coop.name_gu if coop else "ડેરી મંડળી"
 
         for enr in enrollments:
-            farmer = await self.db.get(Farmer, enr.farmer_id)
-            if farmer and farmer.user_id:
+            farmer_user_id = await self._get_user_id_for_farmer(enr.farmer_id)
+            if farmer_user_id:
                 animal = await self.db.get(Animal, enr.animal_id)
                 tag_name = animal.animal_code if animal else "પશુ"
                 notif = Notification(
                     id=uuid.uuid4(),
-                    recipient_user_id=farmer.user_id,
+                    recipient_user_id=farmer_user_id,
                     kind="SCHEDULE_ENROLLED",
                     message_key="notif.farmer.scheduled",
                     params={
@@ -1137,11 +1194,12 @@ class HealthWorkflowService:
             days_remaining = max(0, (cyc.due_date - today).days)
 
             # 1. Notify Farmer
-            farmer = await self.db.get(Farmer, animal.farmer_id)
-            if farmer and farmer.user_id:
+            farmer = await self.db.get(Farmer, animal.farmer_id) if animal.farmer_id else None
+            farmer_user_id = await self._get_user_id_for_farmer(animal.farmer_id)
+            if farmer_user_id:
                 notif = Notification(
                     id=uuid.uuid4(),
-                    recipient_user_id=farmer.user_id,
+                    recipient_user_id=farmer_user_id,
                     kind="VACCINATION_REMINDER_15D",
                     message_key="notif.reminder.15days",
                     params={

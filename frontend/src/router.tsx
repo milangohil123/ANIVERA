@@ -83,7 +83,7 @@ import { AdminGeographyView } from './views/admin/AdminGeographyView';
 import { AdminDahoView } from './views/admin/AdminDahoView';
 import { AdminAssignmentsView } from './views/admin/AdminAssignmentsView';
 import { AdminOperationalOversightView } from './views/admin/AdminOperationalOversightView';
-import { AdminRoleOversightView } from './views/admin/AdminRoleOversightView';
+import { AdminRbacView } from './views/admin/AdminRbacView';
 import { AdminUsersView } from './views/admin/AdminUsersView';
 import { AdminDevicesView } from './views/admin/AdminDevicesView';
 import { AdminAuditLogsView } from './views/admin/AdminAuditLogsView';
@@ -134,16 +134,16 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/daho/overview" replace />} />
         <Route path="overview" element={<DahoDashboard />} />
-        <Route path="cooperatives" element={<DahoCooperativesView />} />
-        <Route path="master-data" element={<DahoMasterDataView />} />
-        <Route path="staff" element={<DahoStaffView />} />
-        <Route path="campaigns" element={<DahoCampaignsView />} />
-        <Route path="camps" element={<DahoCampsView />} />
-        <Route path="inventory" element={<DahoInventoryView />} />
-        <Route path="surveillance" element={<DahoSurveillanceView />} />
-        <Route path="maps" element={<DahoMapsView />} />
+        <Route path="cooperatives" element={<ProtectedRoute requiredPermission="coop.manage"><DahoCooperativesView /></ProtectedRoute>} />
+        <Route path="master-data" element={<ProtectedRoute requiredPermission="geo.district.manage"><DahoMasterDataView /></ProtectedRoute>} />
+        <Route path="staff" element={<ProtectedRoute requiredPermission="user.staff.manage"><DahoStaffView /></ProtectedRoute>} />
+        <Route path="campaigns" element={<ProtectedRoute requiredPermission="campaign.monitor"><DahoCampaignsView /></ProtectedRoute>} />
+        <Route path="camps" element={<ProtectedRoute requiredPermission="campaign.monitor"><DahoCampsView /></ProtectedRoute>} />
+        <Route path="inventory" element={<ProtectedRoute requiredPermission="reports.district"><DahoInventoryView /></ProtectedRoute>} />
+        <Route path="surveillance" element={<ProtectedRoute requiredPermission="disease.case.assign"><DahoSurveillanceView /></ProtectedRoute>} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><DahoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/daho/maps" replace />} />
-        <Route path="reports" element={<DahoReportsView />} />
+        <Route path="reports" element={<ProtectedRoute requiredPermission="reports.district"><DahoReportsView /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<DahoProfileView />} />
       </Route>
@@ -159,15 +159,15 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/taho/overview" replace />} />
         <Route path="overview" element={<TahoDashboard />} />
-        <Route path="maps" element={<TahoMapsView />} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><TahoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/taho/maps" replace />} />
-        <Route path="staff" element={<TahoStaffView />} />
-        <Route path="campaigns" element={<TahoCampaignsView />} />
-        <Route path="vaccinations" element={<TahoVaccinationsView />} />
-        <Route path="animals" element={<TahoAnimalsView />} />
-        <Route path="farmers" element={<TahoFarmersView />} />
-        <Route path="surveillance" element={<TahoSurveillanceView />} />
-        <Route path="reports" element={<TahoReportsView />} />
+        <Route path="staff" element={<ProtectedRoute requiredPermission="user.staff.manage"><TahoStaffView /></ProtectedRoute>} />
+        <Route path="campaigns" element={<ProtectedRoute requiredPermission="campaign.monitor"><TahoCampaignsView /></ProtectedRoute>} />
+        <Route path="vaccinations" element={<ProtectedRoute requiredPermission="vaccination.history.view"><TahoVaccinationsView /></ProtectedRoute>} />
+        <Route path="animals" element={<ProtectedRoute requiredPermission="animal.view"><TahoAnimalsView /></ProtectedRoute>} />
+        <Route path="farmers" element={<ProtectedRoute requiredPermission="farmer.view"><TahoFarmersView /></ProtectedRoute>} />
+        <Route path="surveillance" element={<ProtectedRoute requiredPermission="disease.case.assign"><TahoSurveillanceView /></ProtectedRoute>} />
+        <Route path="reports" element={<ProtectedRoute requiredPermission="reports.taluka"><TahoReportsView /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<TahoProfileView />} />
       </Route>
@@ -183,17 +183,17 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/vo/overview" replace />} />
         <Route path="overview" element={<VoDashboard />} />
-        <Route path="villages" element={<VoVillagesView />} />
-        <Route path="staff" element={<VoStaffView />} />
-        <Route path="farmers" element={<VoFarmersView />} />
-        <Route path="surveillance-reviews" element={<VoDiseaseInboxView />} />
-        <Route path="animals" element={<VoAnimalsView />} />
-        <Route path="vaccinations" element={<VoVaccinationsView />} />
-        <Route path="campaigns" element={<VoCampaignsView />} />
-        <Route path="camps" element={<VoCampsView />} />
-        <Route path="inventory" element={<VoInventoryView />} />
-        <Route path="reports" element={<VoReportsView />} />
-        <Route path="maps" element={<VoMapsView />} />
+        <Route path="villages" element={<ProtectedRoute requiredPermission="map.view"><VoVillagesView /></ProtectedRoute>} />
+        <Route path="staff" element={<ProtectedRoute requiredPermission="user.staff.manage"><VoStaffView /></ProtectedRoute>} />
+        <Route path="farmers" element={<ProtectedRoute requiredPermission="farmer.view"><VoFarmersView /></ProtectedRoute>} />
+        <Route path="surveillance-reviews" element={<ProtectedRoute requiredPermission="disease.report"><VoDiseaseInboxView /></ProtectedRoute>} />
+        <Route path="animals" element={<ProtectedRoute requiredPermission="animal.view"><VoAnimalsView /></ProtectedRoute>} />
+        <Route path="vaccinations" element={<ProtectedRoute requiredPermission="vaccination.create"><VoVaccinationsView /></ProtectedRoute>} />
+        <Route path="campaigns" element={<ProtectedRoute requiredPermission="campaign.monitor"><VoCampaignsView /></ProtectedRoute>} />
+        <Route path="camps" element={<ProtectedRoute requiredPermission="campaign.monitor"><VoCampsView /></ProtectedRoute>} />
+        <Route path="inventory" element={<ProtectedRoute requiredPermission="reports.village"><VoInventoryView /></ProtectedRoute>} />
+        <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><VoReportsView /></ProtectedRoute>} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><VoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/vo/maps" replace />} />
         <Route path="sync" element={<VoSyncView />} />
         <Route path="notifications" element={<NotificationsView />} />
@@ -211,16 +211,16 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/fw/home" replace />} />
         <Route path="home" element={<FwDashboard />} />
-        <Route path="villages" element={<FwVillagesView />} />
-        <Route path="farmers" element={<FwFarmersView />} />
-        <Route path="animals" element={<FwAnimalsView />} />
-        <Route path="scan" element={<FwScanView />} />
-        <Route path="reports" element={<FwReportsView />} />
-        <Route path="reports/new" element={<FwDiseaseReportView />} />
-        <Route path="reports/attachments" element={<FwAttachmentView />} />
-        <Route path="vaccinations" element={<FwVaccinationsView />} />
-        <Route path="pending" element={<FwPendingView />} />
-        <Route path="maps" element={<VoMapsView />} />
+        <Route path="villages" element={<ProtectedRoute requiredPermission="map.view"><FwVillagesView /></ProtectedRoute>} />
+        <Route path="farmers" element={<ProtectedRoute requiredPermission="farmer.view"><FwFarmersView /></ProtectedRoute>} />
+        <Route path="animals" element={<ProtectedRoute requiredPermission="animal.register"><FwAnimalsView /></ProtectedRoute>} />
+        <Route path="scan" element={<ProtectedRoute requiredPermission="animal.view"><FwScanView /></ProtectedRoute>} />
+        <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><FwReportsView /></ProtectedRoute>} />
+        <Route path="reports/new" element={<ProtectedRoute requiredPermission="disease.report"><FwDiseaseReportView /></ProtectedRoute>} />
+        <Route path="reports/attachments" element={<ProtectedRoute requiredPermission="disease.report"><FwAttachmentView /></ProtectedRoute>} />
+        <Route path="vaccinations" element={<ProtectedRoute requiredPermission="vaccination.create"><FwVaccinationsView /></ProtectedRoute>} />
+        <Route path="pending" element={<ProtectedRoute requiredPermission="vaccination.create"><FwPendingView /></ProtectedRoute>} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><VoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/fw/maps" replace />} />
         <Route path="sync" element={<FwSyncView />} />
         <Route path="notifications" element={<NotificationsView />} />
@@ -238,7 +238,9 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/farmer/home" replace />} />
         <Route path="home" element={<FarmerDashboard />} />
-        <Route path="animals" element={<FarmerAnimalsView />} />
+        <Route path="animals" element={<ProtectedRoute requiredPermission="animal.view"><FarmerAnimalsView /></ProtectedRoute>} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><DahoMapsView /></ProtectedRoute>} />
+        <Route path="map" element={<Navigate to="/farmer/maps" replace />} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<FarmerProfileView />} />
       </Route>
@@ -254,16 +256,16 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/coop/overview" replace />} />
         <Route path="overview" element={<CoopDashboard />} />
-        <Route path="farmers" element={<CoopFarmersView />} />
-        <Route path="animals" element={<CoopAnimalsView />} />
-        <Route path="vaccinations" element={<CoopVaccinationsView />} />
-        <Route path="campaigns" element={<CoopCampaignsView />} />
-        <Route path="village-progress" element={<CoopVillageProgressView />} />
-        <Route path="maps" element={<CoopMapsView />} />
+        <Route path="farmers" element={<ProtectedRoute requiredPermission="farmer.view"><CoopFarmersView /></ProtectedRoute>} />
+        <Route path="animals" element={<ProtectedRoute requiredPermission="animal.view"><CoopAnimalsView /></ProtectedRoute>} />
+        <Route path="vaccinations" element={<ProtectedRoute requiredPermission="vaccination.history.view"><CoopVaccinationsView /></ProtectedRoute>} />
+        <Route path="campaigns" element={<ProtectedRoute requiredPermission="campaign.monitor"><CoopCampaignsView /></ProtectedRoute>} />
+        <Route path="village-progress" element={<ProtectedRoute requiredPermission="coop.monitor"><CoopVillageProgressView /></ProtectedRoute>} />
+        <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><CoopMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/coop/maps" replace />} />
-        <Route path="camps" element={<CoopCampsView />} />
-        <Route path="surveillance" element={<CoopSurveillanceView />} />
-        <Route path="reports" element={<CoopReportsView />} />
+        <Route path="camps" element={<ProtectedRoute requiredPermission="coop.schedules.create"><CoopCampsView /></ProtectedRoute>} />
+        <Route path="surveillance" element={<ProtectedRoute requiredPermission="reports.analytics.disease"><CoopSurveillanceView /></ProtectedRoute>} />
+        <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><CoopReportsView /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<CoopProfileView />} />
       </Route>
@@ -279,16 +281,17 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/admin/overview" replace />} />
         <Route path="overview" element={<AdminDashboard />} />
-        <Route path="map" element={<AdminStateMapView />} />
-        <Route path="geography" element={<AdminGeographyView />} />
-        <Route path="daho" element={<AdminDahoView />} />
-        <Route path="assignments" element={<AdminAssignmentsView />} />
-        <Route path="oversight" element={<AdminOperationalOversightView />} />
-        <Route path="roles" element={<AdminRoleOversightView />} />
-        <Route path="users" element={<AdminUsersView />} />
-        <Route path="devices" element={<AdminDevicesView />} />
-        <Route path="audit-logs" element={<AdminAuditLogsView />} />
-        <Route path="system-health" element={<AdminSystemHealthView />} />
+        <Route path="map" element={<ProtectedRoute requiredPermission="map.view"><AdminStateMapView /></ProtectedRoute>} />
+        <Route path="geography" element={<ProtectedRoute requiredPermission="geo.state.manage"><AdminGeographyView /></ProtectedRoute>} />
+        <Route path="daho" element={<ProtectedRoute requiredPermission="user.daho.create"><AdminDahoView /></ProtectedRoute>} />
+        <Route path="assignments" element={<ProtectedRoute requiredPermission="user.role.assign"><AdminAssignmentsView /></ProtectedRoute>} />
+        <Route path="oversight" element={<ProtectedRoute requiredPermission="reports.district"><AdminOperationalOversightView /></ProtectedRoute>} />
+        <Route path="rbac" element={<ProtectedRoute requiredPermission="system.roles.manage"><AdminRbacView /></ProtectedRoute>} />
+        <Route path="roles" element={<ProtectedRoute requiredPermission="system.roles.manage"><AdminRbacView /></ProtectedRoute>} />
+        <Route path="users" element={<ProtectedRoute requiredPermission="user.staff.manage"><AdminUsersView /></ProtectedRoute>} />
+        <Route path="devices" element={<ProtectedRoute requiredPermission="system.settings.manage"><AdminDevicesView /></ProtectedRoute>} />
+        <Route path="audit-logs" element={<ProtectedRoute requiredPermission="system.logs.view"><AdminAuditLogsView /></ProtectedRoute>} />
+        <Route path="system-health" element={<ProtectedRoute requiredPermission="system.settings.manage"><AdminSystemHealthView /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<AdminProfileView />} />
       </Route>
@@ -298,4 +301,3 @@ export const AppRoutes: React.FC = () => {
     </Routes>
   );
 };
-

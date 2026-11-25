@@ -110,6 +110,7 @@ export const hi = {
       daho: 'DAHO प्रबंधन',
       assignments: 'आवंटन रजिस्ट्री',
       oversight: 'परिचालन निगरानी',
+      rbac: 'भूमिका नियंत्रण (RBAC)',
       roles: 'भूमिका निरीक्षण',
       users: 'उपयोगकर्ता निर्देशिका',
       devices: 'पंजीकृत उपकरण',

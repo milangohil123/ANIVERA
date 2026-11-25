@@ -58,8 +58,10 @@ export interface CoopRegisterPayload {
   mobile_e164: string;
   email: string;
   district_id: string;
-  taluka_id: string;
-  village_id: string;
+  taluka_id?: string;
+  village_id?: string;
+  taluka_ids?: string[];
+  village_ids?: string[];
   address?: string;
   postal_code?: string;
   status?: string;
@@ -400,6 +402,22 @@ export const coopService = {
       throw new Error(err?.detail || 'સહકારી મંડળી બનાવવામાં નિષ્ફળ');
     }
     return res.json();
+  },
+
+  async dahoGetAssignedVillages(apiBaseUrl: string, districtId?: string): Promise<Record<string, string>> {
+    const q = districtId ? `?district_id=${districtId}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/cooperatives/assigned-villages${q}`);
+    if (!res.ok) return {};
+    const data = await res.json().catch(() => []);
+    const map: Record<string, string> = {};
+    if (Array.isArray(data)) {
+      data.forEach((item: any) => {
+        if (item.village_id) {
+          map[item.village_id] = item.cooperative_name || 'અન્ય ડેરી મંડળી';
+        }
+      });
+    }
+    return map;
   },
 
   async dahoGetCooperative(apiBaseUrl: string, coopId: string): Promise<CoopDetailItem> {

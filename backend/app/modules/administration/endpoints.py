@@ -587,6 +587,17 @@ async def get_super_admin_overview(
     return await service.get_overview()
 
 
+@router.get("/super-admin/charts-analytics", summary="State-level real database analytics & metrics for dashboard charts")
+async def get_super_admin_charts(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> Dict[str, Any]:
+    if current_user.role not in ("SUPER_ADMIN", "SYS_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Super Admin authorization required.")
+    service = SuperAdminService(db)
+    return await service.get_dashboard_charts()
+
+
 @router.post("/super-admin/daho-accounts", response_model=DahoAccountResponse, status_code=status.HTTP_201_CREATED, summary="Create DAHO administrative account with district assignment")
 async def create_daho_account(
     payload: DahoAccountCreateRequest,
@@ -1384,6 +1395,16 @@ async def reset_daho_demo_cooperatives(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to DAHO or Platform Admin.")
     service = DahoCooperativeService(db)
     return await service.reset_demo_data(current_user, district_id)
+
+
+@router.get("/daho/cooperatives/assigned-villages", summary="DAHO: Get map of village IDs already assigned to a cooperative")
+async def get_assigned_cooperative_villages(
+    district_id: Optional[uuid.UUID] = Query(default=None, description="Optional filter by district ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    service = DahoCooperativeService(db)
+    return await service.get_assigned_villages(district_id)
 
 
 

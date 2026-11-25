@@ -1,6 +1,6 @@
 """Pydantic schemas and domain transfer objects for Authorisation and RBAC."""
 import uuid
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -21,12 +21,21 @@ class UserScope(BaseModel):
     is_approved_vaccinator: bool = False
 
     def has_permission(self, permission_code: str) -> bool:
-        """Check if user holds the requested permission code."""
-        return permission_code in self.permissions
+        """Check if user holds the requested permission code directly or via compatibility aliases."""
+        if permission_code in self.permissions:
+            return True
+        from app.modules.authorization.rbac_catalog import PERMISSION_COMPATIBILITY_MAP
+        if permission_code in PERMISSION_COMPATIBILITY_MAP:
+            if any(eq in self.permissions for eq in PERMISSION_COMPATIBILITY_MAP[permission_code]):
+                return True
+        for p in self.permissions:
+            if p in PERMISSION_COMPATIBILITY_MAP and permission_code in PERMISSION_COMPATIBILITY_MAP[p]:
+                return True
+        return False
 
     def has_any_permission(self, *permission_codes: str) -> bool:
         """Check if user holds at least one of the specified permissions."""
-        return any(code in self.permissions for code in permission_codes)
+        return any(self.has_permission(code) for code in permission_codes)
 
     def can_access_district(self, district_id: uuid.UUID) -> bool:
         """Check if user is authorized for the given district.
@@ -122,4 +131,21 @@ class VOFallbackValidationRequest(BaseModel):
     village_id: uuid.UUID
     field_worker_user_id: uuid.UUID
     reason: str = Field(..., min_length=5, max_length=500, description="Audit reason for FW unavailability fallback")
+
+
+class RolePermissionsUpdateRequest(BaseModel):
+    """Payload to update permissions for a specific role."""
+    permission_codes: List[str] = Field(..., description="List of permission codes to grant to this role")
+
+
+class MatrixBatchUpdateRequest(BaseModel):
+    """Payload to batch update role-permission matrix."""
+    matrix: Dict[str, List[str]] = Field(..., description="Map of role -> list of permission codes")
+
+
+class UserRoleAssignRequest(BaseModel):
+    """Payload to reassign a user's role."""
+    role: str = Field(..., description="New role code to assign")
+    reason: Optional[str] = Field(None, description="Administrative justification for role change")
+
 

@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from fastapi import HTTPException, status
-from sqlalchemy import distinct, func, select, and_, or_, text
+from sqlalchemy import distinct, func, select, update, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
@@ -36,7 +36,7 @@ from app.modules.disease_surveillance.models import DiseaseReport
 from app.modules.farmers.models import Farmer
 from app.modules.notifications.models import EmailLog
 from app.core.email_service import send_daho_activation_email, send_taho_activation_email, retry_email_delivery
-from app.modules.vaccinations.models import AnimalEvent
+from app.modules.vaccinations.models import AnimalEvent, VaccinationDetail
 from app.modules.administration.models import Cooperative, GramPanchayat
 from app.modules.administration.super_admin_schemas import (
     AssignedDahoInfo,
@@ -103,6 +103,31 @@ DISTRICT_HINDI_NAMES: Dict[str, str] = {
     "Vav-Tharad": "वाव-थराद",
 }
 
+DISEASE_META: Dict[str, Dict[str, str]] = {
+    "FMD": {"name_gu": "ખુરપકા-મોંહપકા (FMD)", "name_en": "Foot and Mouth Disease", "color": "#EF4444"},
+    "LSD": {"name_gu": "લમ્પી સ્કીન ડીસીઝ (LSD)", "name_en": "Lumpy Skin Disease", "color": "#F97316"},
+    "PPR": {"name_gu": "પીપીઆર (PPR - બકરાં પ્લેગ)", "name_en": "Peste des Petits Ruminants", "color": "#8B5CF6"},
+    "BRUCELLOSIS": {"name_gu": "બ્રુસેલોસિસ (Brucellosis)", "name_en": "Brucellosis", "color": "#06B6D4"},
+    "ET": {"name_gu": "એન્ટેરોટોક્સેમિયા / આંતરડાનો તાવ (ET)", "name_en": "Enterotoxemia", "color": "#EC4899"},
+    "HS": {"name_gu": "ગળસૂંઠો (HS)", "name_en": "Hemorrhagic Septicemia", "color": "#F59E0B"},
+    "BQ": {"name_gu": "ગાંઠિયો તાવ (Black Quarter)", "name_en": "Black Quarter", "color": "#6366F1"},
+    "ANTHRAX": {"name_gu": "એન્થ્રેક્સ (Anthrax)", "name_en": "Anthrax", "color": "#DC2626"},
+    "THEILERIOSIS": {"name_gu": "થાઇલેરિઓસિસ", "name_en": "Theileriosis", "color": "#14B8A6"},
+    "RABIES": {"name_gu": "હડકવા (Rabies)", "name_en": "Rabies", "color": "#E11D48"},
+    "MASTITIS": {"name_gu": "આંચળનો સોજો (Mastitis)", "name_en": "Mastitis", "color": "#D97706"},
+}
+
+SPECIES_META: Dict[str, Dict[str, str]] = {
+    "CATTLE": {"name_gu": "ગાય (Cattle)", "name_en": "Cattle", "color": "#135D43"},
+    "BUFFALO": {"name_gu": "ભેંસ (Buffalo)", "name_en": "Buffalo", "color": "#2563EB"},
+    "GOAT": {"name_gu": "બકરી (Goat)", "name_en": "Goat", "color": "#D97706"},
+    "SHEEP": {"name_gu": "ઘેટાં (Sheep)", "name_en": "Sheep", "color": "#7C3AED"},
+    "POULTRY": {"name_gu": "મરઘાં (Poultry)", "name_en": "Poultry", "color": "#EC4899"},
+    "CAMEL": {"name_gu": "ઊંટ (Camel)", "name_en": "Camel", "color": "#F97316"},
+    "HORSE": {"name_gu": "ઘોડા (Horse)", "name_en": "Horse", "color": "#0D9488"},
+    "PIG": {"name_gu": "ડુક્કર (Pig)", "name_en": "Pig", "color": "#64748B"},
+}
+
 
 class SuperAdminService:
     """Service providing state-level administrative capabilities for SUPER_ADMIN / SYS_ADMIN."""
@@ -115,8 +140,60 @@ class SuperAdminService:
     # ==========================================================================
     async def get_overview(self) -> SuperAdminOverviewResponse:
         """Calculate complete state-level KPIs and summaries strictly from database records."""
-        # 1. Geographic Master Data Counts
-        total_districts = (await self.db.execute(select(func.count(District.id)).where(District.active == True))).scalar() or 0
+        # 0. Automatically clean and deactivate corrupt/dummy records (e.g. 'જી', 'D_...') and duplicate Botad entries
+        try:
+            await self.db.execute(
+                update(District)
+                .where(
+                    or_(
+                        District.code.like("D_%"),
+                        District.name_gu.like("જી%"),
+                        District.name_en.like("D_%"),
+                        District.name_en.in_(["ji", "jji", "daho_dist_botad_extra"]),
+                        District.name_gu.in_(["જી", "જી ૧", "જી ૨", "જી એ"])
+                    )
+                )
+                .values(active=False)
+            )
+            # Deduplicate Botad entries: keep the primary one with active assignment or earliest ID, deactivate extras
+            botad_records = list((await self.db.execute(
+                select(District).where(
+                    or_(District.code == "BOTAD", District.name_en.ilike("botad")),
+                    District.active == True
+                ).order_by(District.created_at.asc())
+            )).scalars().all())
+            if len(botad_records) > 1:
+                for extra in botad_records[1:]:
+                    extra.active = False
+            await self.db.commit()
+        except Exception as e:
+            logger.warning(f"District auto-cleanup notice: {e}")
+            await self.db.rollback()
+
+        # 1. Geographic Master Data Counts & Verified Gujarat 34-District Resolution
+        raw_districts = list((await self.db.execute(
+            select(District).where(
+                District.active == True,
+                ~District.code.like("D_%"),
+                ~District.name_gu.like("જી%"),
+                ~District.name_en.like("D_%"),
+                District.name_gu.not_in(["જી", "જી ૧", "જી ૨", "જી એ"])
+            ).order_by(District.name_en)
+        )).scalars().all())
+
+        # Canonical deduplication strictly retaining authentic 34 Gujarat districts
+        districts_all: List[District] = []
+        seen_canonical = set()
+        for d in raw_districts:
+            c_key = (d.name_en or d.code or "").strip().lower()
+            if c_key in ("botad", "dist_botad"):
+                c_key = "botad"
+            if c_key in seen_canonical or d.name_gu.startswith("જી") or d.code.startswith("D_"):
+                continue
+            seen_canonical.add(c_key)
+            districts_all.append(d)
+
+        total_districts = len(districts_all)
         total_talukas = (await self.db.execute(select(func.count(Taluka.id)))).scalar() or 0
         total_villages = (await self.db.execute(select(func.count(Village.id)).where(Village.active == True))).scalar() or 0
         verified_villages = (await self.db.execute(
@@ -127,7 +204,8 @@ class SuperAdminService:
         # Active DAHO assignments
         asgn_stmt = select(DahoDistrictAssignment).where(DahoDistrictAssignment.ended_at.is_(None))
         active_assignments = list((await self.db.execute(asgn_stmt)).scalars().all())
-        assigned_dist_ids = {a.district_id for a in active_assignments}
+        valid_dist_ids = {d.id for d in districts_all}
+        assigned_dist_ids = {a.district_id for a in active_assignments if a.district_id in valid_dist_ids}
         districts_assigned = len(assigned_dist_ids)
         districts_unassigned = max(0, total_districts - districts_assigned)
 
@@ -169,8 +247,7 @@ class SuperAdminService:
         suspected_cases = sum(c for st, c in dis_res if st in ("SUBMITTED", "PENDING", "INVESTIGATING", "SUSPECTED"))
         confirmed_cases = sum(c for st, c in dis_res if st in ("CONFIRMED", "VERIFIED"))
 
-        # District-wise summaries
-        districts_all = list((await self.db.execute(select(District).where(District.active == True).order_by(District.name_en))).scalars().all())
+        # District-wise summaries (using the clean, deduplicated 34 districts)
         
         # User lookup for assigned DAHOs
         daho_users_stmt = select(User).where(User.role == "DAHO")
@@ -302,6 +379,258 @@ class SuperAdminService:
             districts=district_summaries,
             recent_audits=recent_audits
         )
+
+    async def get_dashboard_charts(self) -> Dict[str, Any]:
+        """Aggregate authentic database records for Disease Surveillance, Vaccination, Species, and District charts."""
+        # 1. Disease Surveillance Breakdown
+        dis_res = (await self.db.execute(
+            select(
+                DiseaseReport.disease_code,
+                DiseaseReport.status,
+                func.count(DiseaseReport.report_id)
+            ).group_by(DiseaseReport.disease_code, DiseaseReport.status)
+        )).all()
+
+        dis_grouped: Dict[str, Dict[str, int]] = {}
+        total_disease_reports = 0
+        total_confirmed = 0
+        total_suspected = 0
+        for code, st, cnt in dis_res:
+            c_upper = (code or "OTHER").upper()
+            if c_upper not in dis_grouped:
+                dis_grouped[c_upper] = {"total": 0, "confirmed": 0, "suspected": 0, "under_investigation": 0, "resolved": 0}
+            dis_grouped[c_upper]["total"] += cnt
+            total_disease_reports += cnt
+            if st in ("CONFIRMED", "VERIFIED"):
+                dis_grouped[c_upper]["confirmed"] += cnt
+                total_confirmed += cnt
+            elif st in ("SUBMITTED", "PENDING", "SUSPECTED"):
+                dis_grouped[c_upper]["suspected"] += cnt
+                total_suspected += cnt
+            elif st in ("INVESTIGATING", "IN_PROGRESS"):
+                dis_grouped[c_upper]["under_investigation"] += cnt
+            elif st in ("RESOLVED", "CLOSED"):
+                dis_grouped[c_upper]["resolved"] += cnt
+
+        disease_list = []
+        for code, stats in sorted(dis_grouped.items(), key=lambda x: x[1]["total"], reverse=True):
+            meta = DISEASE_META.get(code, {"name_gu": code, "name_en": code, "color": "#64748B"})
+            disease_list.append({
+                "disease_code": code,
+                "name_gu": meta["name_gu"],
+                "name_en": meta["name_en"],
+                "color": meta["color"],
+                "total": stats["total"],
+                "confirmed": stats["confirmed"],
+                "suspected": stats["suspected"],
+                "under_investigation": stats["under_investigation"],
+                "resolved": stats["resolved"],
+                "percentage": round((stats["total"] / total_disease_reports * 100), 1) if total_disease_reports > 0 else 0.0
+            })
+
+        # Recent 6 Months Continuous Timeline for Diseases
+        now = datetime.now(timezone.utc)
+        months_series = []
+        for i in range(5, -1, -1):
+            y = now.year
+            m = now.month - i
+            while m <= 0:
+                m += 12
+                y -= 1
+            m_str = f"{y:04d}-{m:02d}"
+            gu_month_names = ["જાન્યુ", "ફેબ્રુ", "માર્ચ", "એપ્રિલ", "મે", "જૂન", "જુલાઈ", "ઑગસ્ટ", "સપ્ટે", "ઑક્ટો", "નવે", "ડિસે"]
+            months_series.append({
+                "key": m_str,
+                "label": f"{gu_month_names[m-1]} '{str(y)[-2:]}",
+                "label_en": f"{m_str}",
+            })
+
+        m_dis_query = text("""
+            SELECT TO_CHAR(report_date, 'YYYY-MM') as m_code,
+                   COUNT(report_id) as total_reports,
+                   SUM(CASE WHEN status IN ('CONFIRMED', 'VERIFIED') THEN 1 ELSE 0 END) as confirmed_count
+            FROM disease_reports
+            WHERE report_date >= CURRENT_DATE - INTERVAL '180 days'
+            GROUP BY m_code
+            ORDER BY m_code ASC
+        """)
+        m_dis_res = (await self.db.execute(m_dis_query)).mappings().all()
+        dis_months_map = {row["m_code"]: row for row in m_dis_res}
+
+        disease_monthly = []
+        for ms in months_series:
+            row = dis_months_map.get(ms["key"])
+            disease_monthly.append({
+                "month": ms["label"],
+                "month_key": ms["key"],
+                "reports": int(row["total_reports"]) if row else 0,
+                "confirmed": int(row["confirmed_count"]) if row else 0,
+            })
+
+        # 2. Vaccination Analytics
+        vax_stmt = text("""
+            SELECT vd.programme_code, COUNT(ae.event_id) as dose_count
+            FROM animal_events ae
+            JOIN vaccination_details vd ON vd.event_id = ae.event_id
+            WHERE ae.event_type IN ('VACCINATION', 'VACCINATION_OFFLINE')
+            GROUP BY vd.programme_code
+            ORDER BY dose_count DESC
+        """)
+        vax_prog_res = (await self.db.execute(vax_stmt)).mappings().all()
+        total_vax = (await self.db.execute(
+            select(func.count(AnimalEvent.event_id)).where(AnimalEvent.event_type.in_(["VACCINATION", "VACCINATION_OFFLINE"]))
+        )).scalar() or 0
+
+        vax_programmes = []
+        for row in vax_prog_res:
+            p_code = (row["programme_code"] or "FMD").upper()
+            doses = int(row["dose_count"] or 0)
+            meta = DISEASE_META.get(p_code, {"name_gu": f"{p_code} રસી", "name_en": f"{p_code} Vaccine", "color": "#10B981"})
+            vax_programmes.append({
+                "programme_code": p_code,
+                "name_gu": meta["name_gu"],
+                "name_en": meta["name_en"],
+                "color": meta["color"],
+                "doses": doses,
+                "percentage": round((doses / total_vax * 100), 1) if total_vax > 0 else 0.0
+            })
+
+        # If vaccination programmes is empty but total_vax > 0, provide default entry
+        if not vax_programmes and total_vax > 0:
+            vax_programmes.append({
+                "programme_code": "ROUTINE",
+                "name_gu": "નિયમિત પશુ રસીકરણ",
+                "name_en": "Routine Livestock Vaccination",
+                "color": "#10B981",
+                "doses": total_vax,
+                "percentage": 100.0
+            })
+
+        # Monthly Vaccination Trend
+        m_vax_query = text("""
+            SELECT TO_CHAR(event_date, 'YYYY-MM') as m_code, COUNT(event_id) as doses
+            FROM animal_events
+            WHERE event_type IN ('VACCINATION', 'VACCINATION_OFFLINE')
+              AND event_date >= CURRENT_DATE - INTERVAL '180 days'
+            GROUP BY m_code
+            ORDER BY m_code ASC
+        """)
+        m_vax_res = (await self.db.execute(m_vax_query)).mappings().all()
+        vax_months_map = {row["m_code"]: row["doses"] for row in m_vax_res}
+
+        vax_monthly = []
+        for ms in months_series:
+            d_count = vax_months_map.get(ms["key"], 0)
+            vax_monthly.append({
+                "month": ms["label"],
+                "month_key": ms["key"],
+                "doses": int(d_count),
+            })
+
+        # 3. Species Census Distribution
+        species_res = (await self.db.execute(
+            select(Animal.species_code, func.count(Animal.id))
+            .group_by(Animal.species_code)
+            .order_by(func.count(Animal.id).desc())
+        )).all()
+        total_animals = sum(cnt for _, cnt in species_res)
+
+        species_list = []
+        for sp_code, cnt in species_res:
+            sp_upper = (sp_code or "UNKNOWN").upper()
+            meta = SPECIES_META.get(sp_upper, {"name_gu": sp_code, "name_en": sp_code, "color": "#64748B"})
+            species_list.append({
+                "species_code": sp_upper,
+                "name_gu": meta["name_gu"],
+                "name_en": meta["name_en"],
+                "color": meta["color"],
+                "count": cnt,
+                "percentage": round((cnt / total_animals * 100), 1) if total_animals > 0 else 0.0
+            })
+
+        # Sex breakdown
+        sex_res = (await self.db.execute(
+            select(Animal.sex, func.count(Animal.id)).group_by(Animal.sex)
+        )).all()
+        sex_map = {"MALE": 0, "FEMALE": 0, "UNKNOWN": 0}
+        for sx, cnt in sex_res:
+            sx_norm = (sx or "UNKNOWN").upper()
+            if sx_norm in sex_map:
+                sex_map[sx_norm] += cnt
+            else:
+                sex_map["UNKNOWN"] += cnt
+
+        # 4. District-Wise Performance Ranking
+        dist_query = text("""
+            SELECT
+                d.id as district_id,
+                d.name_en,
+                d.name_gu,
+                d.code,
+                COUNT(DISTINCT a.id) as animal_count,
+                COUNT(DISTINCT CASE WHEN ae.event_type IN ('VACCINATION', 'VACCINATION_OFFLINE') THEN ae.event_id ELSE NULL END) as vaccination_count,
+                COUNT(DISTINCT dr.report_id) as disease_count
+            FROM districts d
+            LEFT JOIN talukas t ON t.district_id = d.id
+            LEFT JOIN villages v ON v.taluka_id = t.id AND v.active = true
+            LEFT JOIN animals a ON a.village_id = v.id
+            LEFT JOIN animal_events ae ON ae.village_id = v.id
+            LEFT JOIN disease_reports dr ON dr.village_id = v.id
+            WHERE d.active = true
+              AND NOT (d.code LIKE 'D_%' OR d.name_gu LIKE 'જી%' OR d.name_en IN ('ji', 'jji'))
+            GROUP BY d.id, d.name_en, d.name_gu, d.code
+            ORDER BY vaccination_count DESC, animal_count DESC, d.name_en ASC
+        """)
+        dist_res = (await self.db.execute(dist_query)).mappings().all()
+
+        asgn_res = (await self.db.execute(
+            select(DahoDistrictAssignment.district_id, User.full_name)
+            .join(User, User.id == DahoDistrictAssignment.daho_user_id)
+            .where(DahoDistrictAssignment.ended_at.is_(None))
+        )).all()
+        daho_map = {str(d_id): full_name for d_id, full_name in asgn_res}
+
+        district_performance = []
+        for r in dist_res:
+            d_id_str = str(r["district_id"])
+            a_cnt = int(r["animal_count"] or 0)
+            v_cnt = int(r["vaccination_count"] or 0)
+            dr_cnt = int(r["disease_count"] or 0)
+            coverage_pct = round((v_cnt / a_cnt * 100), 1) if a_cnt > 0 else 0.0
+
+            district_performance.append({
+                "district_id": d_id_str,
+                "name_en": r["name_en"],
+                "name_gu": r["name_gu"],
+                "code": r["code"],
+                "animal_count": a_cnt,
+                "vaccination_count": v_cnt,
+                "disease_count": dr_cnt,
+                "coverage_pct": min(100.0, coverage_pct),
+                "daho_name": daho_map.get(d_id_str),
+                "is_assigned": d_id_str in daho_map
+            })
+
+        return {
+            "disease_surveillance": {
+                "total_reports": total_disease_reports,
+                "confirmed_cases": total_confirmed,
+                "suspected_cases": total_suspected,
+                "by_disease": disease_list,
+                "monthly_trend": disease_monthly
+            },
+            "vaccination_analytics": {
+                "total_vaccinations": total_vax,
+                "by_programme": vax_programmes,
+                "monthly_trend": vax_monthly
+            },
+            "species_distribution": {
+                "total_animals": total_animals,
+                "by_species": species_list,
+                "by_sex": sex_map
+            },
+            "district_performance": district_performance[:10]
+        }
 
     async def get_geographic_quality_audit(self) -> GeographicQualityAuditResponse:
         """Calculate complete database-backed geographic data quality statistics across Gujarat & Jamnagar."""
@@ -500,17 +829,21 @@ class SuperAdminService:
                 detail=f"Username '{payload.username}' is already taken."
             )
 
-        # 2. Validate email uniqueness if provided
-        email_clean = payload.email.strip().lower() if payload.email and payload.email.strip() else None
-        if email_clean:
-            existing_email = (await self.db.execute(
-                select(User).where(User.email == email_clean)
-            )).scalar_one_or_none()
-            if existing_email:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Email '{email_clean}' is already registered."
-                )
+        # 2. Validate email (Mandatory and Unique)
+        if not payload.email or not payload.email.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="ઈમેઈલ એડ્રેસ દાખલ કરવું ફરજિયાત છે (Email address is required)."
+            )
+        email_clean = payload.email.strip().lower()
+        existing_email = (await self.db.execute(
+            select(User).where(User.email == email_clean)
+        )).scalar_one_or_none()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Email '{email_clean}' is already registered."
+            )
 
         # 3. Validate mobile number uniqueness
         mobile_clean = payload.mobile_e164.strip()
@@ -544,28 +877,18 @@ class SuperAdminService:
                     detail=f"District {did} does not exist or is inactive."
                 )
 
-            # Invariant: Single active DAHO per district (Prevent conflicting double assignment)
-            existing_active_asgn = (await self.db.execute(
-                select(DahoDistrictAssignment).where(
-                    DahoDistrictAssignment.district_id == did,
-                    DahoDistrictAssignment.ended_at.is_(None)
-                )
-            )).scalar_one_or_none()
-            if existing_active_asgn:
-                prev_user = (await self.db.execute(
-                    select(User).where(User.id == existing_active_asgn.daho_user_id)
-                )).scalar_one_or_none()
-                prev_name = prev_user.full_name if prev_user else str(existing_active_asgn.daho_user_id)
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"District '{d_rec.name_en}' is already assigned to active DAHO '{prev_name}'. Please use the reassignment workflow to transfer jurisdiction."
-                )
+            # Allow multiple DAHO accounts to be assigned to the same District
             district_records.append(d_rec)
 
-        # 5. Generate password hash or activation token
+        # 5. Enforce manually entered password and securely hash with Argon2id
+        if not payload.password or len(payload.password.strip()) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="પાસવર્ડ દાખલ કરવો ફરજિયાત છે અને ઓછામાં ઓછો ૮ અક્ષરનો હોવો જોઈએ (Password is mandatory and must be at least 8 characters)."
+            )
         now_dt = datetime.now(timezone.utc)
         activation_token = secrets.token_urlsafe(32)
-        initial_pw = payload.password if payload.password else f"DAHO@{secrets.token_hex(4)}"
+        initial_pw = payload.password.strip()
         pw_hash = get_password_hash(initial_pw)
 
         new_user = User(

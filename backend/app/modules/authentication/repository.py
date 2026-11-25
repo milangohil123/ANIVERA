@@ -382,17 +382,14 @@ class AuthRepository:
             except Exception as t_err:
                 logger.warning("Error resolving user assigned talukas: %s", t_err)
 
-        # 4. Role-based permissions
-        rp_roles = [user.role]
-        if user.role in ("FIELD_WORKER", "FW"):
-            rp_roles = ["FIELD_WORKER", "FW"]
-        elif user.role in ("VET_OFFICER", "VO"):
-            rp_roles = ["VET_OFFICER", "VO"]
-        elif user.role in ("DAHO",):
-            rp_roles = ["DAHO"]
-        elif user.role in ("TAHO",):
-            rp_roles = ["TAHO"]
+        # 4. Role-based permissions strictly from database
+        from app.modules.authorization.rbac_catalog import (
+            DEFAULT_ROLE_CAPABILITIES,
+            expand_permissions,
+            get_role_aliases,
+        )
 
+        rp_roles = get_role_aliases(user.role)
         rp_stmt = (
             select(RolePermission.permission_code)
             .where(RolePermission.role.in_(rp_roles))
@@ -412,60 +409,21 @@ class AuthRepository:
         for row in up_res.fetchall():
             permissions.add(row[0])
 
-        # 6. Canonical fallback permissions if unseeded
+        # 6. Canonical fallback permissions only if database is completely unseeded
         if not permissions:
-            DEFAULT_ROLE_PERMS = {
-                "FIELD_WORKER": {
-                    "animal.create", "animal.read", "animal.verify",
-                    "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                    "disease.report", "disease.read",
-                    "vaccination.record", "vaccination.read",
-                    "inventory.read", "own.read", "offline.sync"
-                },
-                "FW": {
-                    "animal.create", "animal.read", "animal.verify",
-                    "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                    "disease.report", "disease.read",
-                    "vaccination.record", "vaccination.read",
-                    "inventory.read", "own.read", "offline.sync"
-                },
-                "VET_OFFICER": {
-                    "animal.create.fallback", "animal.read", "animal.verify",
-                    "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                    "disease.confirm", "disease.read", "disease.report",
-                    "vaccination.record", "vaccination.read",
-                    "campaign.view", "camp.manage", "camp.view",
-                    "inventory.read", "inventory.request",
-                    "own.read", "aggregate.view", "offline.sync"
-                },
-                "VO": {
-                    "animal.create.fallback", "animal.read", "animal.verify",
-                    "farmer.create", "farmer.read", "farmer.verify",
-                    "disease.confirm", "disease.read", "disease.report",
-                    "vaccination.record", "vaccination.read",
-                    "campaign.view", "camp.manage", "camp.view",
-                    "inventory.read", "inventory.request",
-                    "own.read", "aggregate.view", "offline.sync"
-                },
-                "DAHO": {
-                    "district.setup.manage", "village.manage", "taluka.manage", "user.manage",
-                    "campaign.manage", "campaign.view", "camp.manage", "camp.view",
-                    "inventory.manage", "inventory.read",
-                    "disease.read", "disease.confirm",
-                    "animal.read", "farmer.read", "aggregate.view", "audit.read"
-                },
-                "TAHO": {
-                    "taluka.manage", "taho.dashboard.view", "village.manage", "user.manage",
-                    "veterinary_officer.manage", "field_worker.manage",
-                    "campaign.view", "campaign.manage",
-                    "camp.manage", "camp.view",
-                    "inventory.read",
-                    "disease.read", "disease.review",
-                    "animal.read", "farmer.read", "aggregate.view",
-                    "map.view", "event.read"
-                }
-            }
-            norm = "FW" if user.role == "FIELD_WORKER" else "VO" if user.role == "VET_OFFICER" else user.role
-            permissions.update(DEFAULT_ROLE_PERMS.get(user.role, DEFAULT_ROLE_PERMS.get(norm, set())))
+            for r in rp_roles:
+                if r in DEFAULT_ROLE_CAPABILITIES:
+                    permissions.update(DEFAULT_ROLE_CAPABILITIES[r])
+                    break
 
-        return assigned_villages, assigned_districts, assigned_talukas, assigned_districts_details, assigned_talukas_details, sorted(list(permissions))
+        # 7. Expand with compatibility aliases
+        effective_permissions = expand_permissions(permissions)
+
+        return (
+            assigned_villages,
+            assigned_districts,
+            assigned_talukas,
+            assigned_districts_details,
+            assigned_talukas_details,
+            sorted(list(effective_permissions))
+        )

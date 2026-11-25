@@ -14,19 +14,15 @@ import {
   HeartPulse,
   QrCode,
   ShieldCheck,
-  Clock,
   CheckCircle2,
-  AlertTriangle,
   UserCheck,
   Stethoscope,
-  Activity,
   Calendar,
-  Image as ImageIcon,
 } from 'lucide-react';
 
 export const FarmerDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { apiBaseUrl, session } = useAuth();
+  const { apiBaseUrl, session, hasPermission } = useAuth();
   const { t } = useTranslation();
 
   const [animals, setAnimals] = useState<FarmerAnimalItem[]>([]);
@@ -130,27 +126,29 @@ export const FarmerDashboard: React.FC = () => {
       </div>
 
       {/* Primary Action Button: Disease Report / Emergency Request */}
-      <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-center justify-between shadow-2xs">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-            <HeartPulse className="w-5 h-5 text-amber-800" />
+      {hasPermission('disease.report') && (
+        <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <HeartPulse className="w-5 h-5 text-amber-800" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-amber-900">
+                {t('dashboards.farmer.sickAnimalPrompt')}
+              </h3>
+              <p className="text-[11px] text-amber-700">
+                {t('dashboards.farmer.sickAnimalDesc')}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-xs font-bold text-amber-900">
-              {t('dashboards.farmer.sickAnimalPrompt')}
-            </h3>
-            <p className="text-[11px] text-amber-700">
-              {t('dashboards.farmer.sickAnimalDesc')}
-            </p>
-          </div>
+          <button
+            onClick={() => setIsDiseaseModalOpen(true)}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors shrink-0 cursor-pointer"
+          >
+            {t('dashboards.farmer.reportBtn')}
+          </button>
         </div>
-        <button
-          onClick={() => setIsDiseaseModalOpen(true)}
-          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors shrink-0 cursor-pointer"
-        >
-          {t('dashboards.farmer.reportBtn')}
-        </button>
-      </div>
+      )}
 
       {/* Metrics Row */}
       <div className="grid grid-cols-3 gap-3">

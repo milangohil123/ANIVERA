@@ -26,6 +26,7 @@ export interface NavItemDef {
   label: string;
   icon: React.ReactNode;
   badge?: string | number;
+  permission?: string | string[];
 }
 
 export interface WebSidebarLayoutProps {
@@ -45,7 +46,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
   failedCount,
   onTriggerSync,
 }) => {
-  const { session, profile, role, logout } = useAuth();
+  const { session, profile, role, logout, hasPermission } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -112,8 +113,18 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     'map',
   ];
 
-  // Filter items by search query if user typed anything (excluding notifications)
+  // Dynamic RBAC Permission Evaluator
+  const isPermitted = (item: NavItemDef) => {
+    if (!item.permission) return true;
+    if (Array.isArray(item.permission)) {
+      return item.permission.some((p) => hasPermission(p));
+    }
+    return hasPermission(item.permission);
+  };
+
+  // Filter items dynamically by Matrix permissions & search query (excluding notifications)
   const filteredNavItems = navItems
+    .filter((item) => isPermitted(item))
     .filter((item) => !item.path.endsWith('/notifications'))
     .filter((item) => {
       if (!searchQuery.trim()) return true;
@@ -146,8 +157,9 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     adminItems.push(...filteredNavItems.slice(9));
   }
 
-  // Top 5 items for mobile bottom bar (excluding notifications)
+  // Top 5 items for mobile bottom bar (filtered by dynamic permission, excluding notifications)
   const mobileBottomItems = navItems
+    .filter((item) => isPermitted(item))
     .filter((item) => !item.path.endsWith('/notifications'))
     .slice(0, 5);
 

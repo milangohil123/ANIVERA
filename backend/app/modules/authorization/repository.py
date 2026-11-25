@@ -40,26 +40,23 @@ class AuthorizationRepository:
         self.db = db
 
     async def resolve_effective_permissions(self, user_id: uuid.UUID, role: str) -> Set[str]:
-        """Resolve combined active permissions from role matrix and user permission grants."""
+        """Resolve combined active permissions strictly from database role matrix and user grants."""
+        from app.modules.authorization.rbac_catalog import (
+            DEFAULT_ROLE_CAPABILITIES,
+            expand_permissions,
+            get_role_aliases,
+        )
+
         permissions: Set[str] = set()
+        matched_roles = get_role_aliases(role)
 
-        # Check for both role aliases (e.g. FIELD_WORKER and FW, VET_OFFICER and VO)
-        matched_roles = [role]
-        if role in ("FIELD_WORKER", "FW"):
-            matched_roles = ["FIELD_WORKER", "FW"]
-        elif role in ("VET_OFFICER", "VO"):
-            matched_roles = ["VET_OFFICER", "VO"]
-        elif role in ("DAHO",):
-            matched_roles = ["DAHO"]
-
-        # 1. Role-based default permissions
+        # 1. Role-based active permissions from database
         rp_stmt = select(RolePermission.permission_code).where(RolePermission.role.in_(matched_roles))
         rp_res = await self.db.execute(rp_stmt)
         for row in rp_res.fetchall():
             permissions.add(row[0])
 
         # 2. Explicit user permission grants (active and unrevoked only)
-        explicit_grants: Set[str] = set()
         up_stmt = select(UserPermissionGrant.permission_code).where(
             UserPermissionGrant.user_id == user_id,
             UserPermissionGrant.revoked_at.is_(None)
@@ -67,98 +64,17 @@ class AuthorizationRepository:
         up_res = await self.db.execute(up_stmt)
         for row in up_res.fetchall():
             permissions.add(row[0])
-            explicit_grants.add(row[0])
 
-        # 3. Canonical operational permissions baseline per role (ensures district head and staff have requisite capabilities)
-        BASE_ROLE_PERMS = {
-            "FIELD_WORKER": {
-                "animal.create", "animal.read", "animal.verify",
-                "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                "disease.report", "disease.read",
-                "vaccination.record", "vaccination.read", "event.create", "event.read",
-                "campaign.view", "campaign.view_assigned", "camp.view",
-                "inventory.read", "own.read", "offline.sync"
-            },
-            "FW": {
-                "animal.create", "animal.read", "animal.verify",
-                "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                "disease.report", "disease.read",
-                "vaccination.record", "vaccination.read", "event.create", "event.read",
-                "campaign.view", "campaign.view_assigned", "camp.view",
-                "inventory.read", "own.read", "offline.sync"
-            },
-            "VET_OFFICER": {
-                "animal.create.fallback", "animal.read", "animal.verify",
-                "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                "disease.read", "disease.report", "disease.review",
-                "vaccination.record", "vaccination.read", "event.create", "event.read",
-                "campaign.view", "campaign.manage", "campaign.assign_workers",
-                "camp.manage", "camp.view", "camp.propose", "camp.coordinate",
-                "inventory.read", "inventory.request",
-                "own.read", "aggregate.view", "offline.sync"
-            },
-            "VO": {
-                "animal.create.fallback", "animal.read", "animal.verify",
-                "farmer.create", "farmer.register", "farmer.read", "farmer.verify",
-                "disease.read", "disease.report", "disease.review",
-                "vaccination.record", "vaccination.read", "event.create", "event.read",
-                "campaign.view", "campaign.manage", "campaign.assign_workers",
-                "camp.manage", "camp.view", "camp.propose", "camp.coordinate",
-                "inventory.read", "inventory.request",
-                "own.read", "aggregate.view", "offline.sync"
-            },
-            "DAHO": {
-                "district.setup.manage", "village.manage", "taluka.manage", "user.manage",
-                "gram_panchayat.manage", "cooperative.manage",
-                "veterinary_officer.manage", "field_worker.manage",
-                "campaign.manage", "campaign.configure", "campaign.view", "campaign.assign_workers",
-                "camp.manage", "camp.view", "camp.propose", "camp.coordinate",
-                "inventory.manage", "inventory.read",
-                "disease.read", "disease.confirm", "disease.review",
-                "animal.read", "farmer.read", "aggregate.view", "audit.read",
-                "export.run", "map.view", "vaccinator.approve", "event.create", "event.read"
-            },
-            "TAHO": {
-                "taluka.manage", "taho.dashboard.view", "village.manage", "user.manage",
-                "veterinary_officer.manage", "field_worker.manage",
-                "campaign.view", "campaign.manage", "campaign.configure", "campaign.assign_workers",
-                "camp.manage", "camp.view",
-                "inventory.read",
-                "disease.read", "disease.review",
-                "animal.read", "farmer.read", "aggregate.view",
-                "map.view", "event.read"
-            },
-            "SUPER_ADMIN": {
-                "user.manage", "audit.read", "health.read", "technical.manage",
-                "geography.manage", "district.manage", "taluka.manage", "village.manage",
-                "daho.manage", "assignment.manage", "custom_jurisdiction.manage",
-                "campaign.view", "vaccination.read", "disease.read", "aggregate.view", "map.view"
-            },
-            "SYS_ADMIN": {
-                "user.manage", "audit.read", "health.read", "technical.manage",
-                "geography.manage", "district.manage", "taluka.manage", "village.manage",
-                "daho.manage", "assignment.manage", "custom_jurisdiction.manage",
-                "campaign.view", "vaccination.read", "disease.read", "aggregate.view", "map.view"
-            },
-            "FARMER": {
-                "own.read", "animal.read", "vaccination.read", "disease.report", "campaign.view"
-            },
-            "DAIRY_STAFF": {
-                "aggregate.view", "camp.view", "camp.propose", "campaign.view"
-            },
-            "COOPERATIVE": {
-                "aggregate.view", "camp.view", "camp.propose", "campaign.view"
-            }
-        }
-        norm = "FW" if role == "FIELD_WORKER" else "VO" if role == "VET_OFFICER" else role
-        role_base = BASE_ROLE_PERMS.get(role, BASE_ROLE_PERMS.get(norm, set()))
-        permissions.update(role_base)
+        # 3. Only if permissions table is unseeded, fall back to default catalog capabilities
+        if not permissions:
+            for r in matched_roles:
+                if r in DEFAULT_ROLE_CAPABILITIES:
+                    permissions.update(DEFAULT_ROLE_CAPABILITIES[r])
+                    break
 
-        # Invariant (DEC-007, DEC-008): VO has fallback-only animal registration unless explicitly granted
-        if role in ("VET_OFFICER", "VO") and "animal.create" not in explicit_grants:
-            permissions.discard("animal.create")
-
-        return permissions
+        # 4. Expand with equivalent compatibility aliases for domain services
+        effective = expand_permissions(permissions)
+        return effective
 
     async def get_assigned_districts(self, user_id: uuid.UUID, role: Optional[str] = None) -> Set[uuid.UUID]:
         """Fetch active district IDs assigned to a DAHO user or resolved from assigned villages for a VO."""

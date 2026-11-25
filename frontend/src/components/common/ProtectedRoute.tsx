@@ -5,14 +5,18 @@ import { StateView } from './StateView';
 
 export interface ProtectedRouteProps {
   allowedRoles?: NormalizedRole[];
+  requiredPermission?: string;
+  requiredAnyPermission?: string[];
   children: React.ReactNode;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
+  requiredPermission,
+  requiredAnyPermission,
   children,
 }) => {
-  const { isAuthenticated, isLoading, role } = useAuth();
+  const { isAuthenticated, isLoading, role, hasPermission } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -29,10 +33,40 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   if (allowedRoles && allowedRoles.length > 0) {
     if (!allowedRoles.includes(role)) {
-      return <Navigate to="/access-denied" replace />;
+      return <Navigate to="/access-denied" state={{ reason: 'ROLE_DENIED' }} replace />;
+    }
+  }
+
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    return (
+      <Navigate
+        to="/access-denied"
+        state={{
+          reason: 'PERMISSION_DENIED',
+          permission: requiredPermission,
+          from: location.pathname,
+        }}
+        replace
+      />
+    );
+  }
+
+  if (requiredAnyPermission && requiredAnyPermission.length > 0) {
+    const hasAny = requiredAnyPermission.some((perm) => hasPermission(perm));
+    if (!hasAny) {
+      return (
+        <Navigate
+          to="/access-denied"
+          state={{
+            reason: 'PERMISSION_DENIED',
+            permission: requiredAnyPermission.join(', '),
+            from: location.pathname,
+          }}
+          replace
+        />
+      );
     }
   }
 
   return <>{children}</>;
 };
-
