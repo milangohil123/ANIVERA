@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Button } from '../common/Button';
+import { AnimalQrCard } from '../common/AnimalQrCard';
 import { useAuth } from '../../context/AuthContext';
 import {
   fwService,
@@ -189,9 +190,10 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
       });
       html5QrCodeRef.current = qrCode;
 
+      const isBarcode = idMethod === 'EXISTING_BARCODE';
       const config = {
         fps: 15,
-        qrbox: { width: 280, height: 180 },
+        qrbox: isBarcode ? { width: 320, height: 140 } : { width: 220, height: 220 },
         experimentalFeatures: {
           useBarCodeDetectorIfSupported: true,
         },
@@ -313,7 +315,19 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
     if (!file) return;
 
     try {
-      const fileScanner = new Html5Qrcode('modal-scanner-box');
+      const formats = [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+      ];
+      const fileScanner = new Html5Qrcode('modal-scanner-box', {
+        formatsToSupport: formats,
+        verbose: false,
+      });
       const text = await fileScanner.scanFile(file, true);
       await fileScanner.clear();
       handleRawInputProcess(text);
@@ -372,6 +386,9 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
 
       const candidateTagVal = classifiedTag?.candidateTagValue || manualInput.trim();
 
+      const isBarcode = idMethod === 'INTERNAL_BARCODE' || idMethod === 'EXISTING_BARCODE';
+      const resolvedTagFormat = isBarcode ? 'BARCODE' : (classifiedTag?.format || 'QR');
+
       const payload = {
         species_code: speciesCode,
         sex: sex,
@@ -382,7 +399,7 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
         tag_identification_method: idMethod,
         tag_value: hasExistingTag ? candidateTagVal : undefined,
         tag_payload: classifiedTag?.rawPayload || undefined,
-        tag_format: classifiedTag?.format || undefined,
+        tag_format: resolvedTagFormat,
         previous_vaccinations:
           hasPreviousVaccinations === 'YES' && vaccinationList.length > 0
             ? vaccinationList.map((v) => {
@@ -547,6 +564,22 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
                     {hasPreviousVaccinations === 'YES' ? `${vaccinationList.length} નોંધાયેલ` : 'ઉપલબ્ધ નથી'}
                   </span>
                 </div>
+              </div>
+
+              {/* Generated Barcode or QR Card with Instant Print & Download */}
+              <div className="max-w-md mx-auto pt-2 text-left">
+                <AnimalQrCard
+                  tagType={idMethod.includes('BARCODE') ? 'BARCODE' : 'QR'}
+                  barcodeValue={hasExistingTag ? (classifiedTag?.candidateTagValue || manualInput) : registeredSuccessAnimal.animal_code}
+                  token={(registeredSuccessAnimal as any).active_qr_token || (registeredSuccessAnimal as any).token || registeredSuccessAnimal.animal_code}
+                  animalCode={registeredSuccessAnimal.animal_code}
+                  speciesCode={speciesCode}
+                  sex={sex}
+                  tagNumber={hasExistingTag ? (classifiedTag?.candidateTagValue || manualInput) : undefined}
+                  farmerName={selectedFarmer?.full_name}
+                  villageName={selectedFarmer?.address_text || activeVillageId}
+                  showPrintActions={true}
+                />
               </div>
 
               <div className="pt-4 flex justify-center gap-3">
@@ -842,7 +875,9 @@ export const UniversalAnimalRegistrationModal: React.FC<UniversalAnimalRegistrat
                     </div>
                   )}
                   <p className="text-xs text-center text-slate-500">
-                    કેમેરા સામે કાનનો ભૌતિક ટેગ (QR અથવા Barcode) લાવો.
+                    {idMethod === 'EXISTING_BARCODE'
+                      ? 'કેમેરા સામે કાનનો ભૌતિક ૧D Barcode (લીટીઓ વાળી પટ્ટી) લાવો.'
+                      : 'કેમેરા સામે કાનનો ભૌતિક QR કોડ લાવો.'}
                   </p>
                 </div>
               )}

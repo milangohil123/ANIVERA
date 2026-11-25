@@ -11,6 +11,7 @@
  */
 
 import { generateUUID } from '../utils/uuid';
+import { apiCache } from '../utils/apiCache';
 
 export interface UserBasic {
   id: string;
@@ -65,6 +66,7 @@ class AuthService {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     } else {
       localStorage.removeItem(STORAGE_KEY);
+      apiCache.clear();
     }
     this.currentSession = session;
     this.notifyListeners();

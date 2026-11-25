@@ -100,6 +100,8 @@ class AnimalDetailResponse(AnimalResponse):
     verified_at: Optional[datetime] = None
     active_tag: Optional[str] = None
     active_qr_token: Optional[str] = None
+    tag_type: Optional[str] = Field("QR", description="Physical/digital tag format: QR or BARCODE")
+    tag_identification_method: Optional[str] = Field(None, description="EXISTING_QR, EXISTING_BARCODE, INTERNAL_QR, or INTERNAL_BARCODE")
     farmer_name: Optional[str] = None
     farmer_code: Optional[str] = None
     village_name: Optional[str] = None

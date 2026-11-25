@@ -20,7 +20,7 @@ from app.modules.animals.models import Animal
 from app.modules.authentication.models import User, UserVillageAssignment
 from app.modules.authorization.models import VaccinatorAuthorization
 from app.modules.authorization.service import AuthorizationService
-from app.modules.campaigns.models import Campaign, ScheduleVersion, CampaignAssignment, CampaignProgramme, CampaignVillage, CampaignAnimalTarget
+from app.modules.campaigns.models import Campaign, ScheduleVersion, CampaignAssignment, CampaignProgramme, CampaignVillage, CampaignAnimalTarget, CampaignVillageVerification
 from app.modules.campaigns.repository import CampaignRepository
 from app.modules.notifications.models import Notification
 from app.modules.notifications.service import NotificationService
@@ -28,6 +28,7 @@ from app.modules.campaigns.schemas import (
     CampaignActivateRequest,
     CampaignAssignmentCreate,
     CampaignAssignmentResponse,
+    CampaignBulkAssignWorkersRequest,
     CampaignCreate,
     CampaignCreationMetaResponse,
     CampaignDetailResponse,
@@ -39,6 +40,9 @@ from app.modules.campaigns.schemas import (
     CampaignRejectRequest,
     CampaignResponse,
     CampaignUpdate,
+    CampaignVillageVerificationItem,
+    CampaignVillageVerificationReviewRequest,
+    CampaignVillageVerificationSubmitRequest,
     PendingAnimalItem,
     PendingFarmerGroup,
     SpeciesItem,
@@ -244,6 +248,21 @@ class CampaignService:
             end_date=payload.end_date,
             created_by=current_user.id
         )
+
+        if payload.disease_code:
+            campaign.disease_code = payload.disease_code
+        if payload.vaccine_code:
+            campaign.vaccine_code = payload.vaccine_code
+        if payload.vaccine_name:
+            campaign.vaccine_name = payload.vaccine_name
+        if payload.custom_vaccine_name:
+            campaign.custom_vaccine_name = payload.custom_vaccine_name
+            campaign.is_custom_vaccine = True
+        elif payload.is_custom_vaccine:
+            campaign.is_custom_vaccine = True
+        if payload.species_codes:
+            campaign.species_codes = payload.species_codes
+        await self.db.flush()
 
         # Associate villages
         if payload.village_ids:
@@ -1052,7 +1071,7 @@ class CampaignService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Village not found")
 
         from app.modules.campaigns.models import CampaignAnimalTarget, CampaignProgramme
-        from app.modules.animals.models import Animal, AnimalExternalId, AnimalQRToken
+        from app.modules.animals.models import Animal, AnimalExternalIdentifier, AnimalQRToken
         from app.modules.farmers.models import Farmer
         from app.modules.vaccinations.models import AnimalEvent, VaccinationDetail
 
@@ -1143,13 +1162,17 @@ class CampaignService:
         tag_map: dict[uuid.UUID, str] = {}
         qr_map: dict[uuid.UUID, str] = {}
         if animal_ids:
-            tags_stmt = select(AnimalExternalId.animal_id, AnimalExternalId.id_value).where(
-                AnimalExternalId.animal_id.in_(animal_ids),
-                AnimalExternalId.id_type == "BHARAT_PASHUDHAN_12",
-                AnimalExternalId.revoked_at.is_(None)
+            tags_stmt = (
+                select(AnimalExternalIdentifier.animal_id, AnimalExternalIdentifier.id_value)
+                .where(
+                    AnimalExternalIdentifier.animal_id.in_(animal_ids),
+                    AnimalExternalIdentifier.status == "ACTIVE"
+                )
+                .order_by(AnimalExternalIdentifier.recorded_at.desc())
             )
             for a_id, val in (await self.db.execute(tags_stmt)).all():
-                tag_map[a_id] = val
+                if a_id not in tag_map:
+                    tag_map[a_id] = val
 
             qr_stmt = select(AnimalQRToken.animal_id, AnimalQRToken.token).where(
                 AnimalQRToken.animal_id.in_(animal_ids),
@@ -1409,6 +1432,15 @@ class CampaignService:
 
             assigned_at = n_match.created_at if n_match else campaign.created_at
 
+            # Fetch village verification details if available
+            verif_obj = await self.repo.get_village_verification(campaign.id, v_uuid)
+            verif_status = verif_obj.status if verif_obj else ("IN_PROGRESS" if vax_cnt > 0 else "ASSIGNED")
+            comp_notes = verif_obj.completion_notes if verif_obj else None
+            ev_urls = verif_obj.evidence_photo_urls if (verif_obj and verif_obj.evidence_photo_urls) else []
+            sub_at = verif_obj.submitted_at if verif_obj else None
+            ver_at = verif_obj.verified_at if verif_obj else None
+            rej_detail = (verif_obj.rejection_reason if verif_obj and verif_obj.rejection_reason else rej_reason)
+
             items.append(
                 VoCampaignAssignmentItem(
                     campaign_id=campaign.id,
@@ -1424,13 +1456,18 @@ class CampaignService:
                     village_name_en=village.name_en or village.code,
                     taluka_name=taluka.name_gu if taluka else None,
                     acceptance_status=acc,
-                    rejection_reason=rej_reason,
+                    rejection_reason=rej_detail,
                     assigned_at=assigned_at,
                     eligible_animals_count=el_cnt,
                     vaccinated_animals_count=vax_cnt,
                     pending_animals_count=rem_cnt,
                     species_names_gu=[p.species_code for p in prog_rows],
-                    assigned_fws=assigned_fws
+                    assigned_fws=assigned_fws,
+                    verification_status=verif_status,
+                    completion_notes=comp_notes,
+                    evidence_photo_urls=ev_urls,
+                    submitted_at=sub_at,
+                    verified_at=ver_at
                 )
             )
 
@@ -1738,6 +1775,9 @@ class CampaignService:
 
         from app.modules.vaccinations.models import AnimalEvent, VaccinationDetail
 
+        verif_rows = await self.repo.list_village_verifications(campaign.id)
+        verif_map = {v.village_id: v for v in verif_rows}
+
         village_items: List[CampaignMonitoringVillageItem] = []
         tot_eligible = 0
         tot_vaccinated = 0
@@ -1823,6 +1863,20 @@ class CampaignService:
                 for r in (await self.db.execute(fw_stmt)).all()
             ]
 
+            # Verification status & submission details
+            verif = verif_map.get(v_id)
+            if verif and verif.status:
+                v_verif_status = verif.status
+            elif v_vax > 0:
+                v_verif_status = "IN_PROGRESS"
+            elif assigned_vo or assigned_fws:
+                v_verif_status = "ASSIGNED"
+            else:
+                v_verif_status = "UNASSIGNED"
+
+            sub_user = await self.db.get(User, verif.submitted_by) if (verif and verif.submitted_by) else None
+            ver_user = await self.db.get(User, verif.verified_by) if (verif and verif.verified_by) else None
+
             village_items.append(
                 CampaignMonitoringVillageItem(
                     village_id=v_obj.id,
@@ -1832,18 +1886,39 @@ class CampaignService:
                     taluka_name=taluka.name_gu if taluka else None,
                     assigned_vo=assigned_vo,
                     vo_acceptance_status=acc_status,
-                    rejection_reason=rej_reason,
+                    rejection_reason=rej_reason or (verif.rejection_reason if verif else None),
                     assigned_at=assigned_dt,
                     eligible_count=v_eligible,
                     vaccinated_count=v_vax,
                     remaining_count=v_rem,
                     completion_percentage=v_pct,
-                    assigned_fws=assigned_fws
+                    assigned_fws=assigned_fws,
+                    verification_status=v_verif_status,
+                    submitted_at=verif.submitted_at if verif else None,
+                    submitted_by_name=sub_user.full_name if sub_user else None,
+                    completion_notes=verif.completion_notes if verif else None,
+                    evidence_photo_urls=verif.evidence_photo_urls if (verif and verif.evidence_photo_urls) else [],
+                    verified_at=verif.verified_at if verif else None,
+                    verified_by_name=ver_user.full_name if ver_user else None,
+                    verification_notes=verif.verification_notes if verif else None
                 )
             )
 
         tot_rem = max(0, tot_eligible - tot_vaccinated)
         overall_pct = round((tot_vaccinated / tot_eligible * 100), 1) if tot_eligible > 0 else 0.0
+
+        assigned_cnt = sum(1 for v in village_items if v.assigned_vo or v.assigned_fws)
+        in_prog_cnt = sum(1 for v in village_items if v.verification_status == "IN_PROGRESS" or (v.vaccinated_count > 0 and v.verification_status not in ("VERIFIED_COMPLETED", "SUBMITTED_FOR_VERIFICATION")))
+        sub_cnt = sum(1 for v in village_items if v.verification_status == "SUBMITTED_FOR_VERIFICATION")
+        ver_cnt = sum(1 for v in village_items if v.verification_status == "VERIFIED_COMPLETED")
+        rej_cnt = sum(1 for v in village_items if v.verification_status == "REJECTED")
+        unassigned_cnt = sum(1 for v in village_items if not v.assigned_vo and not v.assigned_fws)
+        staff_uids = set()
+        for v in village_items:
+            if v.assigned_vo:
+                staff_uids.add(v.assigned_vo.user_id)
+            for f in v.assigned_fws:
+                staff_uids.add(f.user_id)
 
         return CampaignMonitoringResponse(
             campaign_id=campaign.id,
@@ -1858,7 +1933,480 @@ class CampaignService:
             total_vaccinated_count=tot_vaccinated,
             total_remaining_count=tot_rem,
             overall_completion_percentage=overall_pct,
+            assigned_villages_count=assigned_cnt,
+            in_progress_villages_count=in_prog_cnt,
+            submitted_villages_count=sub_cnt,
+            verified_villages_count=ver_cnt,
+            rejected_villages_count=rej_cnt,
+            unassigned_villages_count=unassigned_cnt,
+            assigned_staff_count=len(staff_uids),
             villages=village_items
         )
+
+    async def assign_workers_bulk(
+        self,
+        campaign_id: uuid.UUID,
+        payload: CampaignBulkAssignWorkersRequest,
+        current_user: User,
+        client_ip: Optional[str] = None
+    ) -> List[CampaignAssignmentResponse]:
+        """Assign a staff member (VO or FW) to multiple campaign villages."""
+        await self.authz_service.assert_any_permission(
+            current_user,
+            ["campaign.assign_workers", "campaign.manage"],
+            ip=client_ip
+        )
+        campaign = await self.repo.get_campaign_by_id(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+        worker = await self.db.get(User, payload.worker_user_id)
+        if not worker or worker.role not in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO") or (worker.status and worker.status.upper() != "ACTIVE"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Target worker must be an active Field Worker or Veterinary Officer"
+            )
+
+        is_vo = worker.role in ("VET_OFFICER", "VO")
+        notif_service = NotificationService(self.db)
+        results = []
+
+        for v_id in payload.village_ids:
+            # Check village scope
+            await self.authz_service.assert_village_scope(current_user, v_id, ip=client_ip)
+
+            # Check existing active assignment
+            active_assign = await self.repo.get_active_assignment(
+                campaign_id=campaign.id,
+                village_id=v_id,
+                worker_user_id=payload.worker_user_id
+            )
+            if active_assign:
+                results.append(active_assign)
+                continue
+
+            assignment = await self.repo.create_assignment(
+                campaign_id=campaign.id,
+                village_id=v_id,
+                worker_user_id=payload.worker_user_id,
+                assigned_by=current_user.id
+            )
+            results.append(assignment)
+
+            # Ensure user_village_assignments
+            uva_stmt = select(UserVillageAssignment).where(
+                UserVillageAssignment.user_id == payload.worker_user_id,
+                UserVillageAssignment.village_id == v_id,
+                UserVillageAssignment.ended_at.is_(None)
+            )
+            if not (await self.db.execute(uva_stmt)).scalars().first():
+                self.db.add(UserVillageAssignment(
+                    id=uuid.uuid4(),
+                    user_id=payload.worker_user_id,
+                    village_id=v_id,
+                    assigned_by=current_user.id
+                ))
+
+            # Upsert CampaignVillageVerification
+            await self.repo.upsert_village_verification(
+                campaign_id=campaign.id,
+                village_id=v_id,
+                status="ASSIGNED",
+                assigned_vo_id=payload.worker_user_id if is_vo else None,
+                assigned_fw_id=payload.worker_user_id if not is_vo else None,
+            )
+
+            # In-app notification
+            try:
+                v_obj = await self.db.get(Village, v_id)
+                v_name = v_obj.name_gu or v_obj.name_en if v_obj else "ગામ"
+                await notif_service.notify(
+                    recipient_user_id=payload.worker_user_id,
+                    kind="CAMPAIGN_VO_ASSIGNMENT" if is_vo else "CAMPAIGN_STAFF_ALERT",
+                    message_key="CAMPAIGN_VO_ASSIGNMENT" if is_vo else "CAMPAIGN_STAFF_ALERT",
+                    params={
+                        "campaign_id": str(campaign.id),
+                        "campaign_code": campaign.code,
+                        "campaign_name": campaign.name,
+                        "village_id": str(v_id),
+                        "village_name": v_name,
+                        "assigned_by": current_user.full_name or current_user.username,
+                        "acceptance_status": "PENDING_ACCEPTANCE" if is_vo else "ACCEPTED",
+                        "assigned_at": datetime.now(timezone.utc).isoformat()
+                    },
+                    related_type="campaign",
+                    related_id=str(campaign.id)
+                )
+            except Exception as e:
+                logger.warning("Could not dispatch alert for bulk assign: %s", e)
+
+        await self.repo.record_audit_event(
+            action="CAMPAIGN_WORKER_BULK_ASSIGNED",
+            result="SUCCESS",
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            object_type="campaign_assignment",
+            object_id=str(campaign.id),
+            reason=f"Bulk assigned worker {worker.username} to {len(payload.village_ids)} villages",
+            ip=client_ip
+        )
+        await self.db.commit()
+        return [CampaignAssignmentResponse.model_validate(a) for a in results]
+
+    async def submit_village_verification(
+        self,
+        campaign_id: uuid.UUID,
+        village_id: uuid.UUID,
+        payload: CampaignVillageVerificationSubmitRequest,
+        current_user: User,
+        client_ip: Optional[str] = None
+    ) -> CampaignVillageVerificationItem:
+        """Field Worker or VO submits completed campaign village work for verification."""
+        await self.authz_service.assert_any_permission(
+            current_user,
+            ["vaccination.record", "campaign.manage", "field_worker.manage", "veterinary_officer.manage"],
+            ip=client_ip
+        )
+        campaign = await self.repo.get_campaign_by_id(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+        village = await self.db.get(Village, village_id)
+        if not village:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Village not found")
+
+        from app.modules.vaccinations.models import AnimalEvent, VaccinationDetail
+        from app.modules.animals.models import Animal
+
+        # Count actual vaccinations done in this village under this campaign
+        vax_stmt = select(func.count(func.distinct(AnimalEvent.animal_id))).select_from(AnimalEvent).join(
+            VaccinationDetail, AnimalEvent.event_id == VaccinationDetail.event_id
+        ).where(
+            AnimalEvent.village_id == village_id,
+            AnimalEvent.event_type == "VACCINATION",
+            (VaccinationDetail.campaign_id == campaign.id) |
+            ((VaccinationDetail.campaign_id.is_(None)) & (AnimalEvent.event_date >= (campaign.start_date or date(2020, 1, 1))))
+        )
+        vax_done = (await self.db.execute(vax_stmt)).scalar() or 0
+
+        # Total eligible animals in this village
+        prog_rows = await self.repo.get_campaign_programmes(campaign.id)
+        target_species = {p.species_code for p in prog_rows} or {"CATTLE", "BUFFALO"}
+        dyn_stmt = select(func.count(Animal.id)).where(
+            Animal.village_id == village_id,
+            Animal.status == "ACTIVE",
+            Animal.species_code.in_(target_species)
+        )
+        total_eligible = (await self.db.execute(dyn_stmt)).scalar() or 0
+        rem_count = max(0, total_eligible - vax_done)
+
+        visited_count = payload.animals_visited_count or vax_done
+        if vax_done == 0 and visited_count == 0 and not (payload.completion_notes or payload.field_observations):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ગામમાં કોઈ વાસ્તવિક રસીકરણ કે મુલાકાત નોંધાયેલ નથી. ચકાસણી માટે વાસ્તવિક રેકોર્ડ અથવા વિગત જરૂરી છે."
+            )
+
+        now_dt = datetime.now(timezone.utc)
+        verif = await self.repo.upsert_village_verification(
+            campaign_id=campaign_id,
+            village_id=village_id,
+            status="SUBMITTED_FOR_VERIFICATION",
+            animals_visited_count=max(visited_count, vax_done),
+            vaccinations_completed_count=vax_done,
+            pending_animals_count=rem_count,
+            field_observations=payload.field_observations,
+            completion_notes=payload.completion_notes,
+            evidence_photo_urls=payload.evidence_photo_urls or [],
+            submitted_by=current_user.id,
+            submitted_at=now_dt
+        )
+
+        # In-app notifications to TAHO and DAHO
+        try:
+            notif_service = NotificationService(self.db)
+            v_name = village.name_gu or village.name_en or village.code
+
+            from app.modules.authentication.models import TahoTalukaAssignment
+            taho_stmt = (
+                select(User.id)
+                .join(TahoTalukaAssignment, TahoTalukaAssignment.taho_user_id == User.id)
+                .where(
+                    TahoTalukaAssignment.taluka_id == village.taluka_id,
+                    TahoTalukaAssignment.ended_at.is_(None),
+                    User.role == "TAHO",
+                    User.status == "ACTIVE"
+                )
+            )
+            taho_ids = (await self.db.execute(taho_stmt)).scalars().all()
+            for tid in taho_ids:
+                await notif_service.notify(
+                    recipient_user_id=tid,
+                    kind="CAMPAIGN_VERIFICATION_SUBMITTED",
+                    message_key="CAMPAIGN_VERIFICATION_SUBMITTED",
+                    params={
+                        "campaign_id": str(campaign.id),
+                        "campaign_name": campaign.name,
+                        "village_id": str(village.id),
+                        "village_name": v_name,
+                        "submitted_by": current_user.full_name or current_user.username,
+                        "vaccinated_count": vax_done
+                    },
+                    related_type="campaign",
+                    related_id=str(campaign.id)
+                )
+
+            if campaign.created_by:
+                await notif_service.notify(
+                    recipient_user_id=campaign.created_by,
+                    kind="CAMPAIGN_VERIFICATION_SUBMITTED",
+                    message_key="CAMPAIGN_VERIFICATION_SUBMITTED",
+                    params={
+                        "campaign_id": str(campaign.id),
+                        "campaign_name": campaign.name,
+                        "village_id": str(village.id),
+                        "village_name": v_name,
+                        "submitted_by": current_user.full_name or current_user.username,
+                        "vaccinated_count": vax_done
+                    },
+                    related_type="campaign",
+                    related_id=str(campaign.id)
+                )
+        except Exception as e:
+            logger.warning("Could not send verification submission notifications: %s", e)
+
+        await self.repo.record_audit_event(
+            action="CAMPAIGN_WORK_SUBMITTED_FOR_VERIFICATION",
+            result="SUCCESS",
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            object_type="campaign_village_verification",
+            object_id=str(verif.id),
+            village_id=village_id,
+            reason=f"Submitted campaign verification for {v_name} with {vax_done} vaccinations",
+            ip=client_ip
+        )
+        await self.db.commit()
+
+        taluka = await self.db.get(Taluka, village.taluka_id) if village.taluka_id else None
+        return CampaignVillageVerificationItem(
+            id=verif.id,
+            campaign_id=campaign_id,
+            village_id=village_id,
+            village_name_gu=village.name_gu or village.code,
+            village_name_en=village.name_en or village.code,
+            village_code=village.code,
+            taluka_name=taluka.name_gu if taluka else None,
+            status=verif.status,
+            animals_visited_count=verif.animals_visited_count,
+            vaccinations_completed_count=verif.vaccinations_completed_count,
+            pending_animals_count=verif.pending_animals_count,
+            field_observations=verif.field_observations,
+            completion_notes=verif.completion_notes,
+            evidence_photo_urls=verif.evidence_photo_urls or [],
+            submitted_by=verif.submitted_by,
+            submitted_by_name=current_user.full_name or current_user.username,
+            submitted_at=verif.submitted_at
+        )
+
+    async def verify_village_completion(
+        self,
+        campaign_id: uuid.UUID,
+        village_id: uuid.UUID,
+        payload: CampaignVillageVerificationReviewRequest,
+        current_user: User,
+        client_ip: Optional[str] = None
+    ) -> CampaignVillageVerificationItem:
+        """DAHO or TAHO reviews, approves, rejects or reopens village campaign work."""
+        if current_user.role not in ("DAHO", "TAHO", "SYS_ADMIN", "SUPER_ADMIN"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only DAHO, TAHO or System Admin can verify campaign work")
+
+        await self.authz_service.assert_village_scope(current_user, village_id, ip=client_ip)
+
+        campaign = await self.repo.get_campaign_by_id(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+
+        village = await self.db.get(Village, village_id)
+        if not village:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Village not found")
+
+        v_name = village.name_gu or village.name_en or village.code
+        now_dt = datetime.now(timezone.utc)
+
+        if payload.action == "APPROVE":
+            new_status = "VERIFIED_COMPLETED"
+            verif = await self.repo.upsert_village_verification(
+                campaign_id=campaign_id,
+                village_id=village_id,
+                status=new_status,
+                verified_by=current_user.id,
+                verified_at=now_dt,
+                verification_notes=payload.verification_notes,
+                rejection_reason=None
+            )
+            audit_action = "CAMPAIGN_WORK_VERIFIED_COMPLETED"
+            notif_kind = "CAMPAIGN_VERIFICATION_APPROVED"
+        elif payload.action == "REJECT":
+            if not (payload.rejection_reason or payload.verification_notes):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="અસ્વીકાર માટે કારણ દાખલ કરવું ફરજિયાત છે.")
+            new_status = "REJECTED"
+            verif = await self.repo.upsert_village_verification(
+                campaign_id=campaign_id,
+                village_id=village_id,
+                status=new_status,
+                verified_by=current_user.id,
+                verified_at=now_dt,
+                rejection_reason=payload.rejection_reason or payload.verification_notes,
+                verification_notes=payload.verification_notes
+            )
+            audit_action = "CAMPAIGN_WORK_VERIFICATION_REJECTED"
+            notif_kind = "CAMPAIGN_VERIFICATION_REJECTED"
+        elif payload.action == "REOPEN":
+            new_status = "REOPENED"
+            verif = await self.repo.upsert_village_verification(
+                campaign_id=campaign_id,
+                village_id=village_id,
+                status=new_status,
+                reopened_by=current_user.id,
+                reopened_at=now_dt,
+                verification_notes=payload.verification_notes
+            )
+            audit_action = "CAMPAIGN_WORK_REOPENED"
+            notif_kind = "CAMPAIGN_VERIFICATION_REOPENED"
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification action")
+
+        # Notify assigned staff (VO and FW)
+        try:
+            notif_service = NotificationService(self.db)
+            staff_stmt = select(CampaignAssignment.worker_user_id).where(
+                CampaignAssignment.campaign_id == campaign_id,
+                CampaignAssignment.village_id == village_id,
+                CampaignAssignment.ended_at.is_(None)
+            )
+            staff_ids = set((await self.db.execute(staff_stmt)).scalars().all())
+            if verif.submitted_by:
+                staff_ids.add(verif.submitted_by)
+
+            for s_uid in staff_ids:
+                await notif_service.notify(
+                    recipient_user_id=s_uid,
+                    kind=notif_kind,
+                    message_key=notif_kind,
+                    params={
+                        "campaign_id": str(campaign.id),
+                        "campaign_name": campaign.name,
+                        "village_id": str(village.id),
+                        "village_name": v_name,
+                        "verifier_name": current_user.full_name or current_user.username,
+                        "action": payload.action,
+                        "status": new_status,
+                        "notes": payload.verification_notes or payload.rejection_reason or ""
+                    },
+                    related_type="campaign",
+                    related_id=str(campaign.id)
+                )
+        except Exception as e:
+            logger.warning("Could not dispatch verification status notifications: %s", e)
+
+        await self.repo.record_audit_event(
+            action=audit_action,
+            result="SUCCESS",
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            object_type="campaign_village_verification",
+            object_id=str(verif.id),
+            village_id=village_id,
+            reason=f"{payload.action} verification for village {v_name}: {payload.verification_notes or payload.rejection_reason or ''}",
+            ip=client_ip
+        )
+        await self.db.commit()
+
+        taluka = await self.db.get(Taluka, village.taluka_id) if village.taluka_id else None
+        sub_user = await self.db.get(User, verif.submitted_by) if verif.submitted_by else None
+        return CampaignVillageVerificationItem(
+            id=verif.id,
+            campaign_id=campaign_id,
+            village_id=village_id,
+            village_name_gu=village.name_gu or village.code,
+            village_name_en=village.name_en or village.code,
+            village_code=village.code,
+            taluka_name=taluka.name_gu if taluka else None,
+            status=verif.status,
+            animals_visited_count=verif.animals_visited_count,
+            vaccinations_completed_count=verif.vaccinations_completed_count,
+            pending_animals_count=verif.pending_animals_count,
+            field_observations=verif.field_observations,
+            completion_notes=verif.completion_notes,
+            evidence_photo_urls=verif.evidence_photo_urls or [],
+            submitted_by=verif.submitted_by,
+            submitted_by_name=sub_user.full_name if sub_user else None,
+            submitted_at=verif.submitted_at,
+            verified_by=verif.verified_by,
+            verified_by_name=current_user.full_name or current_user.username,
+            verified_at=verif.verified_at,
+            verification_notes=verif.verification_notes,
+            rejection_reason=verif.rejection_reason
+        )
+
+    async def list_village_verifications(
+        self,
+        campaign_id: uuid.UUID,
+        status_filter: Optional[str],
+        current_user: User,
+        client_ip: Optional[str] = None
+    ) -> List[CampaignVillageVerificationItem]:
+        """List village verification items for a campaign."""
+        await self.authz_service.assert_any_permission(
+            current_user,
+            ["campaign.view", "campaign.manage", "aggregate.view"],
+            ip=client_ip
+        )
+        verif_rows = await self.repo.list_village_verifications(campaign_id, status=status_filter)
+        results = []
+        for v in verif_rows:
+            v_obj = await self.db.get(Village, v.village_id)
+            taluka = await self.db.get(Taluka, v_obj.taluka_id) if (v_obj and v_obj.taluka_id) else None
+            sub_user = await self.db.get(User, v.submitted_by) if v.submitted_by else None
+            ver_user = await self.db.get(User, v.verified_by) if v.verified_by else None
+            vo_user = await self.db.get(User, v.assigned_vo_id) if v.assigned_vo_id else None
+
+            assigned_vo_brief = UserBrief(
+                user_id=vo_user.id,
+                full_name=vo_user.full_name,
+                username=vo_user.username,
+                designation=vo_user.designation
+            ) if vo_user else None
+
+            results.append(
+                CampaignVillageVerificationItem(
+                    id=v.id,
+                    campaign_id=v.campaign_id,
+                    village_id=v.village_id,
+                    village_name_gu=v_obj.name_gu or v_obj.code if v_obj else "",
+                    village_name_en=v_obj.name_en or v_obj.code if v_obj else "",
+                    village_code=v_obj.code if v_obj else "",
+                    taluka_name=taluka.name_gu if taluka else None,
+                    status=v.status,
+                    assigned_vo=assigned_vo_brief,
+                    assigned_fws=[],
+                    animals_visited_count=v.animals_visited_count,
+                    vaccinations_completed_count=v.vaccinations_completed_count,
+                    pending_animals_count=v.pending_animals_count,
+                    field_observations=v.field_observations,
+                    completion_notes=v.completion_notes,
+                    evidence_photo_urls=v.evidence_photo_urls or [],
+                    submitted_by=v.submitted_by,
+                    submitted_by_name=sub_user.full_name if sub_user else None,
+                    submitted_at=v.submitted_at,
+                    verified_by=v.verified_by,
+                    verified_by_name=ver_user.full_name if ver_user else None,
+                    verified_at=v.verified_at,
+                    verification_notes=v.verification_notes,
+                    rejection_reason=v.rejection_reason
+                )
+            )
+        return results
 
 

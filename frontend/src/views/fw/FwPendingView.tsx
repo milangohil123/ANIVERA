@@ -75,6 +75,14 @@ export const FwPendingView: React.FC = () => {
   const [vaxRemarks, setVaxRemarks] = useState('');
   const [isSubmittingVax, setIsSubmittingVax] = useState(false);
 
+  // Village Completion & Verification Workflow State
+  const [verificationData, setVerificationData] = useState<any | null>(null);
+  const [isSubmitVerifModalOpen, setIsSubmitVerifModalOpen] = useState(false);
+  const [verifVisitedCount, setVerifVisitedCount] = useState<number>(0);
+  const [verifNotes, setVerifNotes] = useState('');
+  const [verifPhotos, setVerifPhotos] = useState('');
+  const [isSubmittingVerif, setIsSubmittingVerif] = useState(false);
+
   // 1. Load Assigned Villages strictly from server
   useEffect(() => {
     let isMounted = true;
@@ -144,14 +152,21 @@ export const FwPendingView: React.FC = () => {
   const loadPendingList = async () => {
     if (!selectedCampaignId || !activeVillageId) {
       setPendingData(null);
+      setVerificationData(null);
       return;
     }
 
     setIsLoading(true);
     setNotice(null);
     try {
-      const data = await fwService.getPendingVaccinations(apiBaseUrl, selectedCampaignId, activeVillageId);
+      const [data, verifs] = await Promise.all([
+        fwService.getPendingVaccinations(apiBaseUrl, selectedCampaignId, activeVillageId),
+        fwService.listVillageVerifications(apiBaseUrl, selectedCampaignId).catch(() => []),
+      ]);
       setPendingData(data);
+      const curVerif = (verifs || []).find((v: any) => v.village_id === activeVillageId);
+      setVerificationData(curVerif || null);
+
       // Auto-expand farmers who have pending animals
       const autoExpanded: Record<string, boolean> = {};
       data.farmers.forEach((f) => {
@@ -166,8 +181,50 @@ export const FwPendingView: React.FC = () => {
         message: err instanceof Error ? err.message : 'બાકી રસીકરણ યાદી મેળવવામાં નિષ્ફળ.',
       });
       setPendingData(null);
+      setVerificationData(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSubmitVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCampaignId || !activeVillageId) return;
+
+    setIsSubmittingVerif(true);
+    try {
+      const photoUrls = verifPhotos
+        .split('\n')
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const res = await fwService.submitVillageVerification(
+        apiBaseUrl,
+        selectedCampaignId,
+        activeVillageId,
+        {
+          animals_visited_count: Number(verifVisitedCount) || (pendingData?.total_vaccinated || 0),
+          vaccinations_completed_count: pendingData?.total_vaccinated || 0,
+          pending_animals_count: pendingData?.total_remaining || 0,
+          completion_notes: verifNotes.trim() || undefined,
+          evidence_photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        }
+      );
+
+      setVerificationData(res);
+      setNotice({
+        type: 'success',
+        message: 'કામગીરી સફળતાપૂર્વક ચકાસણી માટે મોકલાઈ. DAHO/TAHO સમીક્ષા કરીને પ્રમાણિત કરશે.',
+      });
+      setIsSubmitVerifModalOpen(false);
+      await loadPendingList();
+    } catch (err) {
+      setNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'ચકાસણી સબમિશન નિષ્ફળ.',
+      });
+    } finally {
+      setIsSubmittingVerif(false);
     }
   };
 
@@ -406,6 +463,66 @@ export const FwPendingView: React.FC = () => {
                   style={{ width: `${Math.min(100, pendingData.completion_percentage)}%` }}
                 />
               </div>
+            </div>
+          )}
+
+          {/* Village Work Completion & Verification Status Bar */}
+          {pendingData && (
+            <div className="pt-3 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gray-50/80 p-3 rounded-xl border border-gray-200">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[#64748B]">કામગીરી સ્થિતિ:</span>
+                  {verificationData?.status === 'VERIFIED_COMPLETED' ? (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      પૂર્ણ અને પ્રમાણિત (મંજૂર)
+                    </span>
+                  ) : verificationData?.status === 'SUBMITTED_FOR_VERIFICATION' ? (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      ચકાસણી માટે મોકલેલ (પેન્ડિંગ)
+                    </span>
+                  ) : verificationData?.status === 'REJECTED' ? (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                      સુધારણા જરૂરી
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-300 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-500" />
+                      {pendingData.total_vaccinated > 0 ? 'કામગીરી ચાલુ છે (In Progress)' : 'સોંપાયેલ (Assigned)'}
+                    </span>
+                  )}
+                </div>
+                {verificationData?.rejection_reason && verificationData?.status === 'REJECTED' && (
+                  <p className="text-[11px] text-red-700 font-medium">
+                    કારણ: {verificationData.rejection_reason}
+                  </p>
+                )}
+                {verificationData?.status === 'VERIFIED_COMPLETED' && verificationData?.verified_at && (
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    પ્રમાણિત તારીખ: {new Date(verificationData.verified_at).toLocaleDateString('gu-IN')} {verificationData.verification_notes ? `• ${verificationData.verification_notes}` : ''}
+                  </p>
+                )}
+              </div>
+
+              <Button
+                size="sm"
+                variant={verificationData?.status === 'SUBMITTED_FOR_VERIFICATION' ? 'outline' : 'primary'}
+                onClick={() => {
+                  setVerifVisitedCount(pendingData.total_vaccinated || 0);
+                  setVerifNotes(verificationData?.completion_notes || '');
+                  setVerifPhotos((verificationData?.evidence_photo_urls || []).join('\n'));
+                  setIsSubmitVerifModalOpen(true);
+                }}
+                leftIcon={<CheckCircle2 className="w-3.5 h-3.5" />}
+              >
+                {verificationData?.status === 'SUBMITTED_FOR_VERIFICATION'
+                  ? 'સબમિશન વિગત જુઓ / અપડેટ કરો'
+                  : verificationData?.status === 'VERIFIED_COMPLETED'
+                  ? 'પ્રમાણિત વિગતો જુઓ'
+                  : 'પૂર્ણતા ચકાસણી માટે મોકલો'}
+              </Button>
             </div>
           )}
         </div>
@@ -709,6 +826,110 @@ export const FwPendingView: React.FC = () => {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Submit for Verification Modal */}
+      <Modal
+        isOpen={isSubmitVerifModalOpen}
+        onClose={() => setIsSubmitVerifModalOpen(false)}
+        title="ગામ રસીકરણ કામગીરી પૂર્ણતા ચકાસણી માટે મોકલો"
+      >
+        <form onSubmit={handleSubmitVerification} className="space-y-4 font-body">
+          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+            <p className="font-bold flex items-center gap-1.5">
+              <Megaphone className="w-3.5 h-3.5 text-[#135D43]" />
+              ઝુંબેશ ક્ષેત્રીય કામગીરી પ્રમાણીકરણ
+            </p>
+            <p className="text-[11px] text-emerald-800">
+              આ ફોર્મ સબમિટ કરવાથી સંબંધિત તાલુકા પશુપાલન અધિકારી (TAHO) અને DAHO ને સૂચના મળશે અને તેઓ તમારા કામનું મૂલ્યાંકન કરી સત્તાવાર મંજૂરી આપશે.
+            </p>
+          </div>
+
+          {/* Quick Progress Recap */}
+          {pendingData && (
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded-lg bg-gray-50 border">
+                <span className="text-[10px] text-gray-500 block">કુલ પાત્ર</span>
+                <strong className="text-gray-800">{pendingData.total_eligible}</strong>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <span className="text-[10px] text-emerald-700 block">રસીકરણ થયેલ</span>
+                <strong className="text-emerald-800">{pendingData.total_vaccinated}</strong>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-50 border border-amber-100">
+                <span className="text-[10px] text-amber-700 block">બાકી પશુઓ</span>
+                <strong className="text-amber-800">{pendingData.total_remaining}</strong>
+              </div>
+            </div>
+          )}
+
+          {verificationData?.status === 'REJECTED' && verificationData.rejection_reason && (
+            <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-900 space-y-1">
+              <span className="font-bold flex items-center gap-1 text-red-800">
+                <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                અગાઉ પુનઃતપાસ માટે મોકલાયેલ (કારણ):
+              </span>
+              <p className="text-[11px] font-medium">{verificationData.rejection_reason}</p>
+            </div>
+          )}
+
+          {verificationData?.status === 'VERIFIED_COMPLETED' && (
+            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+              <span className="font-bold flex items-center gap-1 text-emerald-800">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                આ ગામનું કામ પહેલેથી પ્રમાણિત થયેલ છે
+              </span>
+              <p className="text-[11px]">
+                ચકાસણી કરનાર: {verificationData.verified_by_name || 'અધિકારી'} • નોંધ: {verificationData.verification_notes || 'મંજૂર'}
+              </p>
+            </div>
+          )}
+
+          <FormField label="મુલાકાત લીધેલ પશુઓની સંખ્યા" required>
+            <input
+              type="number"
+              min={0}
+              value={verifVisitedCount}
+              onChange={(e) => setVerifVisitedCount(parseInt(e.target.value) || 0)}
+              disabled={verificationData?.status === 'VERIFIED_COMPLETED'}
+              className="w-full px-3 py-2 text-xs border rounded-lg font-mono"
+              required
+            />
+          </FormField>
+
+          <FormField label="ક્ષેત્રીય અવલોકન અને પૂર્ણતા નોંધ (Field Observations & Completion Notes)">
+            <textarea
+              rows={3}
+              value={verifNotes}
+              onChange={(e) => setVerifNotes(e.target.value)}
+              disabled={verificationData?.status === 'VERIFIED_COMPLETED'}
+              placeholder="દા.ત. ગામના તમામ પશુપાલકોના ઢોરની મુલાકાત લીધી, ૯૫% રસીકરણ લક્ષ્યાંક સિદ્ધ, બીમાર પશુઓની અલગ યાદી બનાવી..."
+              className="w-full px-3 py-2 text-xs border rounded-lg"
+            />
+          </FormField>
+
+          <FormField label="પુરાવા ફોટા લિંક / Evidence Photo URLs (પ્રતિ લાઇન એક URL)">
+            <textarea
+              rows={2}
+              value={verifPhotos}
+              onChange={(e) => setVerifPhotos(e.target.value)}
+              disabled={verificationData?.status === 'VERIFIED_COMPLETED'}
+              placeholder="https://example.com/field-photo-1.jpg&#10;https://example.com/field-photo-2.jpg"
+              className="w-full px-3 py-2 text-xs border rounded-lg font-mono text-[11px]"
+            />
+          </FormField>
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" type="button" onClick={() => setIsSubmitVerifModalOpen(false)}>
+              બંધ કરો
+            </Button>
+            {verificationData?.status !== 'VERIFIED_COMPLETED' && (
+              <Button variant="primary" type="submit" isLoading={isSubmittingVerif}>
+                {verificationData?.status === 'SUBMITTED_FOR_VERIFICATION' ? 'અપડેટ કરો' : 'ચકાસણી માટે મોકલો'}
+              </Button>
+            )}
+          </div>
+        </form>
       </Modal>
     </div>
   );

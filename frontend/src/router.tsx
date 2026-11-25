@@ -78,6 +78,7 @@ import { CoopCampsView } from './views/coop/CoopCampsView';
 import { CoopReportsView } from './views/coop/CoopReportsView';
 import { CoopProfileView } from './views/coop/CoopProfileView';
 import { AdminDashboard } from './views/admin/AdminDashboard';
+import { AdminMasterManagementView } from './views/admin/AdminMasterManagementView';
 import { AdminStateMapView } from './views/admin/AdminStateMapView';
 import { AdminGeographyView } from './views/admin/AdminGeographyView';
 import { AdminDahoView } from './views/admin/AdminDahoView';
@@ -281,6 +282,7 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/admin/overview" replace />} />
         <Route path="overview" element={<AdminDashboard />} />
+        <Route path="masters" element={<ProtectedRoute requiredPermission="system.settings.manage"><AdminMasterManagementView /></ProtectedRoute>} />
         <Route path="map" element={<ProtectedRoute requiredPermission="map.view"><AdminStateMapView /></ProtectedRoute>} />
         <Route path="geography" element={<ProtectedRoute requiredPermission="geo.state.manage"><AdminGeographyView /></ProtectedRoute>} />
         <Route path="daho" element={<ProtectedRoute requiredPermission="user.daho.create"><AdminDahoView /></ProtectedRoute>} />

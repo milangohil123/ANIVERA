@@ -503,11 +503,13 @@ export const FwAnimalsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Visual Scannable QR Code Card */}
-            {selectedAnimal.active_qr_token ? (
+            {/* Visual Scannable Tag Card (QR & 1D Barcode) */}
+            {selectedAnimal.active_qr_token || selectedAnimal.bharat_pashudhan_tag || (selectedAnimal as any).active_tag ? (
               <div className="space-y-2">
                 <AnimalQrCard
+                  tagType="BOTH"
                   token={selectedAnimal.active_qr_token}
+                  barcodeValue={selectedAnimal.bharat_pashudhan_tag || (selectedAnimal as any).active_tag || selectedAnimal.animal_code}
                   animalCode={selectedAnimal.animal_code}
                   speciesCode={selectedAnimal.species_code}
                   sex={selectedAnimal.sex}

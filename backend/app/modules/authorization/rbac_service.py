@@ -18,6 +18,7 @@ from app.modules.authorization.rbac_catalog import (
     ROLE_DEFINITIONS,
     get_role_aliases,
 )
+from app.modules.authorization.service import clear_scope_cache
 
 logger = logging.getLogger("pashurakshak.rbac.service")
 
@@ -190,6 +191,9 @@ class RbacService:
         self.db.add(audit)
         await self.db.commit()
 
+        # Invalidate in-memory RBAC scope cache across all users of these roles
+        clear_scope_cache()
+
         logger.info("Updated permissions for role %s: %d permissions", role, len(valid_codes))
         return {
             "status": "success",
@@ -340,6 +344,9 @@ class RbacService:
         )
         self.db.add(audit)
         await self.db.commit()
+
+        # Invalidate in-memory RBAC scope cache for this user
+        clear_scope_cache(user_id=user_id)
 
         logger.info("Assigned role %s to user %s (was %s)", new_role, user_id, old_role)
         return {

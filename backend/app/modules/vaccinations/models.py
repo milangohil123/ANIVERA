@@ -39,16 +39,18 @@ class AnimalEvent(Base):
     animal_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("animals.id"),
-        nullable=True
+        nullable=True,
+        index=True
     )
     flock_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     village_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("villages.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
-    event_type: Mapped[str] = mapped_column(Text, nullable=False)
-    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     performed_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),

@@ -8,6 +8,7 @@
  * - Authenticated token handling with automatic refresh
  */
 import { authService } from './authService';
+import { apiCache } from '../utils/apiCache';
 
 export interface DistrictSummary {
   id: string;
@@ -171,6 +172,9 @@ export interface StaffItem {
 }
 
 async function authFetch(apiBaseUrl: string, path: string, options: RequestInit = {}): Promise<Response> {
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
   let token = await authService.getValidAccessToken(apiBaseUrl);
   if (!token) {
     const session = authService.getSession();
@@ -195,23 +199,65 @@ async function authFetch(apiBaseUrl: string, path: string, options: RequestInit 
     }
   }
 
+  if (isMutation && res.ok) {
+    apiCache.invalidate();
+  }
+
   return res;
+}
+
+export async function cachedJsonFetch<T>(
+  apiBaseUrl: string,
+  path: string,
+  options: RequestInit = {},
+  ttlMs: number = 30000
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    const res = await authFetch(apiBaseUrl, path, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'વિનંતી નિષ્ફળ રહી' }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  const session = authService.getSession();
+  const userPrefix = session?.user?.id || 'guest';
+  const fullUrl = `${apiBaseUrl}${path}`;
+
+  return apiCache.fetchWithCache<T>(
+    fullUrl,
+    async () => {
+      const res = await authFetch(apiBaseUrl, path, options);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'માહિતી મેળવવામાં નિષ્ફળ' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    { ttlMs, userTokenPrefix: userPrefix }
+  );
 }
 
 export const adminService = {
   // 1. District Summary
   async getDistrictSummary(apiBaseUrl: string, districtId: string): Promise<DistrictSummary> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/summary`);
-    if (!res.ok) {
-      throw new Error(`જિલ્લા ઝાંખી લોડ કરવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<DistrictSummary>(
+      apiBaseUrl,
+      `/api/v1/administration/districts/${districtId}/summary`,
+      {},
+      30000
+    );
   },
 
   async listDistricts(apiBaseUrl: string): Promise<DistrictItem[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts?active_only=true`);
-    if (!res.ok) throw new Error(`જિલ્લા યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<DistrictItem[]>(
+      apiBaseUrl,
+      `/api/v1/administration/districts?active_only=true`,
+      {},
+      120000
+    );
   },
 
   async getActiveDistrict(apiBaseUrl: string): Promise<DistrictItem> {
@@ -231,9 +277,12 @@ export const adminService = {
   // 2. Talukas
   async listTalukas(apiBaseUrl: string, districtId?: string): Promise<TalukaItem[]> {
     const query = districtId ? `?district_id=${districtId}&limit=100` : '?limit=100';
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/talukas${query}`);
-    if (!res.ok) throw new Error(`તાલુકા યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<TalukaItem[]>(
+      apiBaseUrl,
+      `/api/v1/administration/talukas${query}`,
+      {},
+      60000
+    );
   },
 
   async createTaluka(
@@ -273,9 +322,12 @@ export const adminService = {
     if (districtId) params.append('district_id', districtId);
     if (talukaId) params.append('taluka_id', talukaId);
 
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/villages?${params.toString()}`);
-    if (!res.ok) throw new Error(`ગામ યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<VillageItem[]>(
+      apiBaseUrl,
+      `/api/v1/administration/villages?${params.toString()}`,
+      {},
+      60000
+    );
   },
 
   async createVillage(
@@ -567,6 +619,30 @@ export const adminService = {
     }
   },
 
+  async assignFWVillagesBulk(apiBaseUrl: string, fwUserId: string, villageIds: string[]): Promise<{ assigned_count: number; message: string }> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/assignments/fw-village/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: fwUserId, village_ids: villageIds }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ગામોની સામૂહિક સોંપણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async assignTahoStaffVillages(apiBaseUrl: string, userId: string, villageIds: string[]): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/staff/assign-villages`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, village_ids: villageIds }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'સ્ટાફ ગામ સોંપણી નિષ્ફળ' }));
+      throw new Error(err.detail || `સ્ટાફ ગામ સોંપણી નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
   async endFWVillage(apiBaseUrl: string, fwUserId: string, villageId: string): Promise<void> {
     const res = await authFetch(apiBaseUrl, `/api/v1/administration/assignments/fw-village/end`, {
       method: 'POST',
@@ -582,21 +658,21 @@ export const adminService = {
   // SUPER_ADMIN State-Level Administration Methods
   // ============================================================================
   async getSuperAdminOverview(apiBaseUrl: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/overview`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `સુપર એડમિન ડેશબોર્ડ ડેટા મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<any>(
+      apiBaseUrl,
+      `/api/v1/administration/super-admin/overview`,
+      {},
+      30000
+    );
   },
 
   async getSuperAdminCharts(apiBaseUrl: string): Promise<SuperAdminChartsData> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/super-admin/charts-analytics`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `ચાર્ટ્સ એનાલિટિક્સ ડેટા મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<SuperAdminChartsData>(
+      apiBaseUrl,
+      `/api/v1/administration/super-admin/charts-analytics`,
+      {},
+      45000
+    );
   },
 
   async createDahoAccount(apiBaseUrl: string, payload: {
@@ -645,12 +721,12 @@ export const adminService = {
   },
 
   async getDistrictHierarchy(apiBaseUrl: string, districtId: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/districts/${districtId}/hierarchy`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `જિલ્લા વહીવટી માળખું મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<any>(
+      apiBaseUrl,
+      `/api/v1/administration/districts/${districtId}/hierarchy`,
+      {},
+      60000
+    );
   },
 
   async saveCustomJurisdiction(apiBaseUrl: string, districtId: string, boundaryGeojson: any, reason: string): Promise<any> {
@@ -712,12 +788,12 @@ export const adminService = {
   },
 
   async getGujaratStateMap(apiBaseUrl: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/maps/state/gujarat`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `ગુજરાત રાજ્ય નકશો મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<any>(
+      apiBaseUrl,
+      `/api/v1/maps/state/gujarat`,
+      {},
+      600000 // 10 minutes cache for state GeoJSON
+    );
   },
 
   async listDistrictsGeoJson(apiBaseUrl: string): Promise<any> {
@@ -762,21 +838,21 @@ export const adminService = {
   },
 
   async getDistrictVillagesGeoJson(apiBaseUrl: string, districtId: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/maps/districts/${districtId}/villages-geojson`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `જિલ્લા ગામ પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<any>(
+      apiBaseUrl,
+      `/api/v1/maps/districts/${districtId}/villages-geojson`,
+      {},
+      600000
+    );
   },
 
   async getTalukaVillagesGeoJson(apiBaseUrl: string, talukaId: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/maps/talukas/${talukaId}/villages-geojson`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
-      throw new Error(err.detail || `ગામ પોલિગોન સીમાઓ મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    }
-    return res.json();
+    return cachedJsonFetch<any>(
+      apiBaseUrl,
+      `/api/v1/maps/talukas/${talukaId}/villages-geojson`,
+      {},
+      600000
+    );
   },
 
   async getGeographicQualityAudit(apiBaseUrl: string): Promise<any> {
@@ -881,18 +957,24 @@ export const adminService = {
   },
 
   async getDahoTalukas(apiBaseUrl: string, districtId: string): Promise<any[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/talukas?district_id=${districtId}`);
-    if (!res.ok) throw new Error('તાલુકા માહિતી મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any[]>(
+      apiBaseUrl,
+      `/api/v1/administration/daho/talukas?district_id=${districtId}`,
+      {},
+      30000
+    );
   },
 
   async searchTahoAccounts(apiBaseUrl: string, q?: string, districtId?: string): Promise<any[]> {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (districtId) params.set('district_id', districtId);
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/daho/taho-search?${params.toString()}`);
-    if (!res.ok) throw new Error('TAHO શોધ નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any[]>(
+      apiBaseUrl,
+      `/api/v1/administration/daho/taho-search?${params.toString()}`,
+      {},
+      15000
+    );
   },
 
   async createTahoAccount(apiBaseUrl: string, payload: any): Promise<any> {
@@ -938,15 +1020,11 @@ export const adminService = {
   // TAHO Operational Portal
   // ---------------------------------------------------------------------------
   async getTahoOverview(apiBaseUrl: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/overview`);
-    if (!res.ok) throw new Error('TAHO વિહંગાવલોકન મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/overview`, {}, 30000);
   },
 
   async getTahoHierarchy(apiBaseUrl: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/hierarchy`);
-    if (!res.ok) throw new Error('તાલુકા વહીવટી માળખું મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/hierarchy`, {}, 60000);
   },
 
   async getTahoGisAnalytics(apiBaseUrl: string, params?: Record<string, any>): Promise<any> {
@@ -959,21 +1037,15 @@ export const adminService = {
       });
     }
     const qs = q.toString() ? `?${q.toString()}` : '';
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/gis-analytics${qs}`);
-    if (!res.ok) throw new Error('GIS એનાલિટિક્સ મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/gis-analytics${qs}`, {}, 30000);
   },
 
   async getTahoVillageAnalytics(apiBaseUrl: string, villageId: string): Promise<any> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/village-analytics?village_id=${villageId}`);
-    if (!res.ok) throw new Error('ગામ વિશ્લેષણ મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/village-analytics?village_id=${villageId}`, {}, 30000);
   },
 
   async listTahoVos(apiBaseUrl: string): Promise<any[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers`);
-    if (!res.ok) throw new Error('વેટરનરી અધિકારીઓની યાદી મેળવવામાં નિષ્ફળ');
-    return res.json();
+    return cachedJsonFetch<any[]>(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers`, {}, 30000);
   },
 
   async createTahoVo(apiBaseUrl: string, payload: any): Promise<any> {

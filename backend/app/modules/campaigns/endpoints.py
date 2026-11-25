@@ -10,6 +10,7 @@ from app.modules.campaigns.schemas import (
     CampaignActivateRequest,
     CampaignAssignmentCreate,
     CampaignAssignmentResponse,
+    CampaignBulkAssignWorkersRequest,
     CampaignCreate,
     CampaignCreationMetaResponse,
     CampaignDetailResponse,
@@ -18,6 +19,9 @@ from app.modules.campaigns.schemas import (
     CampaignRejectRequest,
     CampaignResponse,
     CampaignUpdate,
+    CampaignVillageVerificationItem,
+    CampaignVillageVerificationReviewRequest,
+    CampaignVillageVerificationSubmitRequest,
     VoCampaignAssignmentItem,
 )
 from app.modules.campaigns.service import CampaignService
@@ -226,5 +230,73 @@ async def get_pending_vaccinations(
 ) -> CampaignPendingVaccinationsResponse:
     service = CampaignService(db)
     return await service.get_pending_vaccinations(campaign_id, village_id, current_user, _extract_ip(request))
+
+
+@router.post(
+    "/{campaign_id}/assignments/bulk",
+    response_model=List[CampaignAssignmentResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Assign a worker (VO or FW) to multiple campaign villages"
+)
+async def assign_workers_bulk(
+    campaign_id: uuid.UUID,
+    payload: CampaignBulkAssignWorkersRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> List[CampaignAssignmentResponse]:
+    service = CampaignService(db)
+    return await service.assign_workers_bulk(campaign_id, payload, current_user, _extract_ip(request))
+
+
+@router.post(
+    "/{campaign_id}/villages/{village_id}/submit-verification",
+    response_model=CampaignVillageVerificationItem,
+    summary="Submit completed campaign village work for verification"
+)
+async def submit_village_verification(
+    campaign_id: uuid.UUID,
+    village_id: uuid.UUID,
+    payload: CampaignVillageVerificationSubmitRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> CampaignVillageVerificationItem:
+    service = CampaignService(db)
+    return await service.submit_village_verification(campaign_id, village_id, payload, current_user, _extract_ip(request))
+
+
+@router.post(
+    "/{campaign_id}/villages/{village_id}/verify",
+    response_model=CampaignVillageVerificationItem,
+    summary="DAHO / TAHO verify, approve or reject village campaign work completion"
+)
+async def verify_village_completion(
+    campaign_id: uuid.UUID,
+    village_id: uuid.UUID,
+    payload: CampaignVillageVerificationReviewRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> CampaignVillageVerificationItem:
+    service = CampaignService(db)
+    return await service.verify_village_completion(campaign_id, village_id, payload, current_user, _extract_ip(request))
+
+
+@router.get(
+    "/{campaign_id}/verifications",
+    response_model=List[CampaignVillageVerificationItem],
+    summary="List village verification status for a campaign"
+)
+async def list_village_verifications(
+    campaign_id: uuid.UUID,
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status (ASSIGNED, IN_PROGRESS, SUBMITTED_FOR_VERIFICATION, VERIFIED_COMPLETED, REJECTED, REOPENED)"),
+    request: Request = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> List[CampaignVillageVerificationItem]:
+    service = CampaignService(db)
+    return await service.list_village_verifications(campaign_id, status_filter, current_user, _extract_ip(request))
+
 
 

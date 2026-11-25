@@ -19,7 +19,7 @@ import os
 import re
 import secrets
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import HTTPException, status
@@ -708,7 +708,7 @@ class TahoService:
             if v_id not in village_dis:
                 village_dis[v_id] = {"total": 0, "active": 0, "breakdown": {}}
             village_dis[v_id]["total"] += cnt
-            if st in ("REPORTED", "UNDER_INVESTIGATION"):
+            if st in ("SUBMITTED", "UNDER_REVIEW", "ASSIGNED", "REPORTED", "UNDER_INVESTIGATION", "CONFIRMED", "TREATED_PENDING_VERIFICATION"):
                 village_dis[v_id]["active"] += cnt
             village_dis[v_id]["breakdown"][d_c] = village_dis[v_id]["breakdown"].get(d_c, 0) + cnt
 
@@ -806,14 +806,14 @@ class TahoService:
                     fill_color = "#10B981"
                     status_label = "કોઈ કેસ નથી (Case-Free)"
                 elif dis_cnt <= 2:
-                    fill_color = "#F59E0B"
-                    status_label = "ઓછા કેસો (1-2 Cases)"
-                elif dis_cnt <= 5:
-                    fill_color = "#F97316"
-                    status_label = "મધ્યમ એકાગ્રતા (3-5 Cases)"
-                else:
                     fill_color = "#EF4444"
-                    status_label = "ઉચ્ચ એકાગ્રતા (>5 Cases)"
+                    status_label = f"સક્રિય રોગ કેસ એલર્ટ ({dis_cnt} Cases)"
+                elif dis_cnt <= 5:
+                    fill_color = "#DC2626"
+                    status_label = f"મધ્યમ રોગ એકાગ્રતા ({dis_cnt} Cases)"
+                else:
+                    fill_color = "#991B1B"
+                    status_label = f"ઉચ્ચ રોગ ક્લસ્ટર (>5 Cases)"
 
             elif layer_mode == "pending":
                 if pending_count <= 5:
@@ -915,6 +915,9 @@ class TahoService:
                 "assigned_vos": st_data["vos"],
                 "assigned_fws": st_data["fws"],
                 "campaigns": camps,
+                "has_active_disease": bool(dis_cnt > 0 or dis_data.get("active", 0) > 0),
+                "active_disease_count": dis_cnt,
+                "active_diseases": list(dis_data.get("breakdown", {}).keys()),
                 "fill_color": fill_color,
                 "status_label": status_label,
                 "matches_filter": matches_filter
@@ -925,9 +928,9 @@ class TahoService:
         if layer_mode == "disease":
             legend = [
                 {"label": "કોઈ કેસ નથી (Case-Free)", "color": "#10B981", "threshold": "0 રિપોર્ટ્સ", "count": legend_counts.get("કોઈ કેસ નથી (Case-Free)", 0)},
-                {"label": "ઓછા કેસો (Low)", "color": "#F59E0B", "threshold": "1 થી 2 કેસ", "count": legend_counts.get("ઓછા કેસો (1-2 Cases)", 0)},
-                {"label": "મધ્યમ એકાગ્રતા (Moderate)", "color": "#F97316", "threshold": "3 થી 5 કેસ", "count": legend_counts.get("મધ્યમ એકાગ્રતા (3-5 Cases)", 0)},
-                {"label": "ઉચ્ચ એકાગ્રતા (>5 Cases)", "color": "#EF4444", "threshold": "> 5 કેસ", "count": legend_counts.get("ઉચ્ચ એકાગ્રતા (>5 Cases)", 0)},
+                {"label": "સક્રિય રોગ કેસ એલર્ટ (Active Alert)", "color": "#EF4444", "threshold": "1 થી 2 કેસ", "count": sum(c for k, c in legend_counts.items() if "1-2" in k or "એલર્ટ" in k)},
+                {"label": "મધ્યમ એકાગ્રતા (Moderate Cluster)", "color": "#DC2626", "threshold": "3 થી 5 કેસ", "count": sum(c for k, c in legend_counts.items() if "3-5" in k or "મધ્યમ" in k)},
+                {"label": "ઉચ્ચ રોગ ક્લસ્ટર (>5 Cases)", "color": "#991B1B", "threshold": "> 5 કેસ", "count": sum(c for k, c in legend_counts.items() if ">5" in k or "ઉચ્ચ" in k)},
             ]
         elif layer_mode == "pending":
             legend = [
@@ -1641,6 +1644,108 @@ class TahoService:
 
         return {"status": "SUCCESS", "user_id": str(fw.id), "new_status": new_status}
 
+    async def assign_staff_villages(
+        self,
+        taho_user: User,
+        user_id: uuid.UUID,
+        village_ids: List[uuid.UUID],
+        client_ip: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Assign or reassign multiple villages for a VO or FW within the TAHO's jurisdiction."""
+        taluka, district = await self.get_taho_taluka(taho_user)
+
+        target_user = (await self.db.execute(
+            select(User).where(User.id == user_id, User.role.in_(["VET_OFFICER", "FIELD_WORKER"]))
+        )).scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member (VO/FW) not found.")
+
+        # Validate that requested villages belong to this taluka
+        valid_villages = list((await self.db.execute(
+            select(Village).where(Village.id.in_(village_ids), Village.taluka_id == taluka.id)
+        )).scalars().all())
+        valid_ids_set = {v.id for v in valid_villages}
+
+        # Current active assignments in this taluka
+        current_assignments = list((await self.db.execute(
+            select(UserVillageAssignment)
+            .join(Village, UserVillageAssignment.village_id == Village.id)
+            .where(
+                UserVillageAssignment.user_id == user_id,
+                Village.taluka_id == taluka.id,
+                UserVillageAssignment.ended_at.is_(None)
+            )
+        )).scalars().all())
+        current_assigned_vids = {a.village_id: a for a in current_assignments}
+
+        now_dt = datetime.now(timezone.utc)
+
+        # End assignments for villages that were unselected
+        for vid, asgn in current_assigned_vids.items():
+            if vid not in valid_ids_set:
+                asgn.ended_at = now_dt
+
+        # Add new assignments for newly selected villages
+        assigned_names = []
+        for v in valid_villages:
+            assigned_names.append(v.name_gu or v.name_en or v.code)
+            if v.id not in current_assigned_vids:
+                new_asgn = UserVillageAssignment(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    village_id=v.id,
+                    assigned_by=taho_user.id,
+                    assigned_at=now_dt
+                )
+                self.db.add(new_asgn)
+
+        # If FW, ensure VaccinatorAuthorization exists
+        if target_user.role == "FIELD_WORKER":
+            from app.modules.authorization.models import VaccinatorAuthorization
+            vauth_stmt = select(VaccinatorAuthorization).where(
+                VaccinatorAuthorization.user_id == user_id,
+                VaccinatorAuthorization.status == "APPROVED"
+            )
+            existing_vauth = (await self.db.execute(vauth_stmt)).scalars().first()
+            if not existing_vauth:
+                new_vauth = VaccinatorAuthorization(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    authority_type="GOVERNMENT_FIELD_WORKER",
+                    status="APPROVED",
+                    authorization_reference=f"TAHO-ASSIGN-{taluka.code}",
+                    authorized_by_name=taho_user.full_name or taho_user.username or "TAHO",
+                    requested_by=taho_user.id,
+                    approved_by=taho_user.id,
+                    approved_at=now_dt,
+                    valid_from=date.today(),
+                    valid_to=None
+                )
+                self.db.add(new_vauth)
+
+        # Audit
+        audit = AuditEvent(
+            actor_user_id=taho_user.id,
+            actor_role=taho_user.role,
+            action="STAFF_VILLAGES_ASSIGNED",
+            object_type="user",
+            object_id=str(user_id),
+            result="SUCCESS",
+            reason=f"Assigned {len(valid_villages)} villages to {target_user.role} {target_user.username}",
+            after_state={"user_id": str(user_id), "village_ids": [str(v.id) for v in valid_villages]},
+            ip=client_ip
+        )
+        self.db.add(audit)
+        await self.db.commit()
+
+        return {
+            "status": "SUCCESS",
+            "user_id": str(user_id),
+            "assigned_village_ids": [str(v.id) for v in valid_villages],
+            "assigned_village_names": assigned_names,
+            "assigned_count": len(valid_villages)
+        }
+
     # ==========================================================================
     # 5. Taluka Campaign Management
     # ==========================================================================
@@ -1750,10 +1855,23 @@ class TahoService:
             await self.db.flush()
             sched_id = def_sched.id
 
+        disease_code = payload.get("disease_code") or "FMD"
+        species_codes = payload.get("species_codes") or ["CATTLE", "BUFFALO"]
+        vaccine_code = payload.get("vaccine_code")
+        vaccine_name = payload.get("vaccine_name")
+        custom_vaccine_name = payload.get("custom_vaccine_name")
+        is_custom_vaccine = bool(payload.get("is_custom_vaccine") or custom_vaccine_name)
+
         new_camp = Campaign(
             id=uuid.uuid4(),
             code=code,
             name=name,
+            disease_code=disease_code,
+            vaccine_code=vaccine_code,
+            vaccine_name=vaccine_name,
+            custom_vaccine_name=custom_vaccine_name,
+            is_custom_vaccine=is_custom_vaccine,
+            species_codes=species_codes,
             status="ACTIVE",
             schedule_version_id=sched_id,
             activated_by=taho_user.id,
@@ -1775,7 +1893,7 @@ class TahoService:
             self.db.add(cv)
 
         # Add programmes
-        for sp in ["CATTLE", "BUFFALO"]:
+        for sp in species_codes:
             cp = CampaignProgramme(
                 campaign_id=new_camp.id,
                 species_code=sp,

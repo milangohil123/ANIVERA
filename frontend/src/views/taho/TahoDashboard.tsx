@@ -121,11 +121,23 @@ export const TahoDashboard: React.FC = () => {
     };
   }, [overview, talukaNameGu, districtNameGu]);
 
-  if (isLoading) {
+  if (isLoading && !overview) {
     return (
-      <div className="p-12 text-center space-y-3">
-        <div className="w-9 h-9 border-3 border-emerald-700 border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="text-xs text-slate-500 font-medium">તાલુકા વહીવટી ડેટા અને ગામ સીમાઓ લોડ થઈ રહી છે...</p>
+      <div className="space-y-5 max-w-7xl mx-auto pb-12 font-body text-slate-800 animate-pulse">
+        <div className="space-y-2">
+          <div className="h-4 w-64 bg-slate-200 rounded" />
+          <div className="h-8 w-96 bg-slate-200 rounded-lg" />
+        </div>
+        <div className="h-16 w-full bg-slate-200 rounded-xl" />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-28 bg-slate-200 rounded-xl" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2 h-72 bg-slate-200 rounded-xl" />
+          <div className="h-72 bg-slate-200 rounded-xl" />
+        </div>
       </div>
     );
   }

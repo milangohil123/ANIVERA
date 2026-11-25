@@ -15,7 +15,6 @@ import {
   X,
   Clock,
   CheckCircle2,
-  AlertCircle,
   Syringe,
   Stethoscope,
   HeartPulse,
@@ -65,7 +64,7 @@ export const FarmerAnimalDetailModal: React.FC<FarmerAnimalDetailModalProps> = (
           setVaccinations(vacs);
           setTreatments(treats);
           setTransfers(trans);
-          setTimeline(timeData?.events || []);
+          setTimeline(Array.isArray(timeData) ? timeData : (timeData as any)?.events || []);
         }
       } catch (err: any) {
         if (isMounted) {

@@ -180,6 +180,19 @@ class AnimalService:
         farmer = await self.db.get(Farmer, animal.farmer_id)
         village = await self.db.get(Village, animal.village_id)
 
+        # Determine tag_type and method
+        tag_type = "QR"
+        tag_method = None
+        if ext_tag:
+            tag_type = "BARCODE"
+            if ext_tag.id_value == animal.animal_code:
+                tag_method = "INTERNAL_BARCODE"
+            else:
+                tag_method = "EXISTING_BARCODE"
+        elif qr:
+            tag_type = "QR"
+            tag_method = "INTERNAL_QR"
+
         return AnimalDetailResponse(
             id=animal.id,
             animal_code=animal.animal_code,
@@ -203,6 +216,8 @@ class AnimalService:
             verified_at=animal.verified_at,
             active_tag=ext_tag.id_value if ext_tag else None,
             active_qr_token=qr.token if qr else None,
+            tag_type=tag_type,
+            tag_identification_method=tag_method,
             farmer_name=farmer.full_name if farmer else None,
             farmer_code=farmer.farmer_code if farmer else None,
             village_name=village.name_en if village else None
@@ -492,15 +507,19 @@ class AnimalService:
             changed_by=current_user.id
         )
 
-        # 7. Record physical tag if provided (conforming strictly to DB check constraint: BHARAT_PASHUDHAN_12 or OTHER_EAR_TAG)
-        if candidate_tag:
-            is_12_digit = bool(re.match(r"^\d{12}$", candidate_tag))
+        # 7. Record physical tag if provided, or if INTERNAL_BARCODE was chosen
+        barcode_to_record = candidate_tag
+        if not barcode_to_record and payload.tag_identification_method == "INTERNAL_BARCODE":
+            barcode_to_record = animal.animal_code
+
+        if barcode_to_record:
+            is_12_digit = bool(re.match(r"^\d{12}$", barcode_to_record))
             tag_id_type = "BHARAT_PASHUDHAN_12" if (payload.bharat_pashudhan_tag or is_12_digit) else "OTHER_EAR_TAG"
 
             await self.repo.add_external_identifier(
                 animal_id=animal.id,
                 id_type=tag_id_type,
-                id_value=candidate_tag,
+                id_value=barcode_to_record,
                 recorded_by=current_user.id
             )
 

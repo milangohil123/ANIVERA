@@ -66,9 +66,34 @@ export function getRolePrefix(role: NormalizedRole): string {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<AuthSession | null>(() => authService.getSession());
-  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
-  const [scope, setScope] = useState<UserScopeResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [profile, setProfile] = useState<UserProfileResponse | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('pashurakshak_cached_profile');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [scope, setScope] = useState<UserScopeResponse | null>(() => {
+    try {
+      const raw = sessionStorage.getItem('pashurakshak_cached_scope');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    const active = authService.getSession();
+    if (!active) return false;
+    try {
+      const cachedProf = sessionStorage.getItem('pashurakshak_cached_profile');
+      const cachedScp = sessionStorage.getItem('pashurakshak_cached_scope');
+      // If we have cached profile and scope, render immediately without blocking!
+      return !(cachedProf && cachedScp);
+    } catch {
+      return true;
+    }
+  });
   const [selectedDistrictId, setSelectedDistrictIdState] = useState<string | null>(() => {
     return sessionStorage.getItem('pashurakshak_selected_district_id');
   });
@@ -159,24 +184,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             fetch(`${apiBaseUrl}/api/v1/rbac/scope`, { headers: retryHeaders }),
           ]);
           if (p2.ok) {
-            setProfile(await p2.json());
+            const p2Data = await p2.json();
+            setProfile(p2Data);
+            sessionStorage.setItem('pashurakshak_cached_profile', JSON.stringify(p2Data));
           } else {
             // Authentication permanently invalid; clear session immediately
             await authService.logout(apiBaseUrl);
+            sessionStorage.removeItem('pashurakshak_cached_profile');
+            sessionStorage.removeItem('pashurakshak_cached_scope');
             setSession(null);
             setProfile(null);
             setScope(null);
             return;
           }
           if (s2.ok) {
-            setScope(await s2.json());
+            const s2Data = await s2.json();
+            setScope(s2Data);
+            sessionStorage.setItem('pashurakshak_cached_scope', JSON.stringify(s2Data));
           } else {
             // Fail closed on scope failure
             setScope(null);
+            sessionStorage.removeItem('pashurakshak_cached_scope');
           }
         } catch {
           // Token refresh failed; clear session and fail closed
           await authService.logout(apiBaseUrl);
+          sessionStorage.removeItem('pashurakshak_cached_profile');
+          sessionStorage.removeItem('pashurakshak_cached_scope');
           setSession(null);
           setProfile(null);
           setScope(null);
@@ -185,17 +219,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else if (resProfile.status === 403 || !resProfile.ok) {
         // Account is locked, inactive, or not found; fail closed
         await authService.logout(apiBaseUrl);
+        sessionStorage.removeItem('pashurakshak_cached_profile');
+        sessionStorage.removeItem('pashurakshak_cached_scope');
         setSession(null);
         setProfile(null);
         setScope(null);
         return;
       } else {
-        setProfile(await resProfile.json());
+        const pData = await resProfile.json();
+        setProfile(pData);
+        sessionStorage.setItem('pashurakshak_cached_profile', JSON.stringify(pData));
         if (resScope.ok) {
-          setScope(await resScope.json());
+          const sData = await resScope.json();
+          setScope(sData);
+          sessionStorage.setItem('pashurakshak_cached_scope', JSON.stringify(sData));
         } else {
           // Fail closed on scope failure: zero permissions granted
           setScope(null);
+          sessionStorage.removeItem('pashurakshak_cached_scope');
         }
       }
     } catch (err) {
@@ -211,6 +252,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!newSession) {
         setProfile(null);
         setScope(null);
+        sessionStorage.removeItem('pashurakshak_cached_profile');
+        sessionStorage.removeItem('pashurakshak_cached_scope');
         setIsLoading(false);
       } else {
         fetchProfileAndScope(newSession).finally(() => setIsLoading(false));

@@ -1,9 +1,11 @@
 """PashuRakshak FastAPI Application Entrypoint."""
 from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import logger, setup_logging
@@ -48,6 +50,12 @@ if settings.BACKEND_CORS_ORIGINS:
 
 # Include API v1 Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Ensure storage directories exist and mount static storage
+storage_root = os.path.abspath(settings.STORAGE_LOCAL_ROOT)
+os.makedirs(storage_root, exist_ok=True)
+os.makedirs(os.path.abspath(settings.DISEASE_ATTACHMENTS_DIR), exist_ok=True)
+app.mount("/storage", StaticFiles(directory=storage_root), name="storage")
 
 
 @app.exception_handler(RequestValidationError)

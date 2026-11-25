@@ -25,6 +25,10 @@ class Species(Base):
     code: Mapped[str] = mapped_column(Text, primary_key=True)
     name_gu: Mapped[str] = mapped_column(Text, nullable=False)
     name_en: Mapped[str] = mapped_column(Text, nullable=False)
+    name_hi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     breeds: Mapped[List["Breed"]] = relationship("Breed", back_populates="species")

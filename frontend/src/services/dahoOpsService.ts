@@ -8,8 +8,12 @@
  * - Disease Surveillance (/api/v1/disease-reports)
  */
 import { authService } from './authService';
+import { apiCache } from '../utils/apiCache';
 
 async function authFetch(apiBaseUrl: string, path: string, options: RequestInit = {}): Promise<Response> {
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
   let token = await authService.getValidAccessToken(apiBaseUrl);
   if (!token) {
     const session = authService.getSession();
@@ -34,7 +38,45 @@ async function authFetch(apiBaseUrl: string, path: string, options: RequestInit 
     }
   }
 
+  if (isMutation && res.ok) {
+    apiCache.invalidate();
+  }
+
   return res;
+}
+
+export async function cachedJsonFetch<T>(
+  apiBaseUrl: string,
+  path: string,
+  options: RequestInit = {},
+  ttlMs: number = 30000
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    const res = await authFetch(apiBaseUrl, path, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(formatApiError(err, `HTTP ${res.status}`));
+    }
+    return res.json();
+  }
+
+  const session = authService.getSession();
+  const userPrefix = session?.user?.id || 'guest';
+  const fullUrl = `${apiBaseUrl}${path}`;
+
+  return apiCache.fetchWithCache<T>(
+    fullUrl,
+    async () => {
+      const res = await authFetch(apiBaseUrl, path, options);
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(formatApiError(err, `HTTP ${res.status}`));
+      }
+      return res.json();
+    },
+    { ttlMs, userTokenPrefix: userPrefix }
+  );
 }
 
 export interface SpeciesOption {
@@ -98,6 +140,9 @@ export interface MonitoringVillageItem {
     username?: string;
     designation?: string;
   }>;
+  verification_status?: string | null;
+  completion_notes?: string | null;
+  evidence_photo_urls?: string[];
 }
 
 export interface CampaignMonitoringData {
@@ -113,6 +158,11 @@ export interface CampaignMonitoringData {
   total_vaccinated_count: number;
   total_remaining_count: number;
   overall_completion_percentage: number;
+  assigned_villages_count?: number;
+  in_progress_villages_count?: number;
+  submitted_villages_count?: number;
+  verified_villages_count?: number;
+  rejected_villages_count?: number;
   villages: MonitoringVillageItem[];
 }
 
@@ -223,16 +273,22 @@ function formatApiError(data: any, fallback: string): string {
 export const dahoOpsService = {
   // 1. Campaigns
   async getCreationMeta(apiBaseUrl: string): Promise<CampaignCreationMeta> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/meta/creation-context`);
-    if (!res.ok) throw new Error(`ઝુંબેશ માસ્ટર ડેટા મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<CampaignCreationMeta>(
+      apiBaseUrl,
+      `/api/v1/campaigns/meta/creation-context`,
+      {},
+      60000
+    );
   },
 
   async listCampaigns(apiBaseUrl: string, status?: string): Promise<CampaignItem[]> {
     const query = status ? `?status=${status}&limit=100` : '?limit=100';
-    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns${query}`);
-    if (!res.ok) throw new Error(`ઝુંબેશ યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<CampaignItem[]>(
+      apiBaseUrl,
+      `/api/v1/campaigns${query}`,
+      {},
+      30000
+    );
   },
 
   async createCampaign(
@@ -241,6 +297,10 @@ export const dahoOpsService = {
       code: string;
       name: string;
       disease_code?: string;
+      vaccine_code?: string;
+      vaccine_name?: string;
+      custom_vaccine_name?: string;
+      is_custom_vaccine?: boolean;
       start_date?: string;
       end_date?: string;
       target_animals_count?: number;
@@ -262,9 +322,12 @@ export const dahoOpsService = {
   },
 
   async getCampaignMonitoring(apiBaseUrl: string, campaignId: string): Promise<CampaignMonitoringData> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/monitoring`);
-    if (!res.ok) throw new Error(`ઝુંબેશ મોનિટરિંગ માહિતી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<CampaignMonitoringData>(
+      apiBaseUrl,
+      `/api/v1/campaigns/${campaignId}/monitoring`,
+      {},
+      20000
+    );
   },
 
   async activateCampaign(
@@ -377,19 +440,26 @@ export const dahoOpsService = {
   },
 
   async listLots(apiBaseUrl: string): Promise<VaccineLotItem[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/vaccine-inventory/lots?limit=100`);
-    if (!res.ok) {
-      // Return empty if endpoint not populated yet
+    try {
+      return await cachedJsonFetch<VaccineLotItem[]>(
+        apiBaseUrl,
+        `/api/v1/vaccine-inventory/lots?limit=100`,
+        {},
+        30000
+      );
+    } catch {
       return [];
     }
-    return res.json();
   },
 
   // 4. Disease Surveillance
   async listDiseaseReports(apiBaseUrl: string): Promise<DiseaseReportItem[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/disease-reports?limit=100`);
-    if (!res.ok) throw new Error(`રોગ અહેવાલો મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await cachedJsonFetch<any[]>(
+      apiBaseUrl,
+      `/api/v1/disease-reports?limit=100`,
+      {},
+      30000
+    ).catch(() => []);
     if (!Array.isArray(data)) return [];
     return data.map((r: any) => {
       const actualId = r.id || r.report_id || '';
@@ -436,6 +506,79 @@ export const dahoOpsService = {
       const err = await res.json().catch(() => null);
       throw new Error(formatApiError(err, 'કાર્યકર સોંપણી નિષ્ફળ.'));
     }
+    return res.json();
+  },
+
+  async assignCampaignWorkersBulk(
+    apiBaseUrl: string,
+    campaignId: string,
+    payload: { village_ids: string[]; worker_user_id: string; role_type?: string }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/assignments/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(formatApiError(err, 'બહુવિધ ગામોની કાર્યકર સોંપણી નિષ્ફળ.'));
+    }
+    return res.json();
+  },
+
+  // 6. Campaign Village Verification Workflow
+  async submitVillageVerification(
+    apiBaseUrl: string,
+    campaignId: string,
+    villageId: string,
+    payload: {
+      animals_visited_count?: number;
+      vaccinations_completed_count?: number;
+      pending_animals_count?: number;
+      field_observations?: string;
+      completion_notes?: string;
+      evidence_photo_urls?: string[];
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/villages/${villageId}/submit-verification`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(formatApiError(err, 'કામગીરી ચકાસણી સબમિશન નિષ્ફળ.'));
+    }
+    return res.json();
+  },
+
+  async verifyVillageCompletion(
+    apiBaseUrl: string,
+    campaignId: string,
+    villageId: string,
+    payload: {
+      decision: 'APPROVE' | 'REJECT' | 'REOPEN';
+      review_notes?: string;
+      rejection_reason?: string;
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/villages/${villageId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(formatApiError(err, 'ચકાસણી સમીક્ષા નિર્ણય નિષ્ફળ.'));
+    }
+    return res.json();
+  },
+
+  async listVillageVerifications(
+    apiBaseUrl: string,
+    campaignId: string,
+    statusFilter?: string
+  ): Promise<any[]> {
+    const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/verifications${qs}`);
+    if (!res.ok) return [];
     return res.json();
   },
 };

@@ -108,6 +108,7 @@ export const COOP_NAV_ITEMS: NavItemDef[] = [
 
 export const ADMIN_NAV_ITEMS: NavItemDef[] = [
   { path: '/admin/overview', get label() { return STRINGS_GU.nav.admin.overview; }, icon: <LayoutDashboard className={ICON_CLASS} /> },
+  { path: '/admin/masters', get label() { return STRINGS_GU.nav.admin.masters || 'પશુ અને રોગ માસ્ટર (Species, Diseases & Vaccines)'; }, icon: <Layers className={ICON_CLASS} />, permission: 'system.settings.manage' },
   { path: '/admin/map', get label() { return STRINGS_GU.nav.admin.map; }, icon: <MapPin className={ICON_CLASS} />, permission: 'map.view' },
   { path: '/admin/geography', get label() { return STRINGS_GU.nav.admin.geography; }, icon: <Database className={ICON_CLASS} />, permission: 'geo.state.manage' },
   { path: '/admin/daho', get label() { return STRINGS_GU.nav.admin.daho; }, icon: <Shield className={ICON_CLASS} />, permission: 'user.daho.create' },

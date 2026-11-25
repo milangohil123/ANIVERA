@@ -14,6 +14,7 @@ import {
   Phone,
   RotateCcw,
   ChevronRight,
+  Layers,
 } from 'lucide-react';
 
 export const TahoStaffView: React.FC = () => {
@@ -45,6 +46,12 @@ export const TahoStaffView: React.FC = () => {
   const [newStatus, setNewStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [statusReason, setStatusReason] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Assign Villages to Existing Staff Modal
+  const [isAssignVillagesModalOpen, setIsAssignVillagesModalOpen] = useState(false);
+  const [assignVillagesStaffUser, setAssignVillagesStaffUser] = useState<any | null>(null);
+  const [selectedStaffVillageIds, setSelectedStaffVillageIds] = useState<string[]>([]);
+  const [isSubmittingStaffVillages, setIsSubmittingStaffVillages] = useState(false);
 
   const loadStaffData = async () => {
     setIsLoading(true);
@@ -160,6 +167,33 @@ export const TahoStaffView: React.FC = () => {
         village_ids: exists ? prev.village_ids.filter((id) => id !== vId) : [...prev.village_ids, vId],
       };
     });
+  };
+
+  const handleOpenAssignVillages = (user: any) => {
+    setAssignVillagesStaffUser(user);
+    setSelectedStaffVillageIds(user.assigned_village_ids || []);
+    setIsAssignVillagesModalOpen(true);
+  };
+
+  const handleSaveStaffVillages = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignVillagesStaffUser) return;
+
+    setIsSubmittingStaffVillages(true);
+    try {
+      await adminService.assignTahoStaffVillages(
+        apiBaseUrl,
+        assignVillagesStaffUser.id,
+        selectedStaffVillageIds
+      );
+      setActionSuccess(`${assignVillagesStaffUser.full_name} માટે ${selectedStaffVillageIds.length} ગામો સફળતાપૂર્વક સાચવવામાં આવ્યા.`);
+      setIsAssignVillagesModalOpen(false);
+      await loadStaffData();
+    } catch (err: any) {
+      alert(err?.message || 'ગામ સોંપણી સાચવવામાં નિષ્ફળ.');
+    } finally {
+      setIsSubmittingStaffVillages(false);
+    }
   };
 
   const currentList = activeTab === 'VO' ? vos : fws;
@@ -358,18 +392,28 @@ export const TahoStaffView: React.FC = () => {
                       </td>
 
                       <td className="p-3 text-right">
-                        <Button
-                          variant={isActive ? 'ghost' : 'outline'}
-                          size="sm"
-                          onClick={() => {
-                            setStatusModalUser(user);
-                            setNewStatus(isActive ? 'INACTIVE' : 'ACTIVE');
-                            setStatusReason('');
-                          }}
-                          className={`text-xs ${isActive ? 'text-red-600 hover:bg-red-50' : 'text-emerald-700'}`}
-                        >
-                          {isActive ? 'નિષ્ક્રિય કરો' : 'સક્રિય કરો'}
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenAssignVillages(user)}
+                            leftIcon={<Layers className="w-3 h-3 text-[#135D43]" />}
+                          >
+                            ગામ સોંપો ({user.assigned_village_ids?.length || 0})
+                          </Button>
+                          <Button
+                            variant={isActive ? 'ghost' : 'outline'}
+                            size="sm"
+                            onClick={() => {
+                              setStatusModalUser(user);
+                              setNewStatus(isActive ? 'INACTIVE' : 'ACTIVE');
+                              setStatusReason('');
+                            }}
+                            className={`text-xs ${isActive ? 'text-red-600 hover:bg-red-50' : 'text-emerald-700'}`}
+                          >
+                            {isActive ? 'નિષ્ક્રિય' : 'સક્રિય'}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -554,6 +598,87 @@ export const TahoStaffView: React.FC = () => {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* 6. Assign Multiple Villages to Existing Staff Modal */}
+      <Modal
+        isOpen={isAssignVillagesModalOpen}
+        onClose={() => setIsAssignVillagesModalOpen(false)}
+        title={`ગામ સોંપણી સંચાલન: ${assignVillagesStaffUser?.full_name || ''}`}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveStaffVillages} className="space-y-4 text-xs font-body">
+          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+            <div className="flex justify-between items-center">
+              <div>નામ: <strong>{assignVillagesStaffUser?.full_name}</strong> (@{assignVillagesStaffUser?.username})</div>
+              <div>હોદ્દો: <strong>{assignVillagesStaffUser?.designation || (activeTab === 'VO' ? 'VO' : 'FW')}</strong></div>
+            </div>
+            <p className="text-[11px] text-emerald-800">
+              આ સ્ટાફ સભ્યને તાલુકાના કોઈપણ અથવા એક કરતાં વધુ ગામો સોંપી શકાય છે. એક ગામ કે બહુવિધ ગામોની સોંપણી પર કોઈ અવરોધ નથી.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-slate-800">
+                સોંપવા માટે ગામો પસંદ કરો ({selectedStaffVillageIds.length} / {allVillages.length} પસંદ કરેલ)
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStaffVillageIds(allVillages.map((v: any) => v.village_id))}
+                  className="text-emerald-700 hover:underline text-[11px] font-semibold cursor-pointer"
+                >
+                  તમામ પસંદ કરો
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStaffVillageIds([])}
+                  className="text-slate-500 hover:underline text-[11px] font-semibold cursor-pointer"
+                >
+                  બધા સાફ કરો
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto p-2.5 rounded-xl border border-slate-200 grid grid-cols-2 gap-2 bg-slate-50/50">
+              {allVillages.map((v: any) => {
+                const isChecked = selectedStaffVillageIds.includes(v.village_id);
+                return (
+                  <label
+                    key={v.village_id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                      isChecked ? 'bg-emerald-100/70 border-emerald-400 text-emerald-900 font-semibold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedStaffVillageIds((prev) => [...prev, v.village_id]);
+                        } else {
+                          setSelectedStaffVillageIds((prev) => prev.filter((id) => id !== v.village_id));
+                        }
+                      }}
+                      className="rounded text-[#135D43] focus:ring-[#135D43]"
+                    />
+                    <span className="truncate">{v.name_gu || transliterateToGujarati(v.name_en)} ({v.code})</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button variant="outline" size="sm" type="button" onClick={() => setIsAssignVillagesModalOpen(false)}>
+              રદ કરો
+            </Button>
+            <Button variant="primary" size="sm" type="submit" isLoading={isSubmittingStaffVillages}>
+              ગામ સોંપણી સાચવો
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

@@ -65,6 +65,8 @@ export interface FWAnimalDetail extends FWAnimalItem {
   bharat_pashudhan_tag?: string | null;
   active_qr_token?: string | null;
   active_tag?: string | null;
+  tag_type?: 'QR' | 'BARCODE' | null;
+  tag_identification_method?: string | null;
   verified_by?: string | null;
   verified_at?: string | null;
   owner_name?: string | null;
@@ -781,6 +783,41 @@ export const fwService = {
     } catch {
       return { total_animals: 0, total_farmers: 0, vaccinated_count: 0, coverage_percentage: 0 };
     }
+  },
+
+  async submitVillageVerification(
+    apiBaseUrl: string,
+    campaignId: string,
+    villageId: string,
+    payload: {
+      animals_visited_count?: number;
+      vaccinations_completed_count?: number;
+      pending_animals_count?: number;
+      field_observations?: string;
+      completion_notes?: string;
+      evidence_photo_urls?: string[];
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/villages/${villageId}/submit-verification`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.detail || 'કામગીરી ચકાસણી સબમિશન નિષ્ફળ.');
+    }
+    return res.json();
+  },
+
+  async listVillageVerifications(
+    apiBaseUrl: string,
+    campaignId: string,
+    statusFilter?: string
+  ): Promise<any[]> {
+    const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/verifications${qs}`);
+    if (!res.ok) return [];
+    return res.json();
   },
 };
 

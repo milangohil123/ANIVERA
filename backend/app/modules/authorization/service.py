@@ -13,8 +13,9 @@ Coordinates:
 - Immutable audit trail recording for denied privileged actions
 """
 import logging
+import time
 import uuid
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,38 @@ from app.modules.authorization.schemas import UserScope
 
 logger = logging.getLogger("pashurakshak.authz.service")
 
+# High-performance in-memory scope cache to prevent massive repetitive database queries
+# on every protected API call. Keyed by f"{user_id}:{role}".
+_SCOPE_CACHE: Dict[str, Tuple[float, UserScope]] = {}
+SCOPE_CACHE_TTL_SECONDS = 60.0  # 60s TTL
+
+
+def clear_scope_cache(user_id: Optional[uuid.UUID] = None, role: Optional[str] = None) -> None:
+    """Invalidate in-memory RBAC security scope cache.
+    
+    If neither user_id nor role is specified, clears the entire cache.
+    """
+    global _SCOPE_CACHE
+    if user_id is None and role is None:
+        _SCOPE_CACHE.clear()
+        logger.debug("RBAC scope cache cleared completely")
+        return
+
+    target_uid = str(user_id) if user_id else None
+    keys_to_remove = []
+    for key in list(_SCOPE_CACHE.keys()):
+        parts = key.split(":")
+        k_uid = parts[0]
+        k_role = parts[1] if len(parts) > 1 else ""
+        if target_uid and k_uid == target_uid:
+            keys_to_remove.append(key)
+        elif role and k_role == role:
+            keys_to_remove.append(key)
+
+    for k in keys_to_remove:
+        _SCOPE_CACHE.pop(k, None)
+    logger.debug("RBAC scope cache invalidated for keys: %s", keys_to_remove)
+
 
 class AuthorizationService:
     """Service enforcing RBAC, geographic scopes, record ownership, and workflow rules."""
@@ -32,8 +65,16 @@ class AuthorizationService:
         self.db = db
         self.repo = AuthorizationRepository(db)
 
-    async def get_user_scope(self, user: User) -> UserScope:
-        """Resolve full operational security scope from trusted database records."""
+    async def get_user_scope(self, user: User, bypass_cache: bool = False) -> UserScope:
+        """Resolve full operational security scope from trusted database records (with caching)."""
+        cache_key = f"{user.id}:{user.role}"
+        now = time.time()
+
+        if not bypass_cache and cache_key in _SCOPE_CACHE:
+            cached_time, cached_scope = _SCOPE_CACHE[cache_key]
+            if now - cached_time < SCOPE_CACHE_TTL_SECONDS:
+                return cached_scope
+
         permissions = await self.repo.resolve_effective_permissions(user.id, user.role)
         districts = await self.repo.get_assigned_districts(user.id, user.role)
         talukas = await self.repo.get_assigned_talukas(user.id, user.role)
@@ -42,7 +83,7 @@ class AuthorizationService:
         cooperatives, coop_villages = await self.repo.get_cooperative_scope(user.id)
         is_vaccinator = await self.repo.has_approved_vaccinator_authorization(user.id)
 
-        return UserScope(
+        scope = UserScope(
             user_id=user.id,
             role=user.role,
             status=user.status,
@@ -55,6 +96,8 @@ class AuthorizationService:
             cooperative_village_ids=coop_villages,
             is_approved_vaccinator=is_vaccinator
         )
+        _SCOPE_CACHE[cache_key] = (now, scope)
+        return scope
 
     async def assert_permission(
         self,

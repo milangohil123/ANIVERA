@@ -37,6 +37,7 @@ export const TahoSurveillanceView: React.FC = () => {
   // Surveillance data
   const [reports, setReports] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [clusters, setClusters] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [selectedVillageId, setSelectedVillageId] = useState<string>('');
   const [diseaseFilter, setDiseaseFilter] = useState<string>('');
@@ -75,7 +76,7 @@ export const TahoSurveillanceView: React.FC = () => {
     setIsLoading(true);
     setNotification(null);
     try {
-      const [repList, alertList, hier, caseList, voList, fwList] = await Promise.all([
+      const [repList, alertList, hier, caseList, voList, fwList, clusterList] = await Promise.all([
         adminService.listTahoSurveillance(apiBaseUrl, {
           village_id: selectedVillageId || undefined,
           disease_code: diseaseFilter || undefined,
@@ -84,12 +85,13 @@ export const TahoSurveillanceView: React.FC = () => {
         adminService.listTahoDiseaseAlerts(apiBaseUrl).catch(() => []),
         adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
         healthWorkflowService.listTahoCases(apiBaseUrl, {
-          status: caseFilterStatus || undefined,
+          status_filter: caseFilterStatus || undefined,
           urgency: caseFilterUrgency || undefined,
           village_id: selectedVillageId || undefined,
         }).catch(() => []),
         adminService.listTahoVos(apiBaseUrl).catch(() => []),
         adminService.listTahoFws(apiBaseUrl).catch(() => []),
+        healthWorkflowService.getDiseaseClusters(apiBaseUrl).catch(() => []),
       ]);
       setReports(repList || []);
       setAlerts(alertList || []);
@@ -97,6 +99,7 @@ export const TahoSurveillanceView: React.FC = () => {
       setCases(caseList || []);
       setVos(voList || []);
       setFws(fwList || []);
+      setClusters(clusterList || []);
     } catch (err: any) {
       console.warn('Surveillance load note:', err);
     } finally {
@@ -114,25 +117,16 @@ export const TahoSurveillanceView: React.FC = () => {
     e.preventDefault();
     if (!selectedCaseForAssign) return;
 
-    if (assignRole === 'VO' && !selectedVoId) {
-      setNotification({ type: 'error', message: 'કૃપા કરીને વેટરનરી ઓફિસર (VO) પસંદ કરો.' });
-      return;
-    }
-    if (assignRole === 'FW' && !selectedFwId) {
-      setNotification({ type: 'error', message: 'કૃપા કરીને ક્ષેત્રીય કાર્યકર (FW) પસંદ કરો.' });
-      return;
-    }
-    if (assignRole === 'BOTH' && !selectedVoId && !selectedFwId) {
-      setNotification({ type: 'error', message: 'કૃપા કરીને ઓછામાં ઓછો એક સ્ટાફ સભ્ય પસંદ કરો.' });
+    if (!selectedVoId) {
+      setNotification({ type: 'error', message: 'કૃપા કરીને અધિકૃત વેટરનરી અધિકારી (VO) પસંદ કરો.' });
       return;
     }
 
     setIsAssigning(true);
     try {
       await healthWorkflowService.assignTahoCase(apiBaseUrl, selectedCaseForAssign.report_id, {
-        assigned_to_role: assignRole,
-        assigned_vo_id: selectedVoId || undefined,
-        assigned_fw_id: selectedFwId || undefined,
+        assigned_to_role: 'VO',
+        assigned_vo_id: selectedVoId,
         priority: assignPriority,
         instructions: assignInstructions.trim() || undefined,
         planned_visit_date: plannedVisitDate || undefined,
@@ -140,7 +134,7 @@ export const TahoSurveillanceView: React.FC = () => {
 
       setNotification({
         type: 'success',
-        message: `કેસ #${selectedCaseForAssign.report_no || selectedCaseForAssign.report_id.slice(0, 8)} સફળતાપૂર્વક સ્ટાફને સોંપાયો છે!`,
+        message: `કેસ #${selectedCaseForAssign.report_no || selectedCaseForAssign.report_id.slice(0, 8)} સફળતાપૂર્વક વેટરનરી ઓફિસર (VO) ને સોંપાયો છે!`,
       });
       setSelectedCaseForAssign(null);
       loadData();
@@ -166,7 +160,9 @@ export const TahoSurveillanceView: React.FC = () => {
     setIsVerifying(true);
     try {
       await healthWorkflowService.verifyTahoTreatment(apiBaseUrl, selectedCaseForVerify.report_id, {
+        action: verifyDecision,
         decision: verifyDecision,
+        verification_notes: verifyDecision === 'APPROVED' ? 'સંપૂર્ણ ચકાસાયેલ અને મંજૂર' : undefined,
         rejection_reason: verifyDecision === 'REJECTED' ? rejectionReason.trim() : undefined,
         followup_instructions: followupInstructions.trim() || undefined,
       });
@@ -409,32 +405,66 @@ export const TahoSurveillanceView: React.FC = () => {
                           </td>
 
                           <td className="p-3">
-                            {c.assigned_vo_name || c.assigned_fw_name ? (
+                            {c.assigned_vo_name ? (
                               <div className="text-[11px] font-semibold text-slate-800">
-                                {c.assigned_vo_name && <div>VO: {c.assigned_vo_name}</div>}
-                                {c.assigned_fw_name && <div className="text-slate-600">FW: {c.assigned_fw_name}</div>}
+                                <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  VO: {c.assigned_vo_name}
+                                </span>
                               </div>
+                            ) : c.is_assignment_overdue || c.is_escalated_to_daho ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-red-800 font-bold bg-red-100 px-2 py-0.5 rounded border border-red-300">
+                                <AlertTriangle className="w-3 h-3 text-red-600 shrink-0" />
+                                ૨૪ કલાક મુદત ઓળંગી (DAHO Escalated)
+                              </span>
+                            ) : c.hours_remaining_for_assignment !== undefined ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                VO સોંપણી બાકી • {Math.max(0, Math.round(c.hours_remaining_for_assignment))} કલાક બાકી
+                              </span>
                             ) : (
                               <span className="text-[11px] text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                                સોંપણી બાકી
+                                VO સોંપણી બાકી
                               </span>
                             )}
                           </td>
 
                           <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                c.treatment_status === 'VERIFIED_CLOSED'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : c.treatment_status === 'TREATED_PENDING_VERIFICATION'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : c.treatment_status === 'ASSIGNED'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
-                              {c.treatment_status}
-                            </span>
+                            {(() => {
+                              const st = c.treatment_status;
+                              if (st === 'VERIFIED_COMPLETED' || st === 'VERIFIED_CLOSED') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    ચકાસાયેલ & પૂર્ણ
+                                  </span>
+                                );
+                              }
+                              if (st === 'TREATED_PENDING_VERIFICATION') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                    સારવાર પૂર્ણ – ચકાસણી બાકી
+                                  </span>
+                                );
+                              }
+                              if (st === 'ASSIGNED' || st === 'UNDER_INVESTIGATION' || st === 'UNDER_REVIEW') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                    VO તપાસ હેઠળ
+                                  </span>
+                                );
+                              }
+                              if (st === 'REJECTED_RETURNED_TO_VO') {
+                                return (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                    પુનઃતપાસ માટે પરત
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  VO સોંપણી બાકી
+                                </span>
+                              );
+                            })()}
                           </td>
 
                           <td className="p-3 text-right">
@@ -555,7 +585,49 @@ export const TahoSurveillanceView: React.FC = () => {
 
       {/* TAB 3: EARLY WARNING & SURVEILLANCE */}
       {activeTab === 'SURVEILLANCE' && (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Data-Driven Disease Clusters / Suspected Outbreak Alerts */}
+          {clusters.length > 0 && (
+            <div className="p-4 bg-red-50/70 rounded-2xl border-2 border-red-300 space-y-3 shadow-xs">
+              <div className="flex items-center gap-2 text-red-900 font-bold text-sm">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                </span>
+                <span>સંભવિત રોગ ક્લસ્ટર / શંકાસ્પદ આઉટબ્રેક એલર્ટ (Potential Disease Cluster Alert)</span>
+              </div>
+              <p className="text-xs text-red-700">
+                છેલ્લા ૧૪ દિવસમાં નજીકના ગામોમાં ૨ કે તેથી વધુ કેસો નોંધાતા સિસ્ટમ દ્વારા ચેતવણી જારી કરાયેલ છે.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                {clusters.map((cl, idx) => (
+                  <div key={idx} className="p-3 bg-white rounded-xl border border-red-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-sm font-heading">{cl.disease_name}</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold">
+                          {cl.disease_code}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-600 text-white">
+                        {cl.case_count} કેસો
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600">
+                      <strong>અસરગ્રસ્ત ગામો:</strong> {cl.village_names?.join(', ') || 'ગામો'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono flex items-center justify-between border-t border-slate-100 pt-1.5">
+                      <span>તારીખ ગાળો: {cl.first_report_date} થી {cl.latest_report_date}</span>
+                      <span className="text-red-700 font-bold">વિસ્તાર ત્રિજ્યા: {cl.radius_km} km</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Early Warning Alerts */}
           {alerts.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -658,7 +730,7 @@ export const TahoSurveillanceView: React.FC = () => {
                     કેસ સોંપણી (Assign Health Case #{selectedCaseForAssign.report_no || selectedCaseForAssign.report_id.slice(0, 8)})
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    વેટરનરી ઓફિસર (VO) અથવા ક્ષેત્રીય કાર્યકર (FW) અથવા બંનેને સોંપો
+                    અધિકૃત વેટરનરી ઓફિસર (VO) ને ક્લિનિકલ તપાસ અને સારવાર માટે સોંપો
                   </p>
                 </div>
               </div>
@@ -693,75 +765,28 @@ export const TahoSurveillanceView: React.FC = () => {
             </div>
 
             <form onSubmit={handleAssignSubmit} className="space-y-3.5 text-xs">
-              {/* Role selector */}
+              {/* Authorized VO Selector (VO Only) */}
               <div>
                 <label className="block font-bold text-slate-800 mb-1">
-                  ૧. સોંપણી મોડ (Assignment Role Target) *
+                  અધિકૃત વેટરનરી અધિકારી પસંદ કરો (Select Authorized Veterinary Officer) *
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { key: 'VO', label: 'ફક્ત VO (Vet Officer)' },
-                    { key: 'FW', label: 'ફક્ત FW (Field Worker)' },
-                    { key: 'BOTH', label: 'VO અને FW બંને (Both)' },
-                  ].map((r) => (
-                    <button
-                      key={r.key}
-                      type="button"
-                      onClick={() => setAssignRole(r.key as any)}
-                      className={`py-2 px-2 rounded-xl border text-[11px] font-bold text-center transition-all ${
-                        assignRole === r.key
-                          ? 'bg-[#E6F3EF] text-[#135D43] border-[#135D43] shadow-xs'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {r.label}
-                    </button>
+                <select
+                  value={selectedVoId}
+                  onChange={(e) => setSelectedVoId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs text-slate-800 focus:ring-2 focus:ring-[#135D43]"
+                >
+                  <option value="">-- વેટરનરી અધિકારી (VO) પસંદ કરો --</option>
+                  {vos.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.full_name} ({v.designation || 'VO'}) {v.mobile_e164 ? `• ${v.mobile_e164}` : ''}
+                    </option>
                   ))}
-                </div>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  * રોગ સર્વેલન્સ અને સારવાર કેસ નિયમ મુજબ માત્ર અધિકૃત વેટરનરી અધિકારી (VO) ને જ સોંપવામાં આવે છે.
+                </p>
               </div>
-
-              {/* Staff Selectors */}
-              {(assignRole === 'VO' || assignRole === 'BOTH') && (
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    વેટરનરી અધિકારી પસંદ કરો (Select VO) *
-                  </label>
-                  <select
-                    value={selectedVoId}
-                    onChange={(e) => setSelectedVoId(e.target.value)}
-                    required={assignRole === 'VO'}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs text-slate-800 focus:ring-2 focus:ring-[#135D43]"
-                  >
-                    <option value="">-- વેટરનરી અધિકારી પસંદ કરો --</option>
-                    {vos.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.full_name} ({v.designation || 'VO'}) {v.mobile_e164 ? `• ${v.mobile_e164}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {(assignRole === 'FW' || assignRole === 'BOTH') && (
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    ક્ષેત્રીય કાર્યકર પસંદ કરો (Select FW) *
-                  </label>
-                  <select
-                    value={selectedFwId}
-                    onChange={(e) => setSelectedFwId(e.target.value)}
-                    required={assignRole === 'FW'}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs text-slate-800 focus:ring-2 focus:ring-[#135D43]"
-                  >
-                    <option value="">-- ક્ષેત્રીય કાર્યકર પસંદ કરો --</option>
-                    {fws.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.full_name} ({f.designation || 'Field Worker'}) {f.mobile_e164 ? `• ${f.mobile_e164}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {/* Priority & Date */}
               <div className="grid grid-cols-2 gap-3">
@@ -868,29 +893,99 @@ export const TahoSurveillanceView: React.FC = () => {
                 </span>
               </div>
 
-              <div>
-                <span className="text-slate-500 block text-[10px]">વેટરનરી તપાસ & સારવાર નોંધ:</span>
-                <p className="font-medium text-slate-800 bg-white p-2.5 rounded-lg border border-slate-200">
-                  {selectedCaseForVerify.observation_text || 'ક્લિનિકલ તપાસ સફળતાપૂર્વક પૂર્ણ.'}
-                </p>
-              </div>
-
-              {/* Photos if any */}
-              {selectedCaseForVerify.photo_urls && selectedCaseForVerify.photo_urls.length > 0 && (
-                <div>
-                  <span className="text-slate-500 block text-[10px] mb-1">સારવાર પહેલા / પછીના ફોટા:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedCaseForVerify.photo_urls.map((p, idx) => (
-                      <img
-                        key={idx}
-                        src={p}
-                        alt={`Treatment photo ${idx + 1}`}
-                        className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-2xs"
-                      />
-                    ))}
+              {/* Detailed VO Clinical Report */}
+              {selectedCaseForVerify.treatment_record ? (
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <div className="font-bold text-[#135D43] text-xs flex items-center gap-1.5 pb-1 border-b border-slate-100">
+                    <Activity className="w-3.5 h-3.5 text-[#135D43]" />
+                    <span>વેટરનરી અધિકારી (VO) ક્લિનિકલ સારવાર અહેવાલ</span>
                   </div>
+
+                  {selectedCaseForVerify.treatment_record.diagnosis && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">ક્લિનિકલ નિદાન (Clinical Diagnosis):</span>
+                      <span className="font-bold text-slate-900">{selectedCaseForVerify.treatment_record.diagnosis}</span>
+                    </div>
+                  )}
+
+                  {selectedCaseForVerify.treatment_record.observations && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">શારીરિક તપાસ તારણો (Observations):</span>
+                      <p className="text-slate-700 bg-slate-50 p-2 rounded text-xs">{selectedCaseForVerify.treatment_record.observations}</p>
+                    </div>
+                  )}
+
+                  {selectedCaseForVerify.treatment_record.treatment_text && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">આપેલ સારવાર પદ્ધતિ (Treatment Procedure):</span>
+                      <p className="text-slate-700 bg-slate-50 p-2 rounded text-xs">{selectedCaseForVerify.treatment_record.treatment_text}</p>
+                    </div>
+                  )}
+
+                  {selectedCaseForVerify.treatment_record.medicine_administered && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">આપેલ દવાઓ અને ડોઝ (Medicines Administered):</span>
+                      <span className="font-semibold text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-block">
+                        {selectedCaseForVerify.treatment_record.medicine_administered}
+                        {selectedCaseForVerify.treatment_record.dosage_details ? ` • ${selectedCaseForVerify.treatment_record.dosage_details}` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedCaseForVerify.treatment_record.treatment_notes && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">અતિરિક્ત નોંધ:</span>
+                      <p className="text-slate-600 italic text-[11px]">{selectedCaseForVerify.treatment_record.treatment_notes}</p>
+                    </div>
+                  )}
+
+                  {selectedCaseForVerify.treatment_record.follow_up_instructions && (
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">ખેડૂત માટે ફોલો-અપ સૂચનાઓ:</span>
+                      <p className="text-amber-800 bg-amber-50 p-2 rounded text-[11px] border border-amber-200">{selectedCaseForVerify.treatment_record.follow_up_instructions}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <span className="text-slate-500 block text-[10px]">વેટરનરી તપાસ & સારવાર નોંધ:</span>
+                  <p className="font-medium text-slate-800 bg-white p-2.5 rounded-lg border border-slate-200">
+                    {selectedCaseForVerify.observation_text || 'ક્લિનિકલ તપાસ સફળતાપૂર્વક પૂર્ણ.'}
+                  </p>
                 </div>
               )}
+
+              {/* Photos from Report or Treatment Evidence */}
+              {(() => {
+                const photos = [
+                  ...(selectedCaseForVerify.treatment_record?.evidence_photos || []),
+                  ...(selectedCaseForVerify.photo_urls || [])
+                ];
+                const uniquePhotos = Array.from(new Set(photos));
+                if (uniquePhotos.length === 0) return null;
+
+                return (
+                  <div>
+                    <span className="text-slate-500 block text-[10px] mb-1 font-bold">
+                      ક્લિનિકલ સારવાર ફોટો પુરાવા (Treatment Evidence Photos - {uniquePhotos.length}):
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {uniquePhotos.map((p, idx) => {
+                        const photoSrc = p.startsWith('http') || p.startsWith('data:') ? p : `${apiBaseUrl}${p.startsWith('/') ? '' : '/'}${p}`;
+                        return (
+                          <a key={idx} href={photoSrc} target="_blank" rel="noreferrer" className="block group">
+                            <img
+                              src={photoSrc}
+                              alt={`Evidence photo ${idx + 1}`}
+                              className="w-20 h-20 rounded-xl object-cover border-2 border-emerald-400 shadow-sm group-hover:scale-105 transition-transform"
+                            />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <form onSubmit={handleVerifySubmit} className="space-y-3 text-xs">

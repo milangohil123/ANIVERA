@@ -176,8 +176,17 @@ export const TahoMapsView: React.FC = () => {
     const enrichedFeatures = baseVillagesGeoJson.features.map((f: any) => {
       const vId = f.properties?.village_id;
       const m = metricsMap.get(vId);
-      const fillColor = m?.fill_color || '#E2E8F0';
       const isSelected = vId === selectedVillage?.village_id;
+      const hasActiveDisease = Boolean(m?.has_active_disease || (m?.disease_count ?? 0) > 0);
+
+      // Color computation: If village has an active disease case or we are in disease layer, highlight in bright RED (#EF4444)
+      let fillColor = m?.fill_color || '#E2E8F0';
+      if (layerMode === 'disease' || layerMode === 'risk') {
+        fillColor = hasActiveDisease ? '#EF4444' : '#10B981';
+      } else if (hasActiveDisease) {
+        // Prominently highlight active disease village in red across all layers
+        fillColor = '#EF4444';
+      }
 
       return {
         ...f,
@@ -185,15 +194,17 @@ export const TahoMapsView: React.FC = () => {
           ...f.properties,
           fill_color: fillColor,
           fillColor: fillColor,
-          border_color: isSelected ? '#1D4ED8' : '#0F172A',
-          fill_opacity: isSelected ? 0.9 : 0.72,
+          border_color: hasActiveDisease ? '#B91C1C' : isSelected ? '#1D4ED8' : '#0F172A',
+          border_width: hasActiveDisease ? 3.5 : isSelected ? 2.5 : 1.2,
+          fill_opacity: isSelected ? 0.92 : hasActiveDisease ? 0.88 : 0.72,
           coverage_pct: m?.coverage_pct ?? 0,
           animal_count: m?.animal_count ?? 0,
           farmer_count: m?.farmer_count ?? 0,
           vaccinated_count: m?.vaccinated_count ?? 0,
           pending_count: m?.pending_count ?? 0,
           disease_count: m?.disease_count ?? 0,
-          status_label: m?.status_label || 'સામાન્ય',
+          has_active_disease: hasActiveDisease,
+          status_label: hasActiveDisease ? `સક્રિય રોગ કેસ (${m?.disease_count || 1})` : (m?.status_label || 'સામાન્ય'),
           matches_filter: m?.matches_filter ?? true,
         },
       };

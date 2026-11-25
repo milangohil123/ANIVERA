@@ -489,8 +489,9 @@ export const VoDashboard: React.FC = () => {
       {/* ---------------------------------------------------------------------- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
+          isLoading={isLoading}
           label="સોંપાયેલ પશુધન"
-          value={isLoading ? '...' : String(assignedAnimalsCount)}
+          value={assignedAnimalsCount}
           subtext={`${assignedVillageDetails.length} સોંપાયેલ ગામડાં`}
           icon={<PawPrint className="w-4 h-4 text-[#176B5B]" />}
           iconVariant="primary"
@@ -498,8 +499,9 @@ export const VoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="પૂર્ણ થયેલ રસીકરણ"
-          value={isLoading ? '...' : (assignedAnimalsCount > 0 ? `${((vaccinationsCount / assignedAnimalsCount) * 100).toFixed(1)}%` : '0%')}
+          value={assignedAnimalsCount > 0 ? `${((vaccinationsCount / assignedAnimalsCount) * 100).toFixed(1)}%` : '0%'}
           valueColor="text-[#176B5B]"
           subtext={`${vaccinationsCount} / ${assignedAnimalsCount} ડોઝ નોંધાયેલ`}
           icon={<Syringe className="w-4 h-4 text-[#176B5B]" />}
@@ -508,8 +510,9 @@ export const VoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="બાકી / મુદત વીતેલ"
-          value={isLoading ? '...' : String(Math.max(0, assignedAnimalsCount - vaccinationsCount))}
+          value={Math.max(0, assignedAnimalsCount - vaccinationsCount)}
           valueColor="text-red-600"
           subtext="કતાર વિગત જુઓ →"
           badgeText={`${Math.max(0, assignedAnimalsCount - vaccinationsCount)} બાકી`}
@@ -520,8 +523,9 @@ export const VoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="રોગ સર્વેક્ષણ કેસ"
-          value={isLoading ? '...' : String(pendingReports.length)}
+          value={pendingReports.length}
           subtext={`${pendingReports.length} શંકાસ્પદ કેસ સમીક્ષા`}
           icon={<Activity className="w-4 h-4 text-[#0284C7]" />}
           iconVariant="secondary"
@@ -529,6 +533,7 @@ export const VoDashboard: React.FC = () => {
         />
 
         <KpiCard
+          isLoading={isLoading}
           label="ઑફલાઇન સિંક સ્થિતિ"
           value={pendingSyncCount > 0 ? `${pendingSyncCount} બાકી` : '0 બાકી'}
           subtext={pendingSyncCount > 0 ? `${pendingSyncCount} રેકોર્ડ્સ બાકી` : 'ક્લાઉડ સિંક પૂર્ણ'}

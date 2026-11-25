@@ -14,10 +14,12 @@ import {
   type FWVillageItem,
 } from '../../services/fwService';
 import { UniversalAnimalRegistrationModal } from '../../components/animals/UniversalAnimalRegistrationModal';
+import { AnimalQrCard } from '../../components/common/AnimalQrCard';
 import { classifyScannedTag, type ClassifiedTagResult } from '../../utils/tagClassifier';
 import {
   Smartphone,
   QrCode,
+  Barcode as BarcodeIcon,
   Tag,
   Search,
   RotateCcw,
@@ -48,6 +50,7 @@ export const FwScanView: React.FC = () => {
   const { apiBaseUrl } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'CAMERA' | 'IMAGE_UPLOAD' | 'MANUAL_QR' | 'TAG_LOOKUP'>('CAMERA');
+  const [cameraScanMode, setCameraScanMode] = useState<'UNIVERSAL' | 'BARCODE' | 'QR'>('UNIVERSAL');
   const [scannerStarted, setScannerStarted] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
@@ -222,6 +225,15 @@ export const FwScanView: React.FC = () => {
       const qrConfig = {
         fps: 20,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+          if (cameraScanMode === 'BARCODE') {
+            const w = Math.min(viewfinderWidth * 0.95, 360);
+            const h = Math.min(viewfinderHeight * 0.45, 140);
+            return { width: Math.floor(w), height: Math.floor(h) };
+          }
+          if (cameraScanMode === 'QR') {
+            const size = Math.min(viewfinderWidth * 0.7, viewfinderHeight * 0.7, 240);
+            return { width: Math.floor(size), height: Math.floor(size) };
+          }
           const w = Math.min(viewfinderWidth * 0.9, 360);
           const h = Math.min(viewfinderHeight * 0.7, 240);
           return { width: Math.floor(w), height: Math.floor(h) };
@@ -322,23 +334,41 @@ export const FwScanView: React.FC = () => {
       // 1. Ensure camera is stopped
       await stopCamera();
 
-      // 2. Ensure dedicated file scanner instance
-      fileScanner = new Html5Qrcode('qr-file-reader');
+      // 2. Ensure dedicated file scanner instance supporting both 1D Barcode & 2D QR
+      const supportedFormats = [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.ITF,
+      ];
+      fileScanner = new Html5Qrcode('qr-file-reader', {
+        formatsToSupport: supportedFormats,
+        verbose: false,
+      });
 
       let detectedText: string | null = null;
 
-      // Strategy 1: Check SVG text or embedded metadata if SVG file
+      // Strategy 1: Check SVG text or embedded metadata if SVG file (QR or Barcode)
       const isSvg = file.name.toLowerCase().endsWith('.svg') || file.type.includes('svg');
       if (isSvg) {
         try {
           const svgContent = await file.text();
+          const barcodeLabelMatch = svgContent.match(/aria-label=["']Barcode for ([^"']+)["']/i);
+          const barcodeTextMatch = svgContent.match(/letter-spacing=["']2["'][^>]*>([^<]+)<\/text>/i);
           const dataTokenMatch = svgContent.match(/data-token=["']([^"']+)["']/i);
           const dataAnimalMatch = svgContent.match(/data-animal-code=["']([^"']+)["']/i);
           const tokenTextMatch = svgContent.match(/ટોકન:\s*([A-Z2-7]{26})/i);
           const codeMatch = svgContent.match(/ANM-[A-Z0-9]+-[0-9]+/i);
           const rawBase32 = svgContent.match(/[A-Z2-7]{26}/);
 
-          if (dataTokenMatch && dataTokenMatch[1]) detectedText = dataTokenMatch[1];
+          if (barcodeLabelMatch && barcodeLabelMatch[1]) detectedText = barcodeLabelMatch[1].trim();
+          else if (barcodeTextMatch && barcodeTextMatch[1]) detectedText = barcodeTextMatch[1].trim();
+          else if (dataTokenMatch && dataTokenMatch[1]) detectedText = dataTokenMatch[1];
           else if (dataAnimalMatch && dataAnimalMatch[1]) detectedText = dataAnimalMatch[1];
           else if (tokenTextMatch && tokenTextMatch[1]) detectedText = tokenTextMatch[1];
           else if (codeMatch && codeMatch[0]) detectedText = codeMatch[0];
@@ -348,16 +378,18 @@ export const FwScanView: React.FC = () => {
         }
       }
 
-      // Strategy 2: Chromium / Android Native BarcodeDetector (high speed & accuracy)
+      // Strategy 2: Chromium / Android Native BarcodeDetector (high speed & accuracy for both QR & 1D barcodes)
       if (!detectedText && typeof window !== 'undefined' && 'BarcodeDetector' in window) {
         try {
           const BarcodeDetectorClass = (window as any).BarcodeDetector;
-          const detector = new BarcodeDetectorClass({ formats: ['qr_code'] });
+          const detector = new BarcodeDetectorClass({
+            formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+          });
           const imgBitmap = await createImageBitmap(file);
           const barcodes = await detector.detect(imgBitmap);
           if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
             detectedText = barcodes[0].rawValue;
-            console.log('BarcodeDetector recognized QR:', detectedText);
+            console.log('BarcodeDetector recognized code:', detectedText);
           }
         } catch (bdErr) {
           console.warn('BarcodeDetector pass skipped:', bdErr);
@@ -402,11 +434,13 @@ export const FwScanView: React.FC = () => {
               ctx.fillRect(0, 0, targetDim, targetDim);
               ctx.drawImage(img, padding, padding, innerDim, innerDim);
 
-              // 1. Try BarcodeDetector on padded canvas
+              // 1. Try BarcodeDetector on padded canvas (QR and 1D Barcode)
               if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
                 try {
                   const BarcodeDetectorClass = (window as any).BarcodeDetector;
-                  const detector = new BarcodeDetectorClass({ formats: ['qr_code'] });
+                  const detector = new BarcodeDetectorClass({
+                    formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+                  });
                   const barcodes = await detector.detect(canvas);
                   if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
                     detectedText = barcodes[0].rawValue;
@@ -460,10 +494,14 @@ export const FwScanView: React.FC = () => {
         }
       }
 
-      // Strategy 5: Filename identifier fallback (e.g. PASHU_QR_ANM-BOT-000004.svg/.png)
+      // Strategy 5: Filename identifier fallback (e.g. PASHU_QR_... or PASHU_BARCODE_...)
       if (!detectedText) {
+        const barcodeFileMatch = file.name.match(/PASHU_BARCODE_([A-Za-z0-9\-_]+)/i);
+        if (barcodeFileMatch && barcodeFileMatch[1]) {
+          detectedText = barcodeFileMatch[1].replace(/\.(svg|png|jpg|jpeg)$/i, '');
+        }
         const nameCodeMatch = file.name.match(/ANM-[A-Z0-9]+-[0-9]+/i);
-        if (nameCodeMatch) {
+        if (!detectedText && nameCodeMatch) {
           detectedText = nameCodeMatch[0].toUpperCase();
           console.log('Extracted animal code from filename fallback:', detectedText);
         }
@@ -472,12 +510,12 @@ export const FwScanView: React.FC = () => {
       if (detectedText) {
         await handleQrScanned(detectedText);
       } else {
-        throw new Error('Could not decode QR code from image');
+        throw new Error('Could not decode QR or Barcode from image');
       }
     } catch (err: any) {
-      console.warn('Image QR scan failed completely:', err);
+      console.warn('Image scan failed:', err);
       setErrorNotice(
-        'ઇમેજમાંથી QR કોડ વાંચવામાં નિષ્ફળ. કૃપા કરીને સ્પષ્ટ QR કોડ ધરાવતી ઇમેજ પસંદ કરો અથવા "QR કોડ" ટેબમાં ૨૬-અંક કોડ લખો.'
+        'ઇમેજમાંથી QR અથવા બારકોડ વાંચવામાં નિષ્ફળ. કૃપા કરીને સ્પષ્ટ ટેગ ધરાવતી ઇમેજ પસંદ કરો અથવા "ટેગ / બારકોડ" ટેબમાં નંબર લખો.'
       );
     } finally {
       if (fileScanner) {
@@ -688,6 +726,57 @@ export const FwScanView: React.FC = () => {
       {/* Permanent Scanner DOM container (always kept mounted so Html5Qrcode never loses DOM node) */}
       <div style={{ display: activeTab === 'CAMERA' ? 'block' : 'none' }}>
         <Card noPadding className="p-4 bg-black text-white rounded-2xl overflow-hidden relative">
+          {/* Scanner Mode Selector: Universal, 1D Barcode, 2D QR */}
+          <div className="mb-3 flex items-center justify-between text-xs bg-white/10 p-1.5 rounded-xl">
+            <span className="text-white/80 text-[11px] font-semibold pl-1">સ્કેનર પ્રકાર:</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraScanMode('UNIVERSAL');
+                  startCamera();
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+                  cameraScanMode === 'UNIVERSAL'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                સાર્વત્રિક
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraScanMode('BARCODE');
+                  startCamera();
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                  cameraScanMode === 'BARCODE'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                <BarcodeIcon className="w-3 h-3" />
+                ૧D બારકોડ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraScanMode('QR');
+                  startCamera();
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition ${
+                  cameraScanMode === 'QR'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                <QrCode className="w-3 h-3" />
+                QR કોડ
+              </button>
+            </div>
+          </div>
+
           {/* Camera Device Switcher (if multiple cameras available) */}
           {availableCameras.length > 1 && (
             <div className="mb-3 flex items-center justify-between text-xs bg-white/10 p-2 rounded-lg">
@@ -712,7 +801,13 @@ export const FwScanView: React.FC = () => {
           <div id="qr-reader" className="w-full rounded-xl overflow-hidden min-h-[260px] bg-black" />
 
           <div className="mt-3 flex items-center justify-between text-xs text-white/80">
-            <span>પશુના કાન પરનો QR કોડ કેમેરા સામે રાખો</span>
+            <span>
+              {cameraScanMode === 'BARCODE'
+                ? 'પશુના કાન પરનો ૧D બારકોડ કેમેરા સામે રાખો'
+                : cameraScanMode === 'QR'
+                ? 'પશુના કાન પરનો QR કોડ કેમેરા સામે રાખો'
+                : 'પશુના કાન પરનો QR કોડ અથવા ૧D બારકોડ કેમેરા સામે રાખો'}
+            </span>
             <div className="flex items-center gap-2">
               {!scannerStarted && (
                 <Button variant="primary" size="sm" onClick={() => startCamera()} leftIcon={<Play className="w-3.5 h-3.5" />}>
@@ -888,6 +983,22 @@ export const FwScanView: React.FC = () => {
                 {animalResult.active_qr_token || 'નથી'}
               </p>
             </div>
+          </div>
+
+          {/* Visual Digital Tag Card with Print & Download (QR and 1D Barcode) */}
+          <div className="pt-2">
+            <AnimalQrCard
+              tagType="BOTH"
+              barcodeValue={animalResult.bharat_pashudhan_tag || (animalResult as any).active_tag || animalResult.animal_code}
+              token={animalResult.active_qr_token || animalResult.animal_code}
+              animalCode={animalResult.animal_code}
+              speciesCode={animalResult.species_code}
+              sex={animalResult.sex}
+              tagNumber={animalResult.bharat_pashudhan_tag || (animalResult as any).active_tag}
+              farmerName={(animalResult as any).farmer_name || animalResult.owner_name}
+              villageName={(animalResult as any).village_name || animalResult.village_name}
+              showPrintActions={true}
+            />
           </div>
 
           {/* Quick Field Actions */}

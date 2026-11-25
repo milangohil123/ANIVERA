@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { z } from 'zod';
 import { Button } from '../../components/common/Button';
 import { DataTable, type Column } from '../../components/common/DataTable';
@@ -17,6 +17,7 @@ import {
   type TalukaOption,
 } from '../../services/dahoOpsService';
 import { adminService } from '../../services/adminService';
+import { masterService, type DiseaseItem, type VaccineItem } from '../../services/masterService';
 import {
   Plus,
   RotateCcw,
@@ -36,9 +37,7 @@ const campaignSchema = z.object({
   code: z.string().trim().min(3, 'કોડ ઓછામાં ઓછો ૩ અક્ષરનો હોવો જોઈએ').max(50),
   name_gu: z.string().trim().min(2, 'ગુજરાતી નામ જરૂરી છે'),
   name_en: z.string().trim().optional(),
-  disease_code: z.enum(['FMD', 'HS', 'BQ', 'BRUCELLOSIS', 'PPR'], {
-    errorMap: () => ({ message: 'માન્ય રોગ પસંદ કરો' }),
-  }),
+  disease_code: z.string().min(2, 'માન્ય રોગ પસંદ કરો'),
   start_date: z.string().min(1, 'શરૂઆત તારીખ જરૂરી છે'),
   end_date: z.string().min(1, 'સમાપ્તિ તારીખ જરૂરી છે'),
   target_animals_count: z.number().min(1, 'લક્ષ્યાંક પશુ સંખ્યા ૧ કે તેથી વધુ હોવી જોઈએ'),
@@ -93,7 +92,11 @@ export const DahoCampaignsView: React.FC = () => {
   const [code, setCode] = useState('');
   const [nameGu, setNameGu] = useState('');
   const [nameEn, setNameEn] = useState('');
-  const [diseaseCode, setDiseaseCode] = useState<'FMD' | 'HS' | 'BQ' | 'BRUCELLOSIS' | 'PPR'>('FMD');
+  const [diseaseCode, setDiseaseCode] = useState<string>('FMD');
+  const [masterDiseases, setMasterDiseases] = useState<DiseaseItem[]>([]);
+  const [masterVaccines, setMasterVaccines] = useState<VaccineItem[]>([]);
+  const [selectedVaccineCode, setSelectedVaccineCode] = useState<string>('');
+  const [customVaccineName, setCustomVaccineName] = useState<string>('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [targetCount, setTargetCount] = useState<string>('500');
@@ -117,10 +120,18 @@ export const DahoCampaignsView: React.FC = () => {
   // DAHO Staff Assignment Modal State
   const [isAssignStaffModalOpen, setIsAssignStaffModalOpen] = useState(false);
   const [assignTargetVillage, setAssignTargetVillage] = useState<{ village_id: string; village_name: string } | null>(null);
+  const [selectedMultiAssignVillageIds, setSelectedMultiAssignVillageIds] = useState<string[]>([]);
   const [selectedStaffUserId, setSelectedStaffUserId] = useState('');
   const [availableStaffList, setAvailableStaffList] = useState<Array<{ id: string; full_name: string; username?: string | null; role?: string }>>([]);
   const [isLoadingStaffList, setIsLoadingStaffList] = useState(false);
   const [isSubmittingStaffAssign, setIsSubmittingStaffAssign] = useState(false);
+
+  // Verification Review Modal State
+  const [isVerificationReviewModalOpen, setIsVerificationReviewModalOpen] = useState(false);
+  const [reviewVillageItem, setReviewVillageItem] = useState<any | null>(null);
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [isReviewSubmitting, setIsReviewSubmitting] = useState(false);
 
   const loadCampaigns = async () => {
     setIsLoading(true);
@@ -140,19 +151,36 @@ export const DahoCampaignsView: React.FC = () => {
 
   const loadCreationMeta = async () => {
     try {
-      const [metaResult, adminVillagesResult, adminTalukasResult] = await Promise.allSettled([
+      const [metaResult, adminVillagesResult, adminTalukasResult, masterDiseasesResult, masterSpeciesResult] = await Promise.allSettled([
         dahoOpsService.getCreationMeta(apiBaseUrl),
         adminService.listVillages(apiBaseUrl),
         adminService.listTalukas(apiBaseUrl),
+        masterService.listDiseases(apiBaseUrl, true),
+        masterService.listSpecies(apiBaseUrl, true),
       ]);
+
+      if (masterDiseasesResult.status === 'fulfilled' && masterDiseasesResult.value.length > 0) {
+        setMasterDiseases(masterDiseasesResult.value);
+        if (!diseaseCode) {
+          setDiseaseCode(masterDiseasesResult.value[0].code);
+        }
+      }
+
+      let activeSpecies = DEFAULT_SPECIES;
+      if (masterSpeciesResult.status === 'fulfilled' && masterSpeciesResult.value.length > 0) {
+        activeSpecies = masterSpeciesResult.value.map((s) => ({
+          code: s.code,
+          name_gu: s.name_gu,
+          name_en: s.name_en,
+        }));
+      }
 
       const baseMeta =
         metaResult.status === 'fulfilled' && metaResult.value && Array.isArray(metaResult.value.species)
           ? metaResult.value
-          : { species: DEFAULT_SPECIES, talukas: [], villages: [], default_programmes: [] };
+          : { species: activeSpecies, talukas: [], villages: [], default_programmes: [] };
 
-      const species =
-        Array.isArray(baseMeta.species) && baseMeta.species.length > 0 ? baseMeta.species : DEFAULT_SPECIES;
+      const species = activeSpecies.length > 0 ? activeSpecies : (baseMeta.species || DEFAULT_SPECIES);
 
       // Villages Map
       const villagesMap = new Map<string, VillageWithVO>();
@@ -226,6 +254,33 @@ export const DahoCampaignsView: React.FC = () => {
     loadCampaigns();
     loadCreationMeta();
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (diseaseCode) {
+      masterService
+        .listVaccines(apiBaseUrl, { activeOnly: true, diseaseCode })
+        .then((vacs) => {
+          setMasterVaccines(vacs);
+          if (vacs.length > 0) {
+            setSelectedVaccineCode(vacs[0].code);
+          } else {
+            setSelectedVaccineCode('OTHER');
+          }
+        })
+        .catch(() => setMasterVaccines([]));
+    }
+  }, [diseaseCode, apiBaseUrl]);
+
+  const compatibleVaccines = useMemo(() => {
+    if (!selectedSpecies || selectedSpecies.length === 0) return masterVaccines;
+    const filtered = masterVaccines.filter(
+      (v) =>
+        !v.applicable_species ||
+        v.applicable_species.length === 0 ||
+        v.applicable_species.some((sp) => selectedSpecies.includes(sp))
+    );
+    return filtered.length > 0 ? filtered : masterVaccines;
+  }, [masterVaccines, selectedSpecies]);
 
   const handleOpenCreateModal = () => {
     setIsModalOpen(true);
@@ -316,11 +371,18 @@ export const DahoCampaignsView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const displayName = nameGu.trim() + (nameEn.trim() ? ` (${nameEn.trim()})` : '');
+      const selectedVacObj = masterVaccines.find((v) => v.code === selectedVaccineCode);
+      const isCustom = selectedVaccineCode === 'OTHER' || !selectedVacObj;
+      const finalVaccineName = isCustom ? customVaccineName.trim() : (selectedVacObj?.name_gu || selectedVacObj?.name_en || '');
 
       await dahoOpsService.createCampaign(apiBaseUrl, {
         code: code.trim(),
         name: displayName,
         disease_code: diseaseCode,
+        vaccine_code: isCustom ? 'CUSTOM' : selectedVaccineCode,
+        vaccine_name: finalVaccineName || undefined,
+        custom_vaccine_name: isCustom ? customVaccineName.trim() : undefined,
+        is_custom_vaccine: isCustom,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         target_animals_count: targetCount ? Number(targetCount) : undefined,
@@ -372,6 +434,7 @@ export const DahoCampaignsView: React.FC = () => {
       village_id: villageItem.village_id,
       village_name: villageItem.village_name_gu || villageItem.village_name_en || villageItem.village_code || 'ગામ',
     });
+    setSelectedMultiAssignVillageIds([villageItem.village_id]);
     setIsAssignStaffModalOpen(true);
     setIsLoadingStaffList(true);
     setSelectedStaffUserId('');
@@ -397,18 +460,20 @@ export const DahoCampaignsView: React.FC = () => {
 
   const handleDahoSubmitAssignStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCampaignForMonitoring || !assignTargetVillage || !selectedStaffUserId) {
+    if (!selectedCampaignForMonitoring || !assignTargetVillage || !selectedStaffUserId || selectedMultiAssignVillageIds.length === 0) {
       return;
     }
     setIsSubmittingStaffAssign(true);
     try {
-      await dahoOpsService.assignCampaignWorker(apiBaseUrl, selectedCampaignForMonitoring.id, {
-        village_id: assignTargetVillage.village_id,
+      const st = availableStaffList.find((s) => s.id === selectedStaffUserId);
+      await dahoOpsService.assignCampaignWorkersBulk(apiBaseUrl, selectedCampaignForMonitoring.id, {
+        village_ids: selectedMultiAssignVillageIds,
         worker_user_id: selectedStaffUserId,
+        role_type: st?.role || 'FIELD_WORKER',
       });
       setNotice({
         type: 'success',
-        message: `સ્ટાફ સફળતાપૂર્વક ગામ ${assignTargetVillage.village_name} માટે નિયુક્ત થયો અને સંબંધિત વપરાશકર્તાને સૂચના મોકલાઈ ગઈ.`,
+        message: `સ્ટાફ સફળતાપૂર્વક ${selectedMultiAssignVillageIds.length} ગામો માટે નિયુક્ત થયો અને સંબંધિત વપરાશકર્તાને સૂચના મોકલાઈ ગઈ.`,
       });
       setIsAssignStaffModalOpen(false);
       // Reload monitoring data
@@ -421,6 +486,52 @@ export const DahoCampaignsView: React.FC = () => {
       });
     } finally {
       setIsSubmittingStaffAssign(false);
+    }
+  };
+
+  const handleOpenVerificationReview = (villageItem: any) => {
+    setReviewVillageItem(villageItem);
+    setReviewNotes(villageItem.verification_notes || '');
+    setRejectionReason(villageItem.rejection_reason || '');
+    setIsVerificationReviewModalOpen(true);
+  };
+
+  const handleReviewDecision = async (decision: 'APPROVE' | 'REJECT' | 'REOPEN') => {
+    if (!selectedCampaignForMonitoring || !reviewVillageItem) return;
+    if (decision === 'REJECT' && !rejectionReason.trim()) {
+      alert('કૃપા કરીને અસ્વીકાર / સુધારણાનું કારણ દાખલ કરો.');
+      return;
+    }
+
+    setIsReviewSubmitting(true);
+    try {
+      await dahoOpsService.verifyVillageCompletion(
+        apiBaseUrl,
+        selectedCampaignForMonitoring.id,
+        reviewVillageItem.village_id,
+        {
+          decision,
+          review_notes: reviewNotes.trim() || undefined,
+          rejection_reason: rejectionReason.trim() || undefined,
+        }
+      );
+
+      setNotice({
+        type: 'success',
+        message:
+          decision === 'APPROVE'
+            ? `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી પ્રમાણિત અને મંજૂર થઈ.`
+            : decision === 'REJECT'
+            ? `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી સુધારણા માટે પરત મોકલાઈ.`
+            : `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી પુનઃ ખોલવામાં આવી.`,
+      });
+      setIsVerificationReviewModalOpen(false);
+      const updated = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, selectedCampaignForMonitoring.id);
+      setMonitoringData(updated);
+    } catch (err: any) {
+      alert(err?.message || 'ચકાસણી નિર્ણય નિષ્ફળ.');
+    } finally {
+      setIsReviewSubmitting(false);
     }
   };
 
@@ -677,17 +788,28 @@ export const DahoCampaignsView: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="રોગ પસંદ કરો" required error={formErrors.disease_code}>
+              <FormField label="રોગ પસંદ કરો (Select Disease)" required error={formErrors.disease_code}>
                 <select
                   value={diseaseCode}
-                  onChange={(e) => setDiseaseCode(e.target.value as any)}
+                  onChange={(e) => setDiseaseCode(e.target.value)}
                   className="w-full px-3 py-2 text-sm border rounded-lg bg-white"
                 >
-                  <option value="FMD">FMD (ખરવા મોવાસા)</option>
-                  <option value="HS">HS (ગળસૂંઠો)</option>
-                  <option value="BQ">BQ (ગાઠીયો તાવ)</option>
-                  <option value="BRUCELLOSIS">Brucellosis (બ્રુસેલોસિસ)</option>
-                  <option value="PPR">PPR (બકરીઓમાં પીપીઆર)</option>
+                  {masterDiseases.length > 0 ? (
+                    masterDiseases.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.name_gu} ({d.code})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="FMD">FMD (ખરવા મોવાસા)</option>
+                      <option value="LSD">LSD (લમ્પી ત્વચા રોગ)</option>
+                      <option value="HS">HS (ગળસૂંઠો)</option>
+                      <option value="BQ">BQ (ગાઠીયો તાવ)</option>
+                      <option value="BRUCELLOSIS">Brucellosis (બ્રુસેલોસિસ)</option>
+                      <option value="PPR">PPR (બકરીઓમાં પીપીઆર)</option>
+                    </>
+                  )}
                 </select>
               </FormField>
 
@@ -700,6 +822,43 @@ export const DahoCampaignsView: React.FC = () => {
                   className="w-full px-3 py-2 text-sm border rounded-lg bg-white font-mono"
                 />
               </FormField>
+            </div>
+
+            {/* Vaccine Selection (Linked to Master + Custom Manual Fallback) */}
+            <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-200/80 space-y-2">
+              <FormField label="રસી પસંદ કરો (Vaccine Formulary / Brand)" required>
+                <select
+                  value={selectedVaccineCode}
+                  onChange={(e) => setSelectedVaccineCode(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border rounded-lg bg-white font-medium"
+                >
+                  {compatibleVaccines.map((v) => (
+                    <option key={v.code} value={v.code}>
+                      {v.verification_status === 'VERIFIED' ? '✓ [Verified] ' : '[Pending] '}
+                      {v.name_gu} — {v.standard_dosage || '2ml'} ({v.administration_route || 'S/C'})
+                    </option>
+                  ))}
+                  <option value="OTHER">+ અન્ય / જાતે દાખલ કરો (Enter Manually / Custom)</option>
+                </select>
+              </FormField>
+
+              {selectedVaccineCode === 'OTHER' && (
+                <div className="space-y-1.5 pt-1">
+                  <FormField label="કસ્ટમ રસીનું નામ (Custom Vaccine Name)" required>
+                    <input
+                      type="text"
+                      required
+                      value={customVaccineName}
+                      onChange={(e) => setCustomVaccineName(e.target.value)}
+                      placeholder="દા.ત. ખાસ ઇમરજન્સી રસી બેચ #૧૨..."
+                      className="w-full px-3 py-2 text-xs border rounded-lg bg-white border-amber-300 focus:ring-amber-500"
+                    />
+                  </FormField>
+                  <p className="text-[11px] text-amber-800">
+                    * આ રસી માત્ર આ ઝુંબેશ માટે સાચવવામાં આવશે અને વેટરનરી માસ્ટર ડેટાબેઝને દૂષિત કરશે નહીં.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1046,6 +1205,44 @@ export const DahoCampaignsView: React.FC = () => {
               </div>
             </div>
 
+            {/* Campaign Village Lifecycle & Verification KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-semibold block">કુલ ગામો</span>
+                <span className="text-sm font-bold text-slate-800 font-mono block mt-0.5">{monitoringData.villages.length}</span>
+              </div>
+              <div className="p-2 rounded-lg bg-blue-50/70 border border-blue-200">
+                <span className="text-[10px] text-blue-700 font-semibold block">સોંપાયેલ ગામો</span>
+                <span className="text-sm font-bold text-blue-800 font-mono block mt-0.5">
+                  {monitoringData.assigned_villages_count ?? monitoringData.villages.filter((v) => v.vo_acceptance_status === 'ACCEPTED').length}
+                </span>
+              </div>
+              <div className="p-2 rounded-lg bg-indigo-50/70 border border-indigo-200">
+                <span className="text-[10px] text-indigo-700 font-semibold block">ચાલુ કામગીરી</span>
+                <span className="text-sm font-bold text-indigo-800 font-mono block mt-0.5">
+                  {monitoringData.in_progress_villages_count ?? 0}
+                </span>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-200">
+                <span className="text-[10px] text-amber-700 font-semibold block">ચકાસણી પેન્ડિંગ</span>
+                <span className="text-sm font-bold text-amber-800 font-mono block mt-0.5">
+                  {monitoringData.submitted_villages_count ?? 0}
+                </span>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50/70 border border-emerald-200">
+                <span className="text-[10px] text-emerald-700 font-semibold block">પ્રમાણિત પૂર્ણ</span>
+                <span className="text-sm font-bold text-emerald-800 font-mono block mt-0.5">
+                  {monitoringData.verified_villages_count ?? 0}
+                </span>
+              </div>
+              <div className="p-2 rounded-lg bg-red-50/70 border border-red-200">
+                <span className="text-[10px] text-red-700 font-semibold block">સુધારણા જરૂરી</span>
+                <span className="text-sm font-bold text-red-800 font-mono block mt-0.5">
+                  {monitoringData.rejected_villages_count ?? 0}
+                </span>
+              </div>
+            </div>
+
             {/* Overall Progress Bar */}
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
               <div className="flex justify-between items-center text-xs font-semibold text-slate-800 mb-1.5">
@@ -1090,6 +1287,25 @@ export const DahoCampaignsView: React.FC = () => {
                         </span>
                       );
 
+                    const verifBadge =
+                      v.verification_status === 'VERIFIED_COMPLETED' ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                          ✓ પ્રમાણિત (મંજૂર)
+                        </span>
+                      ) : v.verification_status === 'SUBMITTED_FOR_VERIFICATION' ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-300">
+                          ⏳ ચકાસણી પેન્ડિંગ
+                        </span>
+                      ) : v.verification_status === 'REJECTED' ? (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-bold border border-red-300">
+                          ✕ સુધારણા જરૂરી
+                        </span>
+                      ) : (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+                          {v.vaccinated_count > 0 ? 'ચાલુ છે' : 'સોંપાયેલ'}
+                        </span>
+                      );
+
                     return (
                       <div key={v.village_id} className="p-3 rounded-xl border bg-white shadow-2xs space-y-2">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b pb-2">
@@ -1101,8 +1317,17 @@ export const DahoCampaignsView: React.FC = () => {
                               તાલુકો: {v.taluka_name || '-'} | કોડ: {v.village_code}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             {statusBadge}
+                            {verifBadge}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVerificationReview(v)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-[11px] font-bold text-emerald-800 shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                              <span>ચકાસણી સમીક્ષા</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleOpenDahoAssignStaff(v)}
@@ -1214,6 +1439,37 @@ export const DahoCampaignsView: React.FC = () => {
             )}
           </FormField>
 
+          {/* Multi-Village Selection */}
+          {monitoringData && monitoringData.villages.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#0F172A] block">
+                લક્ષ્યાંકિત ગામો પસંદ કરો (બહુવિધ ગામ સોંપણી):
+              </label>
+              <div className="p-3 bg-slate-50 border rounded-lg max-h-40 overflow-y-auto space-y-1.5 text-xs">
+                {monitoringData.villages.map((v) => (
+                  <label key={v.village_id} className="flex items-center gap-2 cursor-pointer font-medium hover:text-[#135D43]">
+                    <input
+                      type="checkbox"
+                      checked={selectedMultiAssignVillageIds.includes(v.village_id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedMultiAssignVillageIds((prev) => [...prev, v.village_id]);
+                        } else {
+                          setSelectedMultiAssignVillageIds((prev) => prev.filter((id) => id !== v.village_id));
+                        }
+                      }}
+                      className="rounded text-[#135D43] focus:ring-[#135D43]"
+                    />
+                    <span>{v.village_name_gu} ({v.village_code})</span>
+                  </label>
+                ))}
+              </div>
+              <span className="text-[11px] text-[#64748B]">
+                {selectedMultiAssignVillageIds.length} ગામો પસંદ કરેલ છે
+              </span>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
             <Button variant="outline" type="button" onClick={() => setIsAssignStaffModalOpen(false)}>
               રદ કરો
@@ -1229,6 +1485,143 @@ export const DahoCampaignsView: React.FC = () => {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* 4. Review & Verify Village Campaign Completion Modal                   */}
+      {/* ---------------------------------------------------------------------- */}
+      <Modal
+        isOpen={isVerificationReviewModalOpen}
+        onClose={() => setIsVerificationReviewModalOpen(false)}
+        title={`કામગીરી ચકાસણી સમીક્ષા: ${reviewVillageItem?.village_name_gu || ''}`}
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-xs font-body">
+          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 space-y-1.5">
+            <div className="flex justify-between items-center">
+              <div>ગામ: <strong className="text-[#135D43] text-sm">{reviewVillageItem?.village_name_gu}</strong> ({reviewVillageItem?.village_code})</div>
+              <div>તાલુકો: <strong>{reviewVillageItem?.taluka_name || '-'}</strong></div>
+            </div>
+            <div className="flex justify-between items-center text-[11px]">
+              <div>VO: <strong>{reviewVillageItem?.assigned_vo?.full_name || 'નિયુક્ત નથી'}</strong></div>
+              <div>FW: <strong>{(reviewVillageItem?.assigned_fws || []).map((f: any) => f.full_name).join(', ') || 'નિયુક્ત નથી'}</strong></div>
+            </div>
+          </div>
+
+          {/* Stats recap */}
+          <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+              <span className="text-[10px] text-blue-700 block">પાત્ર પશુઓ</span>
+              <strong className="text-blue-900 font-mono text-sm">{reviewVillageItem?.eligible_count || 0}</strong>
+            </div>
+            <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+              <span className="text-[10px] text-emerald-700 block">રસીકરણ થયેલ</span>
+              <strong className="text-emerald-900 font-mono text-sm">{reviewVillageItem?.vaccinated_count || 0}</strong>
+            </div>
+            <div className="p-2 rounded-lg bg-amber-50 border border-amber-100">
+              <span className="text-[10px] text-amber-700 block">બાકી પશુઓ</span>
+              <strong className="text-amber-900 font-mono text-sm">{reviewVillageItem?.remaining_count || 0}</strong>
+            </div>
+            <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+              <span className="text-[10px] text-indigo-700 block">પૂર્ણતા %</span>
+              <strong className="text-indigo-900 font-mono text-sm">{reviewVillageItem?.completion_percentage || 0}%</strong>
+            </div>
+          </div>
+
+          {/* Field notes */}
+          {reviewVillageItem?.completion_notes && (
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-bold text-slate-700 block mb-1">ક્ષેત્રીય કાર્યકર / VO પૂર્ણતા નોંધ:</span>
+              <p className="text-slate-800 leading-relaxed">{reviewVillageItem.completion_notes}</p>
+            </div>
+          )}
+
+          {/* Evidence photos */}
+          {reviewVillageItem?.evidence_photo_urls && reviewVillageItem.evidence_photo_urls.length > 0 && (
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-700 block">પુરાવા ફોટા ({reviewVillageItem.evidence_photo_urls.length}):</span>
+              <div className="flex flex-wrap gap-2">
+                {reviewVillageItem.evidence_photo_urls.map((url: string, idx: number) => (
+                  <a
+                    key={idx}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-[#135D43] underline font-mono bg-white px-2.5 py-1 rounded border hover:bg-emerald-50"
+                  >
+                    ફોટો #{idx + 1} જુઓ ↗
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Verification Notes */}
+          <FormField label="ચકાસણી નોંધ (Verification Notes)">
+            <textarea
+              rows={2}
+              value={reviewNotes}
+              onChange={(e) => setReviewNotes(e.target.value)}
+              placeholder="દા.ત. ક્ષેત્રીય કામગીરી ચકાસી સંતોષકારક જણાતાં પૂર્ણતા પ્રમાણપત્ર મંજૂર કરવામાં આવે છે..."
+              className="w-full px-3 py-2 text-xs border rounded-lg"
+            />
+          </FormField>
+
+          {/* Rejection / Rework Reason */}
+          <FormField label="અસ્વીકાર અથવા સુધારણા કારણ (જો અસ્વીકાર કરવો હોય તો)">
+            <textarea
+              rows={2}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="દા.ત. ૨૦% પશુઓ હજી બાકી છે / નોંધાયેલ રસીકરણ ડેટામાં તફાવત છે..."
+              className="w-full px-3 py-2 text-xs border rounded-lg border-red-200 bg-red-50/30"
+            />
+          </FormField>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setIsVerificationReviewModalOpen(false)}
+            >
+              બંધ કરો
+            </Button>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => handleReviewDecision('REOPEN')}
+                isLoading={isReviewSubmitting}
+                className="text-slate-700"
+              >
+                પુનઃ ખોલો (Reopen)
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                onClick={() => handleReviewDecision('REJECT')}
+                isLoading={isReviewSubmitting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                સુધારણા માટે મોકલો (Reject)
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="button"
+                onClick={() => handleReviewDecision('APPROVE')}
+                isLoading={isReviewSubmitting}
+                leftIcon={<CheckCircle2 className="w-3.5 h-3.5" />}
+              >
+                મંજૂર કરો (Approve & Verify)
+              </Button>
+            </div>
+          </div>
+        </div>
       </Modal>
     </div>
   );

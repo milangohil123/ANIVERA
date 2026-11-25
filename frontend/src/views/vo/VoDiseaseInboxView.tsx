@@ -197,19 +197,35 @@ export const VoDiseaseInboxView: React.FC = () => {
       return;
     }
 
+    // Strict requirement: Photo evidence is mandatory for VO treatment completion
+    if (treatmentPhotos.length === 0) {
+      setNotice({
+        type: 'error',
+        message: 'સારવાર પૂર્ણ કરવા માટે વાસ્તવિક ફોટો પુરાવો (Photo Evidence) અપલોડ કરવો અથવા કેમેરાથી ફોટો લેવો ફરજિયાત છે.',
+      });
+      return;
+    }
+
     setIsSubmittingTreatment(true);
     try {
       const validMeds = medicines.filter((m) => m.drug_name.trim());
+      const medNames = validMeds.map((m) => m.drug_name).join(', ');
+      const medDosages = validMeds
+        .map((m) => `${m.drug_name}: ${m.dosage || 'Standard'} (${m.route || 'IM'})`)
+        .join('; ');
+
       const payload: CaseTreatmentPayload = {
-        visit_date: visitDateTime,
         observations: clinicalObservations.trim(),
-        diagnosed_disease: diagnosedDisease,
-        treatment_procedure: treatmentProcedure.trim() || undefined,
-        medicines_administered: validMeds,
+        diagnosis: diagnosedDisease,
+        treatment_text: treatmentProcedure.trim() || 'ક્લિનિકલ સારવાર અને દવાઓ આપવામાં આવી.',
+        medicine_administered: medNames || undefined,
+        dosage_details: medDosages || undefined,
         treatment_notes: treatmentNotes.trim() || undefined,
+        follow_up_instructions: treatmentNotes.trim() || undefined,
         next_visit_date: nextVisitDate || undefined,
-        before_photos: treatmentPhotos.slice(0, 2),
-        after_photos: treatmentPhotos.slice(2),
+        evidence_photos: treatmentPhotos,
+        before_treatment_photos: treatmentPhotos.slice(0, 2),
+        after_treatment_photos: treatmentPhotos.slice(2),
         latitude: treatmentCoords?.lat,
         longitude: treatmentCoords?.lng,
       };
@@ -222,7 +238,7 @@ export const VoDiseaseInboxView: React.FC = () => {
 
       setNotice({
         type: 'success',
-        message: `કેસ #${selectedCaseForTreatment.report_no || selectedCaseForTreatment.report_id.slice(0, 8)} ની સારવાર સફળતાપૂર્વક નોંધાઈ છે! હવે તે TAHO ચકાસણી હેઠળ મોકલાયેલ છે.`,
+        message: `કેસ #${selectedCaseForTreatment.report_no || selectedCaseForTreatment.report_id.slice(0, 8)} ની સારવાર સફળતાપૂર્વક નોંધાઈ છે! હવે તે TAHO ચકાસણી (Approval) માટે મોકલાયેલ છે.`,
       });
       setSelectedCaseForTreatment(null);
       loadAllData();
@@ -322,8 +338,8 @@ export const VoDiseaseInboxView: React.FC = () => {
       header: 'પશુ વિગત',
       render: (row) => (
         <div className="text-xs">
-          <div className="font-semibold text-[#1E293B]">{row.species_code}</div>
-          <div className="text-[#64748B] font-mono text-[11px]">{row.animal_tag || row.animal_id}</div>
+          <div className="font-semibold text-[#1E293B]">{(row as any).species_code || 'પશુ'}</div>
+          <div className="text-[#64748B] font-mono text-[11px]">{(row as any).animal_tag || row.animal_id}</div>
         </div>
       ),
     },
@@ -434,6 +450,29 @@ export const VoDiseaseInboxView: React.FC = () => {
       {/* TAB 1: ASSIGNED CASES */}
       {pageTab === 'ASSIGNED_CASES' && (
         <div className="space-y-4">
+          {/* New Disease Investigation Assigned Alert Banner */}
+          {assignedCases.some((c) => c.treatment_status === 'ASSIGNED') && (
+            <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl flex items-center justify-between text-xs text-rose-950 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
+                </span>
+                <div>
+                  <span className="font-bold block text-rose-900 text-xs">
+                    નવી રોગ તપાસ સોંપાઈ (New Disease Investigation Assigned)
+                  </span>
+                  <span className="text-[11px] text-rose-800">
+                    TAHO દ્વારા તમને {assignedCases.filter((c) => c.treatment_status === 'ASSIGNED').length} નવો રોગ કેસ સોંપાયેલ છે. કૃપા કરીને સ્થળ પર તપાસ કરી ફોટો પુરાવા સાથે સારવાર નોંધો.
+                  </span>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-rose-600 text-white font-bold text-xs font-mono">
+                {assignedCases.filter((c) => c.treatment_status === 'ASSIGNED').length} નવો કેસ
+              </span>
+            </div>
+          )}
+
           <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950">
             <div className="flex items-center gap-2.5">
               <Stethoscope className="w-5 h-5 text-emerald-700" />

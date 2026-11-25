@@ -540,6 +540,17 @@ async def assign_fw_village(
     return await service.assign_fw_to_village(payload.user_id, payload.village_id, current_user, _extract_ip(request))
 
 
+@router.post("/assignments/fw-village/bulk", response_model=UserVillageBulkAssignResponse, status_code=status.HTTP_201_CREATED, summary="Bulk assign Field Worker to multiple villages")
+async def assign_fw_village_bulk(
+    payload: UserVillageBulkAssignRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> UserVillageBulkAssignResponse:
+    service = AdministrationService(db)
+    return await service.assign_fw_villages_bulk(payload.user_id, payload.village_ids, current_user, _extract_ip(request))
+
+
 @router.post("/assignments/fw-village/end", summary="End Field Worker village assignment")
 async def end_fw_village(
     payload: UserVillageAssignRequest,
@@ -1114,6 +1125,19 @@ async def update_taho_fw_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
     service = TahoService(db)
     return await service.update_fw_status(current_user, fw_id, payload.status, payload.reason, _extract_ip(request))
+
+
+@router.post("/taho/staff/assign-villages", summary="TAHO: Bulk assign or reassign villages to VO or FW")
+async def assign_taho_staff_villages(
+    payload: UserVillageBulkAssignRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    if current_user.role not in ("TAHO", "SUPER_ADMIN", "SYS_ADMIN", "DAHO"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access restricted to TAHO officers.")
+    service = TahoService(db)
+    return await service.assign_staff_villages(current_user, payload.user_id, payload.village_ids, _extract_ip(request))
 
 
 @router.get("/taho/campaigns", summary="List vaccination campaigns active in this Taluka")

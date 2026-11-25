@@ -106,6 +106,7 @@ export const STRINGS_GU = {
       get admin() {
         return {
           get overview() { return tStandalone('nav.admin.overview'); },
+          get masters() { return 'પશુ અને રોગ માસ્ટર (Species, Diseases & Vaccines)'; },
           get geography() { return tStandalone('nav.admin.geography'); },
           get map() { return tStandalone('nav.admin.map'); },
           get daho() { return tStandalone('nav.admin.daho'); },

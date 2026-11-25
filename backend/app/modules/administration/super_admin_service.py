@@ -140,36 +140,6 @@ class SuperAdminService:
     # ==========================================================================
     async def get_overview(self) -> SuperAdminOverviewResponse:
         """Calculate complete state-level KPIs and summaries strictly from database records."""
-        # 0. Automatically clean and deactivate corrupt/dummy records (e.g. 'જી', 'D_...') and duplicate Botad entries
-        try:
-            await self.db.execute(
-                update(District)
-                .where(
-                    or_(
-                        District.code.like("D_%"),
-                        District.name_gu.like("જી%"),
-                        District.name_en.like("D_%"),
-                        District.name_en.in_(["ji", "jji", "daho_dist_botad_extra"]),
-                        District.name_gu.in_(["જી", "જી ૧", "જી ૨", "જી એ"])
-                    )
-                )
-                .values(active=False)
-            )
-            # Deduplicate Botad entries: keep the primary one with active assignment or earliest ID, deactivate extras
-            botad_records = list((await self.db.execute(
-                select(District).where(
-                    or_(District.code == "BOTAD", District.name_en.ilike("botad")),
-                    District.active == True
-                ).order_by(District.created_at.asc())
-            )).scalars().all())
-            if len(botad_records) > 1:
-                for extra in botad_records[1:]:
-                    extra.active = False
-            await self.db.commit()
-        except Exception as e:
-            logger.warning(f"District auto-cleanup notice: {e}")
-            await self.db.rollback()
-
         # 1. Geographic Master Data Counts & Verified Gujarat 34-District Resolution
         raw_districts = list((await self.db.execute(
             select(District).where(

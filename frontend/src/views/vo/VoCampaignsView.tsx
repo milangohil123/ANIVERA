@@ -52,8 +52,17 @@ export const VoCampaignsView: React.FC = () => {
   // Field Worker Assignment Modal
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedVillageAssignment, setSelectedVillageAssignment] = useState<VOCampaignVillageAssignment | null>(null);
+  const [selectedAssignVillageIds, setSelectedAssignVillageIds] = useState<string[]>([]);
   const [workerUserId, setWorkerUserId] = useState('');
   const [isSubmittingAssign, setIsSubmittingAssign] = useState(false);
+
+  // Verification Submission State
+  const [isSubmitVerifModalOpen, setIsSubmitVerifModalOpen] = useState(false);
+  const [verifTarget, setVerifTarget] = useState<VOCampaignVillageAssignment | null>(null);
+  const [verifVisitedCount, setVerifVisitedCount] = useState<number>(0);
+  const [verifNotes, setVerifNotes] = useState('');
+  const [verifPhotos, setVerifPhotos] = useState('');
+  const [isSubmittingVerif, setIsSubmittingVerif] = useState(false);
 
   // Rejection Modal
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -155,30 +164,32 @@ export const VoCampaignsView: React.FC = () => {
   // Open Assign FW Dialog
   const handleOpenAssignFW = (assign: VOCampaignVillageAssignment) => {
     setSelectedVillageAssignment(assign);
+    setSelectedAssignVillageIds([assign.village_id]);
     setIsAssignModalOpen(true);
     if (fieldWorkers.length > 0 && !workerUserId) {
       setWorkerUserId(fieldWorkers[0].id);
     }
   };
 
-  // Submit FW Assignment
+  // Submit FW Assignment (Supports multiple villages)
   const handleAssignWorker = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedVillageAssignment || !workerUserId.trim()) {
-      setNotice({ type: 'error', message: 'કૃપા કરીને ક્ષેત્રીય કાર્યકર પસંદ કરો.' });
+    if (!selectedVillageAssignment || !workerUserId.trim() || selectedAssignVillageIds.length === 0) {
+      setNotice({ type: 'error', message: 'કૃપા કરીને ક્ષેત્રીય કાર્યકર અને ઓછામાં ઓછું એક ગામ પસંદ કરો.' });
       return;
     }
 
     setIsSubmittingAssign(true);
     try {
-      await voService.assignCampaignWorker(apiBaseUrl, selectedVillageAssignment.campaign_id, {
-        village_id: selectedVillageAssignment.village_id,
+      await voService.assignCampaignWorkersBulk(apiBaseUrl, selectedVillageAssignment.campaign_id, {
+        village_ids: selectedAssignVillageIds,
         worker_user_id: workerUserId.trim(),
+        role_type: 'FIELD_WORKER',
       });
 
       setNotice({
         type: 'success',
-        message: `ક્ષેત્રીય કાર્યકર ગામ ${selectedVillageAssignment.village_name_gu} માટે ઝુંબેશ હેઠળ સફળતાપૂર્વક નિયુક્ત થયા.`,
+        message: `ક્ષેત્રીય કાર્યકર ${selectedAssignVillageIds.length} ગામો માટે ઝુંબેશ હેઠળ સફળતાપૂર્વક નિયુક્ત થયા.`,
       });
       setIsAssignModalOpen(false);
       await loadData();
@@ -189,6 +200,47 @@ export const VoCampaignsView: React.FC = () => {
       });
     } finally {
       setIsSubmittingAssign(false);
+    }
+  };
+
+  // Submit Village Verification
+  const handleSubmitVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifTarget) return;
+
+    setIsSubmittingVerif(true);
+    try {
+      const photoUrls = verifPhotos
+        .split('\n')
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      await voService.submitVillageVerification(
+        apiBaseUrl,
+        verifTarget.campaign_id,
+        verifTarget.village_id,
+        {
+          animals_visited_count: Number(verifVisitedCount) || verifTarget.vaccinated_animals_count,
+          vaccinations_completed_count: verifTarget.vaccinated_animals_count,
+          pending_animals_count: verifTarget.pending_animals_count,
+          completion_notes: verifNotes.trim() || undefined,
+          evidence_photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        }
+      );
+
+      setNotice({
+        type: 'success',
+        message: `ગામ ${verifTarget.village_name_gu} ની કામગીરી પ્રમાણીકરણ માટે સફળતાપૂર્વક સબમિટ કરાઈ.`,
+      });
+      setIsSubmitVerifModalOpen(false);
+      await loadData();
+    } catch (err) {
+      setNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'ચકાસણી સબમિશન નિષ્ફળ.',
+      });
+    } finally {
+      setIsSubmittingVerif(false);
     }
   };
 
@@ -463,6 +515,52 @@ export const VoCampaignsView: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Verification Status & Work Completion Action */}
+                  <div className="pt-2 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-[#64748B] font-semibold">સ્થિતિ:</span>
+                      {a.verification_status === 'VERIFIED_COMPLETED' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          પ્રમાણિત (પૂર્ણ)
+                        </span>
+                      ) : a.verification_status === 'SUBMITTED_FOR_VERIFICATION' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-amber-600" />
+                          ચકાસણી પેન્ડિંગ
+                        </span>
+                      ) : a.verification_status === 'REJECTED' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-red-600" />
+                          સુધારણા જરૂરી
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                          {a.vaccinated_animals_count > 0 ? 'ચાલુ છે' : 'સોંપાયેલ'}
+                        </span>
+                      )}
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant={a.verification_status === 'VERIFIED_COMPLETED' ? 'outline' : 'primary'}
+                      onClick={() => {
+                        setVerifTarget(a);
+                        setVerifVisitedCount(a.vaccinated_animals_count);
+                        setVerifNotes(a.completion_notes || '');
+                        setVerifPhotos((a.evidence_photo_urls || []).join('\n'));
+                        setIsSubmitVerifModalOpen(true);
+                      }}
+                      leftIcon={<CheckCircle2 className="w-3 h-3" />}
+                    >
+                      {a.verification_status === 'SUBMITTED_FOR_VERIFICATION'
+                        ? 'વિગત જુઓ / સુધારો'
+                        : a.verification_status === 'VERIFIED_COMPLETED'
+                        ? 'પ્રમાણિત વિગત'
+                        : 'પૂર્ણતા ચકાસણી માટે મોકલો'}
+                    </Button>
+                  </div>
+
                   {/* Assigned Field Workers */}
                   <div className="pt-2 border-t border-[#E2E8F0]">
                     <div className="text-xs font-semibold text-[#0F172A] mb-2 flex items-center justify-between">
@@ -584,6 +682,39 @@ export const VoCampaignsView: React.FC = () => {
             </select>
           </FormField>
 
+          {/* Multi-Village Selection */}
+          {selectedVillageAssignment && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#0F172A] block">
+                લક્ષ્યાંકિત ગામો પસંદ કરો (બહુવિધ ગામ સોંપણી):
+              </label>
+              <div className="p-3 bg-slate-50 border rounded-lg max-h-40 overflow-y-auto space-y-1.5 text-xs">
+                {acceptedAssignments
+                  .filter((a) => a.campaign_id === selectedVillageAssignment.campaign_id)
+                  .map((a) => (
+                    <label key={a.village_id} className="flex items-center gap-2 cursor-pointer font-medium hover:text-[#135D43]">
+                      <input
+                        type="checkbox"
+                        checked={selectedAssignVillageIds.includes(a.village_id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAssignVillageIds((prev) => [...prev, a.village_id]);
+                          } else {
+                            setSelectedAssignVillageIds((prev) => prev.filter((id) => id !== a.village_id));
+                          }
+                        }}
+                        className="rounded text-[#135D43] focus:ring-[#135D43]"
+                      />
+                      <span>{a.village_name_gu} ({a.village_code})</span>
+                    </label>
+                  ))}
+              </div>
+              <span className="text-[11px] text-[#64748B]">
+                {selectedAssignVillageIds.length} ગામો પસંદ કરેલ છે
+              </span>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
             <Button variant="outline" type="button" onClick={() => setIsAssignModalOpen(false)}>
               રદ કરો
@@ -644,6 +775,86 @@ export const VoCampaignsView: React.FC = () => {
             >
               અસ્વીકાર કન્ફર્મ કરો
             </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---------------------------------------------------------------------- */}
+      {/* Modal: Submit Village Work Verification                                */}
+      {/* ---------------------------------------------------------------------- */}
+      <Modal
+        isOpen={isSubmitVerifModalOpen}
+        onClose={() => setIsSubmitVerifModalOpen(false)}
+        title="ગામ રસીકરણ કામગીરી પૂર્ણતા ચકાસણી માટે મોકલો"
+      >
+        <form onSubmit={handleSubmitVerification} className="space-y-4">
+          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+            <div>
+              ઝુંબેશ: <strong className="text-[#135D43]">{verifTarget?.campaign_name}</strong>
+            </div>
+            <div>
+              ગામ: <strong>{verifTarget?.village_name_gu} ({verifTarget?.village_code})</strong>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="p-2 rounded-lg bg-gray-50 border">
+              <span className="text-[10px] text-gray-500 block">પાત્ર પશુઓ</span>
+              <strong className="text-gray-800">{verifTarget?.eligible_animals_count || 0}</strong>
+            </div>
+            <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+              <span className="text-[10px] text-emerald-700 block">રસીકરણ થયેલ</span>
+              <strong className="text-emerald-800">{verifTarget?.vaccinated_animals_count || 0}</strong>
+            </div>
+            <div className="p-2 rounded-lg bg-amber-50 border border-amber-100">
+              <span className="text-[10px] text-amber-700 block">બાકી પશુઓ</span>
+              <strong className="text-amber-800">{verifTarget?.pending_animals_count || 0}</strong>
+            </div>
+          </div>
+
+          <FormField label="મુલાકાત લીધેલ પશુઓની સંખ્યા" required>
+            <input
+              type="number"
+              min={0}
+              value={verifVisitedCount}
+              onChange={(e) => setVerifVisitedCount(parseInt(e.target.value) || 0)}
+              disabled={verifTarget?.verification_status === 'VERIFIED_COMPLETED'}
+              className="w-full px-3 py-2 text-xs border rounded-lg font-mono font-medium"
+              required
+            />
+          </FormField>
+
+          <FormField label="ક્ષેત્રીય અવલોકન અને પૂર્ણતા નોંધ">
+            <textarea
+              rows={3}
+              value={verifNotes}
+              onChange={(e) => setVerifNotes(e.target.value)}
+              disabled={verifTarget?.verification_status === 'VERIFIED_COMPLETED'}
+              placeholder="દા.ત. નિર્ધારિત સમયગાળામાં લક્ષ્યાંક પૂર્ણ થયેલ છે, ગામમાં તમામ પશુપાલકોને રસીકરણનું પ્રમાણપત્ર આપેલ છે..."
+              className="w-full px-3 py-2 text-xs border rounded-lg font-medium"
+            />
+          </FormField>
+
+          <FormField label="પુરાવા ફોટા લિંક / URLs (પ્રતિ લાઇન એક)">
+            <textarea
+              rows={2}
+              value={verifPhotos}
+              onChange={(e) => setVerifPhotos(e.target.value)}
+              disabled={verifTarget?.verification_status === 'VERIFIED_COMPLETED'}
+              placeholder="https://example.com/field-photo.jpg"
+              className="w-full px-3 py-2 text-xs border rounded-lg font-mono text-[11px]"
+            />
+          </FormField>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+            <Button variant="outline" type="button" onClick={() => setIsSubmitVerifModalOpen(false)}>
+              બંધ કરો
+            </Button>
+            {verifTarget?.verification_status !== 'VERIFIED_COMPLETED' && (
+              <Button variant="primary" type="submit" isLoading={isSubmittingVerif}>
+                {verifTarget?.verification_status === 'SUBMITTED_FOR_VERIFICATION' ? 'અપડેટ કરો' : 'ચકાસણી માટે મોકલો'}
+              </Button>
+            )}
           </div>
         </form>
       </Modal>

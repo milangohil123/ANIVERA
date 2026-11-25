@@ -268,10 +268,13 @@ export const DahoStaffView: React.FC = () => {
     try {
       const isFw = selectedStaff.role === 'FIELD_WORKER' || selectedStaff.role === 'FW';
       if (isFw) {
-        for (const vid of targets) {
-          await adminService.assignFWVillage(apiBaseUrl, selectedStaff.id, vid);
+        if (targets.length > 1) {
+          const res = await adminService.assignFWVillagesBulk(apiBaseUrl, selectedStaff.id, targets);
+          setNotice({ type: 'success', message: res.message || `${res.assigned_count} ગામો ક્ષેત્રીય કાર્યકરને સફળતાપૂર્વક સોંપાયા.` });
+        } else {
+          await adminService.assignFWVillage(apiBaseUrl, selectedStaff.id, targets[0]);
+          setNotice({ type: 'success', message: 'ક્ષેત્રીય કાર્યકરને ગામ સફળતાપૂર્વક સોંપાયું.' });
         }
-        setNotice({ type: 'success', message: 'ક્ષેત્રીય કાર્યકરને ગામ(ઓ) સફળતાપૂર્વક સોંપાયા.' });
       } else {
         if (targets.length > 1) {
           const res = await adminService.assignVOVillagesBulk(apiBaseUrl, selectedStaff.id, targets);

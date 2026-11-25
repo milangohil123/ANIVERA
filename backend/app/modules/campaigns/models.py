@@ -16,12 +16,13 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     PrimaryKeyConstraint,
     String,
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -63,6 +64,12 @@ class Campaign(Base):
     )
     start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    disease_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vaccine_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vaccine_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    custom_vaccine_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_custom_vaccine: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    species_codes: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -164,4 +171,44 @@ class CampaignAnimalTarget(Base):
     )
     excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     exclusion_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class CampaignVillageVerification(Base):
+    """Village-level campaign assignment, completion, evidence, and verification tracking."""
+    __tablename__ = "campaign_village_verifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=False)
+    village_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("villages.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="ASSIGNED", nullable=False)
+    assigned_vo_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    assigned_fw_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    animals_visited_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    vaccinations_completed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pending_animals_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    field_observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completion_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_photo_urls: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    submitted_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reopened_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reopened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+
+    campaign: Mapped["Campaign"] = relationship("Campaign")
+
 

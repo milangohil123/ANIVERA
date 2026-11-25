@@ -20,7 +20,7 @@ from app.core.security import get_password_hash
 from app.models.geography import District, Taluka, Village
 from app.modules.authentication.models import User
 from app.modules.authorization.schemas import UserScope
-from app.modules.authorization.service import AuthorizationService
+from app.modules.authorization.service import AuthorizationService, clear_scope_cache
 from app.modules.administration.models import (
     Cooperative,
     GramPanchayat,
@@ -1575,6 +1575,7 @@ class AdministrationService:
             ip=client_ip
         )
         await self.db.commit()
+        clear_scope_cache(user_id=vo_user_id)
         return UserVillageAssignResponse.model_validate(assignment)
 
     async def assign_vo_villages_bulk(
@@ -1696,6 +1697,7 @@ class AdministrationService:
             )
 
         await self.db.commit()
+        clear_scope_cache(user_id=vo_user_id)
         return UserVillageBulkAssignResponse(
             user_id=vo_user_id,
             assigned_count=len(assigned_ids),
@@ -1761,6 +1763,7 @@ class AdministrationService:
             ip=client_ip
         )
         await self.db.commit()
+        clear_scope_cache(user_id=vo_user_id)
         return {"status": "ended", "user_id": str(vo_user_id), "village_id": str(village_id)}
 
     async def assign_fw_to_village(
@@ -1867,7 +1870,122 @@ class AdministrationService:
             ip=client_ip
         )
         await self.db.commit()
+        clear_scope_cache(user_id=fw_user_id)
         return UserVillageAssignResponse.model_validate(assignment)
+
+    async def assign_fw_villages_bulk(
+        self,
+        fw_user_id: uuid.UUID,
+        village_ids: List[uuid.UUID],
+        current_user: User,
+        client_ip: Optional[str] = None
+    ) -> UserVillageBulkAssignResponse:
+        """Assign multiple villages to a Field Worker in a single atomic transaction."""
+        if current_user.role not in ("DAHO", "SYS_ADMIN", "VET_OFFICER", "VO", "TAHO"):
+            await self.authz_service.assert_any_permission(
+                current_user,
+                ["field_worker.manage", "user.manage", "campaign.manage"],
+                ip=client_ip
+            )
+
+        fw = await self.repo.get_staff_by_id_and_role(fw_user_id, role="FIELD_WORKER")
+        if not fw:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field Worker not found")
+
+        from app.modules.authorization.models import VaccinatorAuthorization
+        from app.modules.campaigns.models import Campaign, CampaignVillage, CampaignAssignment
+
+        assigned_ids = []
+        for v_id in village_ids:
+            village = await self.repo.get_village_by_id(v_id)
+            if not village:
+                continue
+
+            if current_user.role == "DAHO":
+                await self.authz_service.assert_district_scope(current_user, village.district_id, ip=client_ip)
+            elif current_user.role == "TAHO":
+                await self.authz_service.assert_taluka_scope(current_user, village.taluka_id, ip=client_ip)
+
+            already_assigned = await self.repo.is_user_actively_assigned_to_village(fw_user_id, v_id)
+            if already_assigned:
+                assigned_ids.append(v_id)
+                continue
+
+            assignment = await self.repo.assign_user_to_village(
+                user_id=fw_user_id,
+                village_id=v_id,
+                assigned_by=current_user.id
+            )
+            assigned_ids.append(v_id)
+
+            # Ensure approved clinical vaccinator authorization
+            vauth_stmt = select(VaccinatorAuthorization).where(
+                VaccinatorAuthorization.user_id == fw_user_id,
+                VaccinatorAuthorization.status == "APPROVED"
+            )
+            existing_vauth = (await self.db.execute(vauth_stmt)).scalars().first()
+            if not existing_vauth:
+                new_vauth = VaccinatorAuthorization(
+                    id=uuid.uuid4(),
+                    user_id=fw_user_id,
+                    authority_type="GOVERNMENT_FIELD_WORKER",
+                    status="APPROVED",
+                    authorization_reference=f"VILL-ASSIGN-{village.code}",
+                    authorized_by_name=current_user.full_name or current_user.username or "Administrator",
+                    requested_by=current_user.id,
+                    approved_by=current_user.id,
+                    approved_at=datetime.now(timezone.utc),
+                    valid_from=date.today(),
+                    valid_to=None
+                )
+                self.db.add(new_vauth)
+
+            # Align active campaigns
+            cv_stmt = (
+                select(CampaignVillage.campaign_id)
+                .join(Campaign, Campaign.id == CampaignVillage.campaign_id)
+                .where(
+                    CampaignVillage.village_id == v_id,
+                    Campaign.status.in_(["ACTIVE", "DRAFT"])
+                )
+            )
+            for c_id in (await self.db.execute(cv_stmt)).scalars().all():
+                ca_stmt = select(CampaignAssignment).where(
+                    CampaignAssignment.campaign_id == c_id,
+                    CampaignAssignment.village_id == v_id,
+                    CampaignAssignment.worker_user_id == fw_user_id,
+                    CampaignAssignment.ended_at.is_(None)
+                )
+                existing_ca = (await self.db.execute(ca_stmt)).scalar_one_or_none()
+                if not existing_ca:
+                    self.db.add(CampaignAssignment(
+                        id=uuid.uuid4(),
+                        campaign_id=c_id,
+                        village_id=v_id,
+                        worker_user_id=fw_user_id,
+                        assigned_by=current_user.id
+                    ))
+
+            await self.repo.record_audit_event(
+                action="ADMIN_FW_VILLAGE_ASSIGNED",
+                result="SUCCESS",
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                object_type="user_village_assignment",
+                object_id=str(assignment.id),
+                village_id=v_id,
+                reason=f"Bulk assigned FW {fw.username} to village {village.code}",
+                ip=client_ip
+            )
+
+        await self.db.commit()
+        clear_scope_cache(user_id=fw_user_id)
+        return UserVillageBulkAssignResponse(
+            user_id=fw_user_id,
+            assigned_count=len(assigned_ids),
+            assigned_village_ids=assigned_ids,
+            message=f"{len(assigned_ids)} ગામો ક્ષેત્રીય કાર્યકરને સફળતાપૂર્વક સોંપાયા."
+        )
 
     async def end_fw_village_assignment(
         self,
@@ -1917,6 +2035,7 @@ class AdministrationService:
             ip=client_ip
         )
         await self.db.commit()
+        clear_scope_cache(user_id=fw_user_id)
         return {"status": "ended", "user_id": str(fw_user_id), "village_id": str(village_id)}
 
     async def assign_daho_to_district(
@@ -1966,5 +2085,6 @@ class AdministrationService:
             ip=client_ip
         )
         await self.db.commit()
+        clear_scope_cache(user_id=daho_user_id)
         return DahoDistrictAssignResponse.model_validate(assignment)
 

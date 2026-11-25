@@ -33,7 +33,7 @@ export function useSyncStatus(apiBaseUrl: string) {
     window.addEventListener('offline', handleOffline);
 
     refreshCounts();
-    const interval = setInterval(refreshCounts, 5000);
+    const interval = setInterval(refreshCounts, 20000);
 
     return () => {
       window.removeEventListener('online', handleOnline);

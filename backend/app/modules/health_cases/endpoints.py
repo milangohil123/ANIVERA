@@ -17,6 +17,7 @@ from app.modules.health_cases.schemas import (
     CaseTreatmentRecordRequest,
     CaseTreatmentVerificationRequest,
     CooperativeScheduleSummary,
+    DiseaseClusterAlert,
     FarmerDiseaseReportCreate,
     FarmerDiseaseReportItem,
     RecurringScheduleCreateRequest,
@@ -124,6 +125,59 @@ async def verify_treatment(
 
 
 # ---------------------------------------------------------------------------
+# Part B.2: DAHO District-Wide Case Monitoring, Overdue Escalation & Assignment
+# ---------------------------------------------------------------------------
+@router.get(
+    "/daho/cases",
+    response_model=List[FarmerDiseaseReportItem],
+    summary="List disease cases across District for DAHO monitoring and overdue escalation"
+)
+async def list_daho_cases(
+    taluka_id: Optional[uuid.UUID] = Query(None),
+    disease_code: Optional[str] = Query(None),
+    is_overdue_only: bool = Query(False),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = HealthWorkflowService(db)
+    return await service.list_daho_cases(
+        current_user,
+        taluka_id=taluka_id,
+        disease_code=disease_code,
+        is_overdue_only=is_overdue_only,
+        limit=limit
+    )
+
+
+@router.post(
+    "/daho/cases/{report_id}/assign",
+    summary="DAHO directly assigns an authorized VO to an overdue or escalated case"
+)
+async def assign_daho_case(
+    report_id: uuid.UUID,
+    payload: CaseAssignmentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = HealthWorkflowService(db)
+    return await service.assign_taho_case(report_id, payload, current_user)
+
+
+@router.get(
+    "/gis/clusters",
+    response_model=List[DiseaseClusterAlert],
+    summary="Data-driven potential disease clusters and suspected outbreak alerts"
+)
+async def get_disease_clusters(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = HealthWorkflowService(db)
+    return await service.get_disease_clusters(current_user)
+
+
+# ---------------------------------------------------------------------------
 # Part C: VO / FW Treatment Workflow
 # ---------------------------------------------------------------------------
 @router.get(
@@ -200,7 +254,10 @@ async def create_cooperative_schedule(
     coop_service = DahoCooperativeService(db)
     coop = await coop_service._resolve_user_cooperative(current_user)
     if not coop:
-        raise status.HTTP_404_NOT_FOUND
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ડેરી સહકારી મંડળી મળી નથી (Cooperative not found)"
+        )
     service = HealthWorkflowService(db)
     return await service.create_recurring_schedule(coop.id, payload, current_user)
 

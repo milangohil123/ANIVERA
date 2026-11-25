@@ -43,10 +43,10 @@ class Animal(Base):
     birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     age_months_estimate: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     age_estimated_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    farmer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("farmers.id"), nullable=False)
-    village_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("villages.id"), nullable=False)
+    farmer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("farmers.id"), nullable=False, index=True)
+    village_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("villages.id"), nullable=False, index=True)
     registration_status: Mapped[str] = mapped_column(Text, default="DRAFT", nullable=False)
-    status: Mapped[str] = mapped_column(Text, default="ACTIVE", nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="ACTIVE", nullable=False, index=True)
     status_changed_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     merged_into_animal_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("animals.id"), nullable=True)
@@ -83,8 +83,8 @@ class AnimalExternalIdentifier(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     animal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("animals.id"), nullable=False)
     id_type: Mapped[str] = mapped_column(Text, nullable=False)
-    id_value: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, default="ACTIVE", nullable=False)
+    id_value: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(Text, default="ACTIVE", nullable=False, index=True)
     recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -96,6 +96,10 @@ class AnimalExternalIdentifier(Base):
 
     # Relationships
     animal: Mapped["Animal"] = relationship("Animal", back_populates="external_identifiers")
+
+
+# Compatibility alias
+AnimalExternalId = AnimalExternalIdentifier
 
 
 class AnimalQRToken(Base):

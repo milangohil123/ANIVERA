@@ -5,6 +5,7 @@ from app.modules.campaigns.models import (
     CampaignAssignment,
     CampaignProgramme,
     CampaignVillage,
+    CampaignVillageVerification,
     ScheduleVersion,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "CampaignAssignment",
     "CampaignProgramme",
     "CampaignVillage",
+    "CampaignVillageVerification",
     "ScheduleVersion",
 ]

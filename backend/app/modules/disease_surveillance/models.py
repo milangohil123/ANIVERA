@@ -45,11 +45,12 @@ class DiseaseReport(Base):
     village_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("villages.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
-    disease_code: Mapped[str] = mapped_column(Text, nullable=False)
+    disease_code: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     report_source: Mapped[str] = mapped_column(Text, nullable=False)
-    report_date: Mapped[date] = mapped_column(Date, nullable=False)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     symptoms: Mapped[List[str]] = mapped_column(ARRAY(Text), default=list, nullable=False)
     observation_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(9, 6), nullable=True)
@@ -66,7 +67,7 @@ class DiseaseReport(Base):
         server_default=func.now(),
         nullable=False
     )
-    status: Mapped[str] = mapped_column(Text, default="SUBMITTED", nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="SUBMITTED", nullable=False, index=True)
     duplicate_of: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("disease_reports.report_id"),
@@ -82,6 +83,17 @@ class DiseaseReport(Base):
     confirmation_basis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     not_confirmed_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     row_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    # Health Case Assignment & Treatment Workflow columns
+    urgency: Mapped[Optional[str]] = mapped_column(Text, default="NORMAL", nullable=True)
+    is_unknown_disease: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, nullable=True)
+    custom_disease_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    treatment_status: Mapped[Optional[str]] = mapped_column(Text, default="SUBMITTED", nullable=True)
+    assigned_vo_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    assigned_fw_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    assigned_to_role: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assignment_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    planned_visit_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     reviews: Mapped[List["DiseaseReview"]] = relationship("DiseaseReview", back_populates="report", cascade="all, delete-orphan")
     status_history: Mapped[List["DiseaseReportStatusHistory"]] = relationship("DiseaseReportStatusHistory", back_populates="report", cascade="all, delete-orphan")

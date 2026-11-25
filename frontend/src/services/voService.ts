@@ -9,8 +9,12 @@
  * - Vaccine inventory read (/api/v1/vaccine-inventory)
  */
 import { authService } from './authService';
+import { apiCache } from '../utils/apiCache';
 
 async function authFetch(apiBaseUrl: string, path: string, options: RequestInit = {}): Promise<Response> {
+  const method = (options.method || 'GET').toUpperCase();
+  const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
   let token = await authService.getValidAccessToken(apiBaseUrl);
   if (!token) {
     const session = authService.getSession();
@@ -35,7 +39,45 @@ async function authFetch(apiBaseUrl: string, path: string, options: RequestInit 
     }
   }
 
+  if (isMutation && res.ok) {
+    apiCache.invalidate();
+  }
+
   return res;
+}
+
+export async function cachedJsonFetch<T>(
+  apiBaseUrl: string,
+  path: string,
+  options: RequestInit = {},
+  ttlMs: number = 30000
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    const res = await authFetch(apiBaseUrl, path, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  const session = authService.getSession();
+  const userPrefix = session?.user?.id || 'guest';
+  const fullUrl = `${apiBaseUrl}${path}`;
+
+  return apiCache.fetchWithCache<T>(
+    fullUrl,
+    async () => {
+      const res = await authFetch(apiBaseUrl, path, options);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'માહિતી મેળવવામાં નિષ્ફળ' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    { ttlMs, userTokenPrefix: userPrefix }
+  );
 }
 
 export interface VODiseaseReport {
@@ -144,6 +186,9 @@ export interface VOCampaignVillageAssignment {
   pending_animals_count: number;
   species_names_gu: string[];
   assigned_fws: Array<{ user_id: string; full_name: string; username?: string }>;
+  verification_status?: string | null;
+  completion_notes?: string | null;
+  evidence_photo_urls?: string[];
 }
 
 export interface VOCampaignAssignment {
@@ -168,9 +213,12 @@ export const voService = {
     q.append('limit', String(params?.limit || 50));
     q.append('offset', String(params?.offset || 0));
 
-    const res = await authFetch(apiBaseUrl, `/api/v1/disease-reports?${q.toString()}`);
-    if (!res.ok) throw new Error(`રોગ અહેવાલો લોડ કરવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<VODiseaseReport[]>(
+      apiBaseUrl,
+      `/api/v1/disease-reports?${q.toString()}`,
+      {},
+      30000
+    );
   },
 
   async getReport(apiBaseUrl: string, reportId: string): Promise<VODiseaseReport> {
@@ -285,9 +333,12 @@ export const voService = {
   // 3. Vaccinations & Treatments
   async listVaccinations(apiBaseUrl: string, animalId?: string): Promise<VOVaccination[]> {
     const q = animalId ? `?animal_id=${animalId}&limit=100` : '?limit=100';
-    const res = await authFetch(apiBaseUrl, `/api/v1/vaccinations${q}`);
-    if (!res.ok) throw new Error(`રસીકરણ ઇવેન્ટ લોડ કરવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<VOVaccination[]>(
+      apiBaseUrl,
+      `/api/v1/vaccinations${q}`,
+      {},
+      30000
+    );
   },
 
   async recordVaccination(
@@ -371,9 +422,12 @@ export const voService = {
 
   // 4. Campaign FW Coordination & VO Acceptance
   async listMyCampaignAssignments(apiBaseUrl: string): Promise<VOCampaignVillageAssignment[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/vo/my-assignments`);
-    if (!res.ok) throw new Error(`ઝુંબેશ સોંપણી યાદી મેળવવામાં નિષ્ફળ: HTTP ${res.status}`);
-    return res.json();
+    return cachedJsonFetch<VOCampaignVillageAssignment[]>(
+      apiBaseUrl,
+      `/api/v1/campaigns/vo/my-assignments`,
+      {},
+      30000
+    );
   },
 
   async acceptCampaignAssignment(apiBaseUrl: string, campaignId: string, villageId: string): Promise<VOCampaignVillageAssignment> {
@@ -421,12 +475,87 @@ export const voService = {
     return res.json();
   },
 
+  async assignCampaignWorkersBulk(
+    apiBaseUrl: string,
+    campaignId: string,
+    payload: { village_ids: string[]; worker_user_id: string; role_type?: string }
+  ): Promise<VOCampaignAssignment[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/assignments/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `બહુવિધ ગામોમાં કાર્યકર સોંપવામાં નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async submitVillageVerification(
+    apiBaseUrl: string,
+    campaignId: string,
+    villageId: string,
+    payload: {
+      animals_visited_count?: number;
+      vaccinations_completed_count?: number;
+      pending_animals_count?: number;
+      field_observations?: string;
+      completion_notes?: string;
+      evidence_photo_urls?: string[];
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/villages/${villageId}/submit-verification`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `કામગીરી ચકાસણી સબમિશન નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async verifyVillageCompletion(
+    apiBaseUrl: string,
+    campaignId: string,
+    villageId: string,
+    payload: {
+      decision: 'APPROVE' | 'REJECT' | 'REOPEN';
+      review_notes?: string;
+      rejection_reason?: string;
+    }
+  ): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/villages/${villageId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'નિષ્ફળ' }));
+      throw new Error(err.detail || `ચકાસણી સમીક્ષા નિર્ણય નિષ્ફળ: HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  async listVillageVerifications(
+    apiBaseUrl: string,
+    campaignId: string,
+    statusFilter?: string
+  ): Promise<any[]> {
+    const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/campaigns/${campaignId}/verifications${qs}`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
   // 5. Jurisdictional Master Data Helpers
   async listVillages(apiBaseUrl: string): Promise<Array<{ id: string; name_gu: string; name_en: string; code: string; taluka_id?: string }>> {
     try {
-      const res = await authFetch(apiBaseUrl, `/api/v1/administration/villages?limit=200`);
-      if (!res.ok) return [];
-      return res.json();
+      return await cachedJsonFetch<Array<{ id: string; name_gu: string; name_en: string; code: string; taluka_id?: string }>>(
+        apiBaseUrl,
+        `/api/v1/administration/villages?limit=200`,
+        {},
+        60000
+      );
     } catch {
       return [];
     }
@@ -434,9 +563,12 @@ export const voService = {
 
   async listFieldWorkers(apiBaseUrl: string): Promise<Array<{ id: string; full_name: string; username: string; mobile_e164?: string; status?: string }>> {
     try {
-      const res = await authFetch(apiBaseUrl, `/api/v1/administration/field-workers?limit=100`);
-      if (!res.ok) return [];
-      return res.json();
+      return await cachedJsonFetch<Array<{ id: string; full_name: string; username: string; mobile_e164?: string; status?: string }>>(
+        apiBaseUrl,
+        `/api/v1/administration/field-workers?limit=100`,
+        {},
+        60000
+      );
     } catch {
       return [];
     }

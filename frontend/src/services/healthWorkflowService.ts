@@ -30,8 +30,11 @@ export interface FarmerReportItem {
   species_code?: string;
   farmer_id?: string;
   farmer_name?: string;
+  farmer_mobile?: string;
+  farmer_address?: string;
   village_id: string;
   village_name_gu?: string;
+  village_name_en?: string;
   disease_code: string;
   is_unknown_disease: boolean;
   custom_disease_name?: string;
@@ -41,21 +44,30 @@ export interface FarmerReportItem {
   treatment_status: string;
   report_date: string;
   received_at: string;
+  assigned_vo_id?: string;
   assigned_vo_name?: string;
   assigned_fw_name?: string;
   assigned_to_role?: string;
+  assignment_deadline?: string;
+  hours_remaining_for_assignment?: number;
+  is_assignment_overdue?: boolean;
+  is_escalated_to_daho?: boolean;
+  latitude?: number;
+  longitude?: number;
   attachment_count: number;
   photo_urls: string[];
+  treatment_record?: any;
 }
 
 export interface CaseAssignmentPayload {
-  assigned_to_role: 'VO' | 'FW' | 'BOTH';
-  assigned_vo_id?: string;
-  assigned_fw_id?: string;
-  priority: 'NORMAL' | 'URGENT' | 'EMERGENCY';
+  assigned_to_role?: 'VO';
+  assigned_vo_id: string;
+  priority?: 'NORMAL' | 'URGENT' | 'EMERGENCY';
   instructions?: string;
   planned_visit_date?: string;
 }
+
+export type CaseAssignmentRequest = CaseAssignmentPayload;
 
 export interface CaseTreatmentPayload {
   observations: string;
@@ -68,15 +80,35 @@ export interface CaseTreatmentPayload {
   next_visit_date?: string;
   latitude?: number;
   longitude?: number;
+  evidence_photos?: string[];
   before_treatment_photos?: string[];
   after_treatment_photos?: string[];
 }
 
+export interface DiseaseClusterAlert {
+  cluster_id: string;
+  disease_code: string;
+  disease_name: string;
+  title: string;
+  severity: 'ALERT' | 'HIGH_RISK' | 'SUSPECTED_OUTBREAK';
+  case_count: number;
+  village_ids: string[];
+  village_names: string[];
+  first_report_date: string;
+  latest_report_date: string;
+  center_latitude?: number;
+  center_longitude?: number;
+  radius_km: number;
+  underlying_case_ids: string[];
+  cases: FarmerReportItem[];
+}
+
 export interface CaseVerificationPayload {
-  action: 'APPROVED' | 'REJECTED' | 'FOLLOW_UP_REQUIRED';
+  action?: 'APPROVED' | 'REJECTED' | 'FOLLOW_UP_REQUIRED';
+  decision?: string;
   verification_notes?: string;
   rejection_reason?: string;
-  follow_up_instructions?: string;
+  followup_instructions?: string;
 }
 
 export interface RecurringSchedulePayload {
@@ -143,10 +175,14 @@ export interface AnimalTimelineItem {
   title: string;
   description: string;
   performed_by?: string;
+  actor_name?: string;
+  actor_role?: string;
   badge_color?: string;
   status?: string;
   metadata?: Record<string, any>;
 }
+
+export type AnimalTimelineEventItem = AnimalTimelineItem;
 
 async function authFetch(apiBaseUrl: string, path: string, options: RequestInit = {}): Promise<Response> {
   let token = await authService.getValidAccessToken(apiBaseUrl);
@@ -235,10 +271,14 @@ export const healthWorkflowService = {
   },
 
   // --- VO / FW Clinical Treatment ---
-  async listAssignedCasesForStaff(apiBaseUrl: string): Promise<FarmerReportItem[]> {
+  async listAssignedCases(apiBaseUrl: string): Promise<FarmerReportItem[]> {
     const res = await authFetch(apiBaseUrl, `/api/v1/health-cases/staff/cases`);
     if (!res.ok) return [];
     return res.json();
+  },
+
+  async listAssignedCasesForStaff(apiBaseUrl: string): Promise<FarmerReportItem[]> {
+    return this.listAssignedCases(apiBaseUrl);
   },
 
   async recordCaseTreatment(apiBaseUrl: string, reportId: string, payload: CaseTreatmentPayload): Promise<any> {
@@ -250,6 +290,41 @@ export const healthWorkflowService = {
       const err = await res.json().catch(() => ({ detail: 'સારવાર નોંધવામાં નિષ્ફળ' }));
       throw new Error(err.detail || 'સારવાર નોંધવામાં નિષ્ફળ');
     }
+    return res.json();
+  },
+
+  // --- DAHO District Surveillance & Overdue Escalation ---
+  async listDahoCases(
+    apiBaseUrl: string,
+    params?: { taluka_id?: string; disease_code?: string; is_overdue_only?: boolean; limit?: number }
+  ): Promise<FarmerReportItem[]> {
+    const q = new URLSearchParams();
+    if (params?.taluka_id) q.set('taluka_id', params.taluka_id);
+    if (params?.disease_code) q.set('disease_code', params.disease_code);
+    if (params?.is_overdue_only) q.set('is_overdue_only', 'true');
+    if (params?.limit) q.set('limit', String(params.limit));
+
+    const res = await authFetch(apiBaseUrl, `/api/v1/health-cases/daho/cases?${q.toString()}`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async assignDahoCase(apiBaseUrl: string, reportId: string, payload: CaseAssignmentPayload): Promise<any> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/health-cases/daho/cases/${reportId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'DAHO કેસ સોંપણીમાં નિષ્ફળ' }));
+      throw new Error(err.detail || 'DAHO કેસ સોંપણીમાં નિષ્ફળ');
+    }
+    return res.json();
+  },
+
+  // --- Data-Driven Disease Outbreak & Cluster Detection ---
+  async getDiseaseClusters(apiBaseUrl: string): Promise<DiseaseClusterAlert[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/health-cases/gis/clusters`);
+    if (!res.ok) return [];
     return res.json();
   },
 

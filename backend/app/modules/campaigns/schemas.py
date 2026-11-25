@@ -27,6 +27,10 @@ class CampaignCreate(BaseModel):
     village_ids: List[uuid.UUID] = Field(default_factory=list, description="Target village identifiers")
     species_codes: List[str] = Field(default_factory=list, description="Selected animal species codes (e.g. CATTLE, BUFFALO)")
     disease_code: Optional[str] = Field(None, description="Target disease code (e.g. FMD, HS, BQ)")
+    vaccine_code: Optional[str] = Field(None, description="Selected vaccine master code (e.g. VAC-FMD-01)")
+    vaccine_name: Optional[str] = Field(None, description="Vaccine display name")
+    custom_vaccine_name: Optional[str] = Field(None, description="Custom vaccine name if entered manually")
+    is_custom_vaccine: bool = Field(False, description="Whether vaccine was entered manually")
     target_animals_count: Optional[int] = Field(None, description="Planned target animal count by DAHO")
     programmes: List[CampaignProgrammeItem] = Field(default_factory=list, description="Species and programmes covered")
     notes: Optional[str] = Field(None, description="Additional notes / instructions")
@@ -213,6 +217,11 @@ class VoCampaignAssignmentItem(BaseModel):
     pending_animals_count: int = 0
     species_names_gu: List[str] = Field(default_factory=list)
     assigned_fws: List[UserBrief] = Field(default_factory=list)
+    verification_status: str = "ASSIGNED"
+    completion_notes: Optional[str] = None
+    evidence_photo_urls: List[str] = Field(default_factory=list)
+    submitted_at: Optional[datetime] = None
+    verified_at: Optional[datetime] = None
 
 
 class CampaignMonitoringVillageItem(BaseModel):
@@ -230,6 +239,14 @@ class CampaignMonitoringVillageItem(BaseModel):
     remaining_count: int = 0
     completion_percentage: float = 0.0
     assigned_fws: List[UserBrief] = Field(default_factory=list)
+    verification_status: str = "ASSIGNED"  # "ASSIGNED", "IN_PROGRESS", "SUBMITTED_FOR_VERIFICATION", "VERIFIED_COMPLETED", "REJECTED", "REOPENED"
+    submitted_at: Optional[datetime] = None
+    submitted_by_name: Optional[str] = None
+    completion_notes: Optional[str] = None
+    evidence_photo_urls: List[str] = Field(default_factory=list)
+    verified_at: Optional[datetime] = None
+    verified_by_name: Optional[str] = None
+    verification_notes: Optional[str] = None
 
 
 class CampaignMonitoringResponse(BaseModel):
@@ -245,7 +262,61 @@ class CampaignMonitoringResponse(BaseModel):
     total_vaccinated_count: int = 0
     total_remaining_count: int = 0
     overall_completion_percentage: float = 0.0
+    assigned_villages_count: int = 0
+    in_progress_villages_count: int = 0
+    submitted_villages_count: int = 0
+    verified_villages_count: int = 0
+    rejected_villages_count: int = 0
+    unassigned_villages_count: int = 0
+    assigned_staff_count: int = 0
     villages: List[CampaignMonitoringVillageItem] = Field(default_factory=list)
+
+
+class CampaignBulkAssignWorkersRequest(BaseModel):
+    village_ids: List[uuid.UUID] = Field(..., min_length=1)
+    worker_user_id: uuid.UUID
+    role: Optional[str] = None
+
+
+class CampaignVillageVerificationSubmitRequest(BaseModel):
+    field_observations: Optional[str] = None
+    completion_notes: Optional[str] = None
+    evidence_photo_urls: Optional[List[str]] = Field(default_factory=list)
+    animals_visited_count: Optional[int] = 0
+
+
+class CampaignVillageVerificationReviewRequest(BaseModel):
+    action: str = Field(..., pattern="^(APPROVE|REJECT|REOPEN)$")
+    verification_notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    follow_up_instructions: Optional[str] = None
+
+
+class CampaignVillageVerificationItem(BaseModel):
+    id: Optional[uuid.UUID] = None
+    campaign_id: uuid.UUID
+    village_id: uuid.UUID
+    village_name_gu: Optional[str] = None
+    village_name_en: Optional[str] = None
+    village_code: Optional[str] = None
+    taluka_name: Optional[str] = None
+    status: str
+    assigned_vo: Optional[UserBrief] = None
+    assigned_fws: List[UserBrief] = Field(default_factory=list)
+    animals_visited_count: int = 0
+    vaccinations_completed_count: int = 0
+    pending_animals_count: int = 0
+    field_observations: Optional[str] = None
+    completion_notes: Optional[str] = None
+    evidence_photo_urls: List[str] = Field(default_factory=list)
+    submitted_by: Optional[uuid.UUID] = None
+    submitted_by_name: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    verified_by: Optional[uuid.UUID] = None
+    verified_by_name: Optional[str] = None
+    verified_at: Optional[datetime] = None
+    verification_notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 

@@ -20,11 +20,15 @@ from app.modules.duty.endpoints import router as duty_router
 from app.modules.translation.endpoints import router as translation_router
 from app.modules.administration.cooperative_portal_endpoints import router as coop_portal_router
 from app.modules.health_cases.endpoints import router as health_cases_router
+from app.modules.master_data.endpoints import router as master_data_router
 
 api_router = APIRouter()
 
 # Include health endpoints
 api_router.include_router(health.router, tags=["system"])
+
+# Include Animal, Disease and Vaccine Master Data under /master
+api_router.include_router(master_data_router, prefix="/master", tags=["Animal & Disease Masters"])
 
 # Include authentication endpoints under /auth
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])

@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +37,11 @@ class FarmerDiseaseReportItem(BaseModel):
     species_code: Optional[str] = None
     farmer_id: Optional[uuid.UUID] = None
     farmer_name: Optional[str] = None
+    farmer_mobile: Optional[str] = None
+    farmer_address: Optional[str] = None
     village_id: uuid.UUID
     village_name_gu: Optional[str] = None
+    village_name_en: Optional[str] = None
     disease_code: str
     is_unknown_disease: bool = False
     custom_disease_name: Optional[str] = None
@@ -48,20 +51,28 @@ class FarmerDiseaseReportItem(BaseModel):
     treatment_status: str = "SUBMITTED"
     report_date: date
     received_at: datetime
+    assigned_vo_id: Optional[uuid.UUID] = None
     assigned_vo_name: Optional[str] = None
     assigned_fw_name: Optional[str] = None
-    assigned_to_role: Optional[str] = None
+    assigned_to_role: Optional[str] = "VO"
+    assignment_deadline: Optional[datetime] = None
+    hours_remaining_for_assignment: Optional[float] = None
+    is_assignment_overdue: bool = False
+    is_escalated_to_daho: bool = False
+    latitude: Optional[Decimal] = None
+    longitude: Optional[Decimal] = None
     attachment_count: int = 0
     photo_urls: List[str] = []
+    treatment_record: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
-# Part B: TAHO Case Assignment & VO/FW Treatment Schemas
+# Part B: TAHO Case Assignment & VO Treatment Schemas
 # ---------------------------------------------------------------------------
 class CaseAssignmentRequest(BaseModel):
-    assigned_to_role: str = Field("BOTH", description="'VO', 'FW', or 'BOTH'")
-    assigned_vo_id: Optional[uuid.UUID] = Field(None, description="Assigned Veterinary Officer ID")
-    assigned_fw_id: Optional[uuid.UUID] = Field(None, description="Assigned Field Worker ID")
+    assigned_to_role: str = Field("VO", description="Exclusively 'VO'")
+    assigned_vo_id: uuid.UUID = Field(..., description="Mandatory assigned Veterinary Officer ID")
+    assigned_fw_id: Optional[uuid.UUID] = Field(None, description="Unused - FW cannot be assigned")
     priority: str = Field("NORMAL", description="'NORMAL', 'URGENT', 'EMERGENCY'")
     instructions: Optional[str] = Field(None, description="Operational instructions from TAHO")
     planned_visit_date: Optional[date] = Field(None, description="Planned date for clinical visit")
@@ -69,7 +80,7 @@ class CaseAssignmentRequest(BaseModel):
 
 class CaseTreatmentRecordRequest(BaseModel):
     observations: str = Field(..., description="Physical examination observations")
-    diagnosis: Optional[str] = Field(None, description="Clinical diagnosis determined by VO/staff")
+    diagnosis: Optional[str] = Field(None, description="Clinical diagnosis determined by VO")
     treatment_text: str = Field(..., description="Treatment provided and procedure notes")
     medicine_administered: Optional[str] = Field(None, description="Medicine, vaccine, or drugs administered")
     dosage_details: Optional[str] = Field(None, description="Dosage and administration route")
@@ -78,15 +89,44 @@ class CaseTreatmentRecordRequest(BaseModel):
     next_visit_date: Optional[date] = Field(None, description="Next follow-up visit date if needed")
     latitude: Optional[float] = Field(None, description="GPS Latitude of treatment site")
     longitude: Optional[float] = Field(None, description="GPS Longitude of treatment site")
+    evidence_photos: Optional[List[str]] = Field(default_factory=list, description="Mandatory treatment evidence photographs")
     before_treatment_photos: Optional[List[str]] = Field(default_factory=list)
     after_treatment_photos: Optional[List[str]] = Field(default_factory=list)
 
 
 class CaseTreatmentVerificationRequest(BaseModel):
-    action: str = Field(..., description="'APPROVED', 'REJECTED', or 'FOLLOW_UP_REQUIRED'")
+    action: Optional[str] = Field(None, description="'APPROVED', 'REJECTED', or 'FOLLOW_UP_REQUIRED'")
+    decision: Optional[str] = Field(None, description="Compatibility alias for action")
     verification_notes: Optional[str] = Field(None, description="Approval or review comments")
     rejection_reason: Optional[str] = Field(None, description="Mandatory reason if rejected or follow-up")
     follow_up_instructions: Optional[str] = Field(None, description="Instructions if follow-up required")
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_action(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            act = data.get("action") or data.get("decision") or "APPROVED"
+            data["action"] = act
+            data["decision"] = act
+        return data
+
+
+class DiseaseClusterAlert(BaseModel):
+    cluster_id: str
+    disease_code: str
+    disease_name: str
+    title: str = "Potential Disease Cluster"
+    severity: str = "ALERT"  # ALERT, HIGH_RISK, SUSPECTED_OUTBREAK
+    case_count: int
+    village_ids: List[uuid.UUID]
+    village_names: List[str]
+    first_report_date: date
+    latest_report_date: date
+    center_latitude: Optional[float] = None
+    center_longitude: Optional[float] = None
+    radius_km: float = 5.0
+    underlying_case_ids: List[uuid.UUID] = []
+    cases: List[FarmerDiseaseReportItem] = []
 
 
 # ---------------------------------------------------------------------------

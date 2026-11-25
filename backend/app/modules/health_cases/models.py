@@ -97,6 +97,13 @@ class TreatmentRecord(Base):
     status: Mapped[str] = mapped_column(Text, default="AWAITING_VERIFICATION", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    attachments: Mapped[List["TreatmentAttachment"]] = relationship(
+        "TreatmentAttachment",
+        back_populates="treatment",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
 
 class TreatmentVerification(Base):
     """Verification decision by TAHO for a recorded veterinary treatment."""
@@ -150,6 +157,11 @@ class TreatmentAttachment(Base):
         nullable=False
     )
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    treatment: Mapped[Optional["TreatmentRecord"]] = relationship(
+        "TreatmentRecord",
+        back_populates="attachments"
+    )
 
 
 class CooperativeVaccinationSchedule(Base):

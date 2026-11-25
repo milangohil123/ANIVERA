@@ -2,6 +2,7 @@
 from app.modules.animals.models import (
     Animal,
     AnimalExternalIdentifier,
+    AnimalExternalId,
     AnimalOwnershipHistory,
     AnimalQRToken,
     AnimalVerification,
@@ -11,6 +12,7 @@ from app.modules.animals.models import (
 __all__ = [
     "Animal",
     "AnimalExternalIdentifier",
+    "AnimalExternalId",
     "AnimalQRToken",
     "AnimalOwnershipHistory",
     "OwnershipTransfer",

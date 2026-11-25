@@ -12,6 +12,7 @@ from app.modules.campaigns.models import (
     CampaignAssignment,
     CampaignProgramme,
     CampaignVillage,
+    CampaignVillageVerification,
     ScheduleVersion,
 )
 
@@ -347,4 +348,141 @@ class CampaignRepository:
         )
         self.db.add(evt)
         await self.db.flush()
+
+    async def get_village_verification(
+        self,
+        campaign_id: uuid.UUID,
+        village_id: uuid.UUID
+    ) -> Optional[CampaignVillageVerification]:
+        """Fetch village verification record for a campaign."""
+        stmt = select(CampaignVillageVerification).where(
+            CampaignVillageVerification.campaign_id == campaign_id,
+            CampaignVillageVerification.village_id == village_id
+        )
+        res = await self.db.execute(stmt)
+        return res.scalars().first()
+
+    async def upsert_village_verification(
+        self,
+        campaign_id: uuid.UUID,
+        village_id: uuid.UUID,
+        status: Optional[str] = None,
+        assigned_vo_id: Optional[uuid.UUID] = None,
+        assigned_fw_id: Optional[uuid.UUID] = None,
+        animals_visited_count: Optional[int] = None,
+        vaccinations_completed_count: Optional[int] = None,
+        pending_animals_count: Optional[int] = None,
+        field_observations: Optional[str] = None,
+        completion_notes: Optional[str] = None,
+        evidence_photo_urls: Optional[List[str]] = None,
+        submitted_by: Optional[uuid.UUID] = None,
+        submitted_at: Optional[datetime] = None,
+        verified_by: Optional[uuid.UUID] = None,
+        verified_at: Optional[datetime] = None,
+        verification_notes: Optional[str] = None,
+        rejection_reason: Optional[str] = None,
+        reopened_by: Optional[uuid.UUID] = None,
+        reopened_at: Optional[datetime] = None,
+    ) -> CampaignVillageVerification:
+        """Create or update a village verification record."""
+        verif = await self.get_village_verification(campaign_id, village_id)
+        now_dt = datetime.now(timezone.utc)
+        if not verif:
+            verif = CampaignVillageVerification(
+                id=uuid.uuid4(),
+                campaign_id=campaign_id,
+                village_id=village_id,
+                status=status or "ASSIGNED",
+                assigned_vo_id=assigned_vo_id,
+                assigned_fw_id=assigned_fw_id,
+                animals_visited_count=animals_visited_count or 0,
+                vaccinations_completed_count=vaccinations_completed_count or 0,
+                pending_animals_count=pending_animals_count or 0,
+                field_observations=field_observations,
+                completion_notes=completion_notes,
+                evidence_photo_urls=evidence_photo_urls or [],
+                submitted_by=submitted_by,
+                submitted_at=submitted_at,
+                verified_by=verified_by,
+                verified_at=verified_at,
+                verification_notes=verification_notes,
+                rejection_reason=rejection_reason,
+                reopened_by=reopened_by,
+                reopened_at=reopened_at,
+                created_at=now_dt,
+                updated_at=now_dt
+            )
+            self.db.add(verif)
+        else:
+            if status is not None:
+                verif.status = status
+            if assigned_vo_id is not None:
+                verif.assigned_vo_id = assigned_vo_id
+            if assigned_fw_id is not None:
+                verif.assigned_fw_id = assigned_fw_id
+            if animals_visited_count is not None:
+                verif.animals_visited_count = animals_visited_count
+            if vaccinations_completed_count is not None:
+                verif.vaccinations_completed_count = vaccinations_completed_count
+            if pending_animals_count is not None:
+                verif.pending_animals_count = pending_animals_count
+            if field_observations is not None:
+                verif.field_observations = field_observations
+            if completion_notes is not None:
+                verif.completion_notes = completion_notes
+            if evidence_photo_urls is not None:
+                verif.evidence_photo_urls = evidence_photo_urls
+            if submitted_by is not None:
+                verif.submitted_by = submitted_by
+            if submitted_at is not None:
+                verif.submitted_at = submitted_at
+            if verified_by is not None:
+                verif.verified_by = verified_by
+            if verified_at is not None:
+                verif.verified_at = verified_at
+            if verification_notes is not None:
+                verif.verification_notes = verification_notes
+            if rejection_reason is not None:
+                verif.rejection_reason = rejection_reason
+            if reopened_by is not None:
+                verif.reopened_by = reopened_by
+            if reopened_at is not None:
+                verif.reopened_at = reopened_at
+            verif.updated_at = now_dt
+
+        await self.db.flush()
+        return verif
+
+    async def list_village_verifications(
+        self,
+        campaign_id: uuid.UUID,
+        status: Optional[str] = None
+    ) -> List[CampaignVillageVerification]:
+        """List village verification items for a campaign."""
+        stmt = select(CampaignVillageVerification).where(CampaignVillageVerification.campaign_id == campaign_id)
+        if status:
+            stmt = stmt.where(CampaignVillageVerification.status == status)
+        res = await self.db.execute(stmt)
+        return list(res.scalars().all())
+
+    async def end_active_assignments(
+        self,
+        campaign_id: uuid.UUID,
+        village_id: uuid.UUID,
+        worker_user_id: Optional[uuid.UUID] = None
+    ) -> None:
+        """End active assignments for village/campaign to preserve historical records on reassignment."""
+        stmt = select(CampaignAssignment).where(
+            CampaignAssignment.campaign_id == campaign_id,
+            CampaignAssignment.village_id == village_id,
+            CampaignAssignment.ended_at.is_(None)
+        )
+        if worker_user_id:
+            stmt = stmt.where(CampaignAssignment.worker_user_id == worker_user_id)
+        res = await self.db.execute(stmt)
+        now_dt = datetime.now(timezone.utc)
+        for ca in res.scalars().all():
+            ca.ended_at = now_dt
+        await self.db.flush()
+
 
