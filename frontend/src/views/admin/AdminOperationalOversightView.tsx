@@ -16,6 +16,7 @@ import {
   Activity,
   AlertTriangle,
   Syringe,
+  TrendingUp,
 } from 'lucide-react';
 
 export const AdminOperationalOversightView: React.FC = () => {
@@ -73,6 +74,14 @@ export const AdminOperationalOversightView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/admin/analytics')}
+            leftIcon={<TrendingUp className="w-3.5 h-3.5" />}
+          >
+            ઇન્ફરન્સ ડેશબોર્ડ (Live Analytics)
+          </Button>
           <Button
             variant="outline"
             size="sm"

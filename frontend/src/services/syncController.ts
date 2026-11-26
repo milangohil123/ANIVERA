@@ -16,6 +16,7 @@ import { offlineDb, type QueuedEvent, type QueuedEventType } from '../db/offline
 import { mediaSyncController } from './mediaSyncController';
 import { authService } from './authService';
 import { generateUUID } from '../utils/uuid';
+import { apiCache } from '../utils/apiCache';
 
 export interface DeviceInfo {
   deviceId: string;
@@ -174,12 +175,21 @@ export class SyncController {
       return null;
     }
 
-    // Verify 7-day offline grant before dispatching
+    // Verify offline grant or dynamically refresh if user has valid online token
     const isValidGrant = await this.isOfflineGrantValid(deviceInfo);
     if (!isValidGrant) {
-      throw new Error(
-        'Offline authorization grant has expired. Online re-authentication is required before synchronisation.'
-      );
+      if (!authToken || authToken === 'mock-bearer-token-for-dev') {
+        throw new Error(
+          'Offline authorization grant has expired. Online re-authentication is required before synchronisation.'
+        );
+      }
+      try {
+        const freshGrant = await this.requestOfflineGrant(apiBaseUrl, authToken, deviceInfo.deviceId);
+        deviceInfo.offlineGrant = freshGrant.offlineGrantToken;
+        deviceInfo.offlineValidUntil = freshGrant.validUntil;
+      } catch (grantErr) {
+        console.warn('Could not acquire offline grant token; proceeding with authenticated token:', grantErr);
+      }
     }
 
     this.isSyncing = true;
@@ -272,6 +282,12 @@ export class SyncController {
 
       // 4. Update individual event records based on per-record acks
       await this.applyServerAcknowledgements(syncResult.results);
+
+      // Invalidate frontend cache and notify application of fresh data synchronization
+      apiCache.invalidate();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('pashurakshak_data_synced', { detail: syncResult }));
+      }
 
       // 5. Trigger media sync controller now that parent reports are confirmed SYNCED
       try {

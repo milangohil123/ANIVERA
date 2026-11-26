@@ -5,20 +5,82 @@ import path from 'path';
 import fs from 'fs';
 import zlib from 'zlib';
 
-// Ensure valid standard PNG icons exist for Chrome/Android PWA criteria
-function ensurePngIcon(filePath: string, width: number, height: number) {
-  if (fs.existsSync(filePath)) return;
+// Distance from point to line segment utility for crisp geometric icon rendering
+function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// Ensure valid standard PNG icons exist with ANIVERA emerald & monogram branding
+function ensurePngIcon(filePath: string, width: number, height: number, force = true) {
+  if (fs.existsSync(filePath) && !force) return;
   const rowBytes = width * 4;
   const rawData = Buffer.alloc((rowBytes + 1) * height);
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const innerR = width * 0.333;
+  const dotX = width * 0.72;
+  const dotY = height * 0.28;
+  const dotR = width * 0.043;
+  const s = width / 192;
+  const strokeW = Math.max(2, 9 * s);
+
+  // Letter A stroke coordinates
+  const aApexX = 70 * s, aApexY = 66 * s;
+  const aLeftX = 46 * s, aLeftY = 126 * s;
+  const aRightX = 94 * s, aRightY = 126 * s;
+  const aBarLeftX = 57 * s, aBarLeftY = 104 * s;
+  const aBarRightX = 83 * s, aBarRightY = 104 * s;
+
+  // Letter V stroke coordinates
+  const vLeftX = 102 * s, vLeftY = 66 * s;
+  const vApexX = 125 * s, vApexY = 126 * s;
+  const vRightX = 148 * s, vRightY = 66 * s;
+
   for (let y = 0; y < height; y++) {
     const offset = y * (rowBytes + 1);
     rawData[offset] = 0;
     for (let x = 0; x < width; x++) {
       const p = offset + 1 + x * 4;
-      rawData[p] = 19;     // R (#135D43)
-      rawData[p + 1] = 93; // G
-      rawData[p + 2] = 67; // B
-      rawData[p + 3] = 255;// A
+
+      // Base background: #135D43
+      let r = 19, g = 93, b = 67, a = 255;
+
+      // Inner circle: #0F4C37
+      const dCenter = Math.hypot(x - cx, y - cy);
+      if (dCenter <= innerR) {
+        r = 15; g = 76; b = 55;
+      }
+
+      // Notification dot: #10B981
+      const dDot = Math.hypot(x - dotX, y - dotY);
+      if (dDot <= dotR) {
+        r = 16; g = 185; b = 129;
+      }
+
+      // Letter A strokes
+      const dA1 = distToSegment(x, y, aLeftX, aLeftY, aApexX, aApexY);
+      const dA2 = distToSegment(x, y, aRightX, aRightY, aApexX, aApexY);
+      const dABar = distToSegment(x, y, aBarLeftX, aBarLeftY, aBarRightX, aBarRightY);
+
+      // Letter V strokes
+      const dV1 = distToSegment(x, y, vLeftX, vLeftY, vApexX, vApexY);
+      const dV2 = distToSegment(x, y, vRightX, vRightY, vApexX, vApexY);
+
+      if (Math.min(dA1, dA2, dABar, dV1, dV2) <= strokeW / 2) {
+        r = 255; g = 255; b = 255; // White monogram
+      }
+
+      rawData[p] = r;
+      rawData[p + 1] = g;
+      rawData[p + 2] = b;
+      rawData[p + 3] = a;
     }
   }
 
@@ -60,8 +122,8 @@ function ensurePngIcon(filePath: string, width: number, height: number) {
 
 const publicDir = path.resolve(__dirname, 'public');
 try {
-  ensurePngIcon(path.join(publicDir, 'pwa-192x192.png'), 192, 192);
-  ensurePngIcon(path.join(publicDir, 'pwa-512x512.png'), 512, 512);
+  ensurePngIcon(path.join(publicDir, 'pwa-192x192.png'), 192, 192, true);
+  ensurePngIcon(path.join(publicDir, 'pwa-512x512.png'), 512, 512, true);
 
   const imagesDir = path.join(publicDir, 'images');
   fs.mkdirSync(imagesDir, { recursive: true });
@@ -92,50 +154,64 @@ export default defineConfig({
         'pwa-512x512.png',
         'pwa-192x192.svg',
         'pwa-512x512.svg',
+        'manifest.webmanifest',
       ],
       manifest: {
         name: 'ANIVERA — Digital Animal Health Platform',
         short_name: 'ANIVERA',
-        description: 'ANIVERA Livestock Vaccination Tracking & Disease Surveillance PWA',
+        description: 'ANIVERA Livestock Vaccination Tracking & Disease Surveillance Platform (ડિજિટલ પશુ સ્વાસ્થ્ય અને રસીકરણ પ્રણાલી)',
         theme_color: '#135D43',
         background_color: '#ffffff',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'portrait-primary',
         scope: '/',
         start_url: '/',
+        categories: ['productivity', 'utilities', 'government'],
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'pwa-512x512.png',
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: 'pwa-512x512.png',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
           },
           {
-            src: 'pwa-192x192.svg',
+            src: '/pwa-192x192.svg',
             sizes: '192x192',
             type: 'image/svg+xml',
             purpose: 'any'
           },
           {
-            src: 'pwa-512x512.svg',
+            src: '/pwa-512x512.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
             purpose: 'any maskable'
           },
           {
-            src: 'favicon.ico',
+            src: '/masked-icon.svg',
+            sizes: '100x100',
+            type: 'image/svg+xml',
+            purpose: 'maskable'
+          },
+          {
+            src: '/favicon.ico',
             sizes: '64x64 32x32 24x24 16x16',
             type: 'image/x-icon'
           }
@@ -146,17 +222,41 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\/api\/v1\/.*$/,
-            handler: 'NetworkFirst',
+            // Google Fonts stylesheets
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
             options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 5,
+              cacheName: 'google-fonts-stylesheets',
               expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days offline
-              }
-            }
-          }
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+            },
+          },
+          {
+            // Google Fonts webfont files
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-webfonts',
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+            },
+          },
+          {
+            // Static GeoJSON maps in /data/
+            urlPattern: /\/data\/.*\.geojson$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'geojson-boundaries-cache',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
         ]
       }
     })

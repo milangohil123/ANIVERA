@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { authService, type AuthSession } from '../services/authService';
+import { adminService } from '../services/adminService';
 import { type DeviceInfo } from '../services/syncController';
 import { type UserProfileResponse, type UserScopeResponse } from '../types/auth';
 
@@ -19,6 +20,9 @@ export interface AuthContextType {
   setSelectedDistrictId: (id: string | null) => void;
   selectedDistrict: any | null;
   assignedDistricts: Array<{ id: string; district_id?: string; code?: string; name_en?: string; name_gu?: string }>;
+  selectedTalukaId: string | null;
+  setSelectedTalukaId: (id: string | null) => void;
+  selectedTaluka: any | null;
   assignedTalukas: Array<{ id: string; taluka_id?: string; district_id?: string; code?: string; name_en?: string; name_gu?: string; village_count?: number }>;
   loginStaff: (username: string, password: string) => Promise<AuthSession>;
   verifyFarmerOtp: (mobile: string, otpCode: string) => Promise<AuthSession>;
@@ -107,6 +111,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSelectedDistrictIdState(id);
   }, []);
 
+  const [selectedTalukaId, setSelectedTalukaIdState] = useState<string | null>(() => {
+    return sessionStorage.getItem('pashurakshak_selected_taluka_id');
+  });
+
+  const setSelectedTalukaId = useCallback((id: string | null) => {
+    if (id) {
+      sessionStorage.setItem('pashurakshak_selected_taluka_id', id);
+    } else {
+      sessionStorage.removeItem('pashurakshak_selected_taluka_id');
+    }
+    setSelectedTalukaIdState(id);
+  }, []);
+
   const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) ?? '';
 
   const role: NormalizedRole = useMemo(() => {
@@ -118,24 +135,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (profile as any)?.assigned_districts_details || (session?.user as any)?.assigned_districts_details || [];
   }, [profile, session]);
 
-  const assignedTalukas = useMemo(() => {
-    return (profile as any)?.assigned_talukas_details || (session?.user as any)?.assigned_talukas_details || [];
-  }, [profile, session]);
+  const [tahoTalukasExtra, setTahoTalukasExtra] = useState<any[]>([]);
 
-  // If DAHO has only 1 district, automatically select it
   useEffect(() => {
-    if (role === 'DAHO' && assignedDistricts.length === 1) {
-      const singleId = assignedDistricts[0].id || assignedDistricts[0].district_id;
-      if (singleId && selectedDistrictId !== singleId) {
-        setSelectedDistrictId(singleId);
+    if (role === 'TAHO' && session?.accessToken) {
+      adminService.listTahoAssignedTalukas(apiBaseUrl)
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setTahoTalukasExtra(data);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setTahoTalukasExtra([]);
+    }
+  }, [role, session?.accessToken, apiBaseUrl]);
+
+  const assignedTalukas = useMemo(() => {
+    if (tahoTalukasExtra.length > 0) return tahoTalukasExtra;
+    return (profile as any)?.assigned_talukas_details || (session?.user as any)?.assigned_talukas_details || [];
+  }, [tahoTalukasExtra, profile, session]);
+
+  // If DAHO has only 1 district, automatically select it; validate if multi-district
+  useEffect(() => {
+    if (role === 'DAHO') {
+      if (assignedDistricts.length === 1) {
+        const singleId = assignedDistricts[0].id || assignedDistricts[0].district_id;
+        if (singleId && selectedDistrictId !== singleId) {
+          setSelectedDistrictId(singleId);
+        }
+      } else if (assignedDistricts.length > 1 && selectedDistrictId) {
+        const exists = assignedDistricts.some((d: any) => (d.id || d.district_id) === selectedDistrictId);
+        if (!exists) {
+          setSelectedDistrictId(null);
+        }
+      } else if (assignedDistricts.length === 0 && selectedDistrictId) {
+        setSelectedDistrictId(null);
       }
     }
   }, [role, assignedDistricts, selectedDistrictId, setSelectedDistrictId]);
+
+  // If TAHO has only 1 taluka, automatically select it; if selected taluka is invalid, clear it
+  useEffect(() => {
+    if (role === 'TAHO' && assignedTalukas.length === 1) {
+      const singleId = assignedTalukas[0].id || assignedTalukas[0].taluka_id;
+      if (singleId && selectedTalukaId !== singleId) {
+        setSelectedTalukaId(singleId);
+      }
+    } else if (role === 'TAHO' && assignedTalukas.length > 1 && selectedTalukaId) {
+      const exists = assignedTalukas.some((t: any) => (t.id || t.taluka_id) === selectedTalukaId);
+      if (!exists) {
+        setSelectedTalukaId(null);
+      }
+    }
+  }, [role, assignedTalukas, selectedTalukaId, setSelectedTalukaId]);
 
   const selectedDistrict = useMemo(() => {
     if (!selectedDistrictId) return null;
     return assignedDistricts.find((d: any) => (d.id || d.district_id) === selectedDistrictId) || null;
   }, [selectedDistrictId, assignedDistricts]);
+
+  const selectedTaluka = useMemo(() => {
+    if (!selectedTalukaId) return null;
+    return assignedTalukas.find((t: any) => (t.id || t.taluka_id) === selectedTalukaId) || null;
+  }, [selectedTalukaId, assignedTalukas]);
 
   const permissions: string[] = useMemo(() => {
     const fromScope = scope?.permissions || [];
@@ -254,6 +317,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setScope(null);
         sessionStorage.removeItem('pashurakshak_cached_profile');
         sessionStorage.removeItem('pashurakshak_cached_scope');
+        sessionStorage.removeItem('pashurakshak_selected_district_id');
+        sessionStorage.removeItem('pashurakshak_selected_taluka_id');
+        setSelectedDistrictIdState(null);
+        setSelectedTalukaIdState(null);
         setIsLoading(false);
       } else {
         fetchProfileAndScope(newSession).finally(() => setIsLoading(false));
@@ -298,6 +365,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await authService.logout(apiBaseUrl);
+    sessionStorage.removeItem('pashurakshak_selected_district_id');
+    sessionStorage.removeItem('pashurakshak_selected_taluka_id');
+    setSelectedDistrictIdState(null);
+    setSelectedTalukaIdState(null);
     setSession(null);
     setProfile(null);
     setScope(null);
@@ -310,6 +381,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const hasPermission = (perm: string) => {
+    if (role === 'SYS_ADMIN') return true;
     return permissions.includes(perm);
   };
 
@@ -329,6 +401,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSelectedDistrictId,
         selectedDistrict,
         assignedDistricts,
+        selectedTalukaId,
+        setSelectedTalukaId,
+        selectedTaluka,
         assignedTalukas,
         loginStaff,
         verifyFarmerOtp,
@@ -360,6 +435,9 @@ const fallbackAuthContext: AuthContextType = {
   setSelectedDistrictId: () => { },
   selectedDistrict: null,
   assignedDistricts: [],
+  selectedTalukaId: null,
+  setSelectedTalukaId: () => { },
+  selectedTaluka: null,
   assignedTalukas: [],
   loginStaff: async (u: string, p: string) => authService.loginStaff((import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000', u, p),
   verifyFarmerOtp: async (m: string, c: string) => authService.verifyFarmerOtp((import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000', m, c),

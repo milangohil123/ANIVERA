@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const TahoStaffView: React.FC = () => {
-  const { apiBaseUrl, hasPermission } = useAuth();
+  const { apiBaseUrl, hasPermission, selectedTalukaId } = useAuth();
   const [activeTab, setActiveTab] = useState<'VO' | 'FW'>('VO');
   const [vos, setVos] = useState<any[]>([]);
   const [fws, setFws] = useState<any[]>([]);
@@ -58,9 +58,9 @@ export const TahoStaffView: React.FC = () => {
     setError(null);
     try {
       const [voList, fwList, hier] = await Promise.all([
-        adminService.listTahoVos(apiBaseUrl).catch(() => []),
-        adminService.listTahoFws(apiBaseUrl).catch(() => []),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.listTahoVos(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.listTahoFws(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
       ]);
       setVos(voList || []);
       setFws(fwList || []);
@@ -74,7 +74,7 @@ export const TahoStaffView: React.FC = () => {
 
   useEffect(() => {
     loadStaffData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedTalukaId]);
 
   const allVillages = useMemo(() => hierarchy?.villages || [], [hierarchy]);
 

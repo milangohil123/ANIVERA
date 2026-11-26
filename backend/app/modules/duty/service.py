@@ -151,11 +151,12 @@ class DutyService:
             received_at=now_utc
         )
         self.db.add(breadcrumb)
+        session_id = new_session.id
         await self.db.commit()
 
-        logger.info("Field worker %s started duty session %s", current_user.id, new_session.id)
+        logger.info("Field worker %s started duty session %s", current_user.id, session_id)
         return DutyStartResponse(
-            session_id=new_session.id,
+            session_id=session_id,
             fw_user_id=current_user.id,
             status="ACTIVE",
             start_time=now_utc,
@@ -190,9 +191,10 @@ class DutyService:
             s.end_time = now_utc
             s.updated_at = now_utc
 
+        ended_session_id = sessions[0].id
         await self.db.commit()
         logger.info("Ended %d duty sessions for field worker %s", len(sessions), current_user.id)
-        return sessions[0].id
+        return ended_session_id
 
     async def record_location_update(
         self,
@@ -264,9 +266,10 @@ class DutyService:
             received_at=now_utc
         )
         self.db.add(breadcrumb)
+        returned_session_id = session.id
         await self.db.commit()
 
-        return session.id
+        return returned_session_id
 
     async def get_duty_status(self, current_user: User) -> DutyStatusResponse:
         """Fetch current duty status and last recorded location for the caller."""

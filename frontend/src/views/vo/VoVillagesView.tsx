@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/common/Button';
 import { DataTable, type Column } from '../../components/common/DataTable';
-import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
 import { StateView } from '../../components/common/StateView';
 import { KpiCard } from '../../components/common/KpiCard';
@@ -15,12 +14,9 @@ import {
   RotateCcw,
   PawPrint,
   Users,
-  Syringe,
-  Activity,
   ChevronRight,
   TrendingUp,
   Map as MapIcon,
-  ShieldAlert,
 } from 'lucide-react';
 
 interface VillageTelemetry {

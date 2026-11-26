@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { StateView } from '../../components/common/StateView';
@@ -20,11 +21,13 @@ import {
   Layers,
   Users,
   Package,
+  TrendingUp,
 } from 'lucide-react';
 
 type VoReportTab = 'SURVEILLANCE' | 'REGISTRY' | 'CAMPAIGN' | 'STAFF' | 'INVENTORY';
 
 export const VoReportsView: React.FC = () => {
+  const navigate = useNavigate();
   const { apiBaseUrl, session } = useAuth();
   const token = session?.accessToken || '';
 
@@ -107,6 +110,14 @@ export const VoReportsView: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/vo/analytics')}
+            leftIcon={<TrendingUp className="w-3.5 h-3.5" />}
+          >
+            ઇન્ફરન્સ ડેશબોર્ડ (Live Analytics)
+          </Button>
           <Button
             variant="outline"
             size="sm"

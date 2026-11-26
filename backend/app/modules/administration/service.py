@@ -230,8 +230,9 @@ class AdministrationService:
         self,
         district_id: Optional[uuid.UUID],
         current_user: User,
+        district_ids: Optional[List[uuid.UUID]] = None,
         offset: int = 0,
-        limit: int = 50
+        limit: int = 500
     ) -> List[TalukaResponse]:
         await self.authz_service.assert_any_permission(
             current_user,
@@ -240,14 +241,16 @@ class AdministrationService:
         scope = await self.authz_service.get_user_scope(current_user)
 
         target_district_id = district_id
+        target_district_ids = district_ids
         if current_user.role == "DAHO":
             if target_district_id:
                 await self.authz_service.assert_district_scope(current_user, target_district_id)
-            else:
+            elif not target_district_ids:
                 target_district_id = next(iter(scope.assigned_district_ids), None)
 
         talukas = await self.repo.list_talukas(
             district_id=target_district_id,
+            district_ids=target_district_ids,
             offset=offset,
             limit=limit
         )
@@ -353,8 +356,10 @@ class AdministrationService:
         district_id: Optional[uuid.UUID],
         taluka_id: Optional[uuid.UUID],
         current_user: User,
+        district_ids: Optional[List[uuid.UUID]] = None,
+        taluka_ids: Optional[List[uuid.UUID]] = None,
         offset: int = 0,
-        limit: int = 100
+        limit: int = 2000
     ) -> List[VillageResponse]:
         if current_user.role not in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO", "DAHO"):
             await self.authz_service.assert_any_permission(
@@ -364,12 +369,13 @@ class AdministrationService:
         scope = await self.authz_service.get_user_scope(current_user)
 
         target_district_id = district_id
+        target_district_ids = district_ids
         village_ids: Optional[Set[uuid.UUID]] = None
 
         if current_user.role == "DAHO":
             if target_district_id:
                 await self.authz_service.assert_district_scope(current_user, target_district_id)
-            else:
+            elif not target_district_ids:
                 target_district_id = next(iter(scope.assigned_district_ids), None)
         elif current_user.role in ("VET_OFFICER", "VO"):
             # VO is strictly scoped to villages officially assigned to this VO
@@ -383,6 +389,8 @@ class AdministrationService:
         villages = await self.repo.list_villages(
             district_id=target_district_id,
             taluka_id=taluka_id,
+            district_ids=target_district_ids,
+            taluka_ids=taluka_ids,
             village_ids=village_ids,
             offset=offset,
             limit=limit

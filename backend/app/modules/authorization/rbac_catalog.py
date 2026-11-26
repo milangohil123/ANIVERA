@@ -248,7 +248,7 @@ DEFAULT_ROLE_CAPABILITIES: Dict[str, List[str]] = {
     "SUPER_ADMIN": [
         "geo.state.manage", "geo.district.manage", "geo.taluka.manage", "geo.village.manage", "map.view", "map.manage",
         "user.daho.create", "user.taho.create", "user.vo.create", "user.fw.create", "user.staff.manage", "user.role.assign", "user.status.manage",
-        "campaign.monitor",
+        "campaign.create", "campaign.configure", "campaign.edit", "campaign.assign", "campaign.assign_workers", "campaign.manage", "campaign.approve", "campaign.monitor", "campaign.close",
         "animal.view", "farmer.view",
         "reports.district", "reports.taluka", "reports.village", "reports.analytics.disease", "reports.analytics.vaccination", "reports.export",
         "system.permissions.manage", "system.roles.manage", "system.logs.view", "system.settings.manage"
@@ -256,14 +256,15 @@ DEFAULT_ROLE_CAPABILITIES: Dict[str, List[str]] = {
     "SYS_ADMIN": [
         "geo.state.manage", "geo.district.manage", "geo.taluka.manage", "geo.village.manage", "map.view", "map.manage",
         "user.daho.create", "user.taho.create", "user.vo.create", "user.fw.create", "user.staff.manage", "user.role.assign", "user.status.manage",
-        "campaign.monitor", "animal.view", "farmer.view",
+        "campaign.create", "campaign.configure", "campaign.edit", "campaign.assign", "campaign.assign_workers", "campaign.manage", "campaign.approve", "campaign.monitor", "campaign.close",
+        "animal.view", "farmer.view",
         "reports.district", "reports.taluka", "reports.village", "reports.analytics.disease", "reports.analytics.vaccination", "reports.export",
         "system.permissions.manage", "system.roles.manage", "system.logs.view", "system.settings.manage"
     ],
     "DAHO": [
         "geo.district.manage", "map.view",
         "user.taho.create", "user.vo.create", "user.fw.create", "user.staff.manage", "user.status.manage",
-        "campaign.create", "campaign.edit", "campaign.assign", "campaign.approve", "campaign.monitor", "campaign.close",
+        "campaign.create", "campaign.edit", "campaign.assign", "campaign.assign_workers", "campaign.manage", "campaign.approve", "campaign.monitor", "campaign.close",
         "animal.view", "farmer.view",
         "vaccination.history.view", "vaccination.campaign.manage", "vaccination.verify",
         "disease.report", "disease.case.assign", "disease.investigation.record", "disease.treatment.verify", "disease.case.close",
@@ -273,21 +274,21 @@ DEFAULT_ROLE_CAPABILITIES: Dict[str, List[str]] = {
     "TAHO": [
         "map.view",
         "user.vo.create", "user.fw.create", "user.staff.manage", "user.status.manage",
-        "campaign.create", "campaign.edit", "campaign.assign", "campaign.monitor",
+        "campaign.create", "campaign.edit", "campaign.assign", "campaign.assign_workers", "campaign.manage", "campaign.monitor",
         "animal.view", "farmer.view",
-        "vaccination.history.view", "vaccination.campaign.manage",
+        "vaccination.history.view", "vaccination.campaign.manage", "vaccination.verify",
         "disease.report", "disease.case.assign",
         "reports.taluka", "reports.village", "reports.analytics.disease", "reports.analytics.vaccination", "reports.export"
     ],
     "VET_OFFICER": [
-        "map.view", "user.staff.manage", "campaign.monitor",
+        "map.view", "user.staff.manage", "campaign.monitor", "campaign.assign", "campaign.assign_workers",
         "animal.register", "farmer.register", "animal.view", "animal.edit", "farmer.view", "animal.status.manage",
         "vaccination.create", "vaccination.history.view", "vaccination.verify", "vaccination.reminders.manage",
         "disease.report", "disease.investigation.record", "disease.treatment.record", "disease.treatment.verify", "disease.case.close",
         "coop.monitor", "reports.village", "reports.analytics.disease", "reports.analytics.vaccination", "reports.export"
     ],
     "VO": [
-        "map.view", "user.staff.manage", "campaign.monitor",
+        "map.view", "user.staff.manage", "campaign.monitor", "campaign.assign", "campaign.assign_workers",
         "animal.register", "farmer.register", "animal.view", "animal.edit", "farmer.view", "animal.status.manage",
         "vaccination.create", "vaccination.history.view", "vaccination.verify", "vaccination.reminders.manage",
         "disease.report", "disease.investigation.record", "disease.treatment.record", "disease.treatment.verify", "disease.case.close",
@@ -352,6 +353,8 @@ PERMISSION_COMPATIBILITY_MAP: Dict[str, Set[str]] = {
     "campaign.create": {"campaign.create", "campaign.manage", "campaign.configure"},
     "campaign.edit": {"campaign.edit", "campaign.manage", "campaign.configure"},
     "campaign.assign": {"campaign.assign", "campaign.assign_workers", "campaign.manage"},
+    "campaign.assign_workers": {"campaign.assign_workers", "campaign.assign", "campaign.manage"},
+    "campaign.manage": {"campaign.manage", "campaign.assign", "campaign.assign_workers", "campaign.create", "campaign.edit", "campaign.monitor", "campaign.close"},
     "campaign.approve": {"campaign.approve", "campaign.manage"},
     "campaign.monitor": {"campaign.monitor", "campaign.view", "campaign.view_assigned", "campaign.read"},
     "campaign.close": {"campaign.close", "campaign.manage"},

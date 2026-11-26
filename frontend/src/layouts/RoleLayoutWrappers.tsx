@@ -2,6 +2,7 @@ import React from 'react';
 import { WebSidebarLayout } from './WebSidebarLayout';
 import { useAuth } from '../context/AuthContext';
 import { useSyncStatus } from '../hooks/useSyncStatus';
+import { TahoTalukaSelectorView } from '../views/taho/TahoTalukaSelectorView';
 import {
   DAHO_NAV_ITEMS,
   TAHO_NAV_ITEMS,
@@ -29,8 +30,13 @@ export const DahoLayoutWrapper: React.FC = () => {
 };
 
 export const TahoLayoutWrapper: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, assignedTalukas, selectedTalukaId, role } = useAuth();
   const syncStatus = useSyncStatus(apiBaseUrl);
+
+  // If TAHO has multiple assigned talukas and none selected, prompt for taluka selection
+  if (role === 'TAHO' && assignedTalukas.length > 1 && !selectedTalukaId) {
+    return <TahoTalukaSelectorView />;
+  }
 
   return (
     <WebSidebarLayout

@@ -156,7 +156,7 @@ export const VoDiseaseInboxView: React.FC = () => {
         setIsCapturingGps(false);
         setNotice({ type: 'error', message: 'GPS લોકેશન મેળવવામાં ક્ષતિ થઈ.' });
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 

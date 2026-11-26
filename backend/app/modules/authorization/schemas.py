@@ -40,11 +40,13 @@ class UserScope(BaseModel):
     def can_access_district(self, district_id: uuid.UUID) -> bool:
         """Check if user is authorized for the given district.
         
-        - DAHO: Requires explicit district assignment in daho_district_assignments.
+        - SYS_ADMIN & SUPER_ADMIN: Statewide access for administration, oversight, and testing.
+        - DAHO & TAHO: Requires active assignment in daho_district_assignments or taho_taluka_assignments.
         - VET_OFFICER / VO: Operational authority within their assigned district(s).
-        - SYS_ADMIN: Technical admin does not automatically receive district operational scope.
         """
-        if self.role in ("DAHO", "VET_OFFICER", "VO"):
+        if self.role in ("SYS_ADMIN", "SUPER_ADMIN"):
+            return True
+        if self.role in ("DAHO", "TAHO", "VET_OFFICER", "VO"):
             return district_id in self.assigned_district_ids
         return False
 
@@ -55,11 +57,18 @@ class UserScope(BaseModel):
     ) -> bool:
         """Check if user is authorized for the given taluka.
         
-        - TAHO: Requires active assignment in taho_taluka_assignments.
+        - SYS_ADMIN & SUPER_ADMIN: Statewide platform access.
+        - TAHO: Requires active assignment in taho_taluka_assignments or parent district scope.
         - DAHO: Permitted if the taluka belongs to one of their assigned districts.
         """
+        if self.role in ("SYS_ADMIN", "SUPER_ADMIN"):
+            return True
         if self.role == "TAHO":
-            return taluka_id in self.assigned_taluka_ids
+            if taluka_id in self.assigned_taluka_ids:
+                return True
+            if taluka_district_id and taluka_district_id in self.assigned_district_ids:
+                return True
+            return False
         if self.role == "DAHO":
             if taluka_district_id:
                 return taluka_district_id in self.assigned_district_ids
@@ -74,20 +83,25 @@ class UserScope(BaseModel):
     ) -> bool:
         """Check if user is authorized for the given village.
         
+        - SYS_ADMIN & SUPER_ADMIN: Statewide platform oversight and testing access.
         - VET_OFFICER / VO & FIELD_WORKER / FW: Assigned via user_village_assignments or district scope.
-        - TAHO: Permitted if the village belongs to their assigned taluka.
+        - TAHO: Permitted if the village belongs to their assigned taluka or district.
         - DAHO: Permitted if the village belongs to their assigned district.
         - DAIRY_STAFF: Permitted if the village is served by their assigned cooperative.
         - FARMER: Restricted to own identity and registered village.
-        - SYS_ADMIN: Denied operational field access.
         """
+        if self.role in ("SYS_ADMIN", "SUPER_ADMIN"):
+            return True
+
         if self.role in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO"):
             return village_id in self.assigned_village_ids
         
         if self.role == "TAHO":
-            if village_taluka_id:
-                return village_taluka_id in self.assigned_taluka_ids
-            return True
+            if village_taluka_id and village_taluka_id in self.assigned_taluka_ids:
+                return True
+            if village_district_id and village_district_id in self.assigned_district_ids:
+                return True
+            return not village_taluka_id and not village_district_id
 
         if self.role == "DAHO":
             if village_district_id:

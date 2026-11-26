@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const TahoFarmersView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, selectedTalukaId } = useAuth();
   const [data, setData] = useState<any>({ items: [], total: 0, page: 1, total_pages: 1 });
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [selectedVillageId, setSelectedVillageId] = useState<string>('');
@@ -30,12 +30,13 @@ export const TahoFarmersView: React.FC = () => {
     try {
       const [fRes, hier] = await Promise.all([
         adminService.listTahoFarmers(apiBaseUrl, {
+          taluka_id: selectedTalukaId || undefined,
           search: searchQuery || undefined,
           village_id: selectedVillageId || undefined,
           page,
           page_size: 15,
         }),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
       ]);
       setData(fRes);
       setCurrentPage(page);
@@ -49,7 +50,7 @@ export const TahoFarmersView: React.FC = () => {
 
   useEffect(() => {
     loadData(1);
-  }, [apiBaseUrl, selectedVillageId]);
+  }, [apiBaseUrl, selectedVillageId, selectedTalukaId]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

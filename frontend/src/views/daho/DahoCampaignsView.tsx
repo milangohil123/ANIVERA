@@ -101,6 +101,8 @@ export const DahoCampaignsView: React.FC = () => {
   const [endDate, setEndDate] = useState('');
   const [targetCount, setTargetCount] = useState<string>('500');
   const [notes, setNotes] = useState('');
+  const [isRecurringSchedule, setIsRecurringSchedule] = useState<boolean>(true);
+  const [intervalMonths, setIntervalMonths] = useState<string>('6');
 
   // Animal Category (Species) Selection - Default select Cow & Buffalo
   const [selectedSpecies, setSelectedSpecies] = useState<string[]>(['CATTLE', 'BUFFALO']);
@@ -388,6 +390,8 @@ export const DahoCampaignsView: React.FC = () => {
         target_animals_count: targetCount ? Number(targetCount) : undefined,
         village_ids: selectedVillages,
         species_codes: selectedSpecies,
+        interval_months: isRecurringSchedule && intervalMonths ? parseInt(intervalMonths, 10) : undefined,
+        is_recurring_schedule: isRecurringSchedule,
         notes: notes.trim() || undefined,
       });
 

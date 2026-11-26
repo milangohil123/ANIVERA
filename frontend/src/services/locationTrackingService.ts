@@ -107,13 +107,14 @@ class LocationTrackingService {
 
   /**
    * Internal wrapper attempting high-accuracy first, then falling back to standard accuracy.
+   * STRICT: maximumAge: 0 to guarantee never returning stale/cached coordinates (e.g. previous city).
    */
   private requestPosition(highAccuracy: boolean, timeoutMs: number): Promise<GeolocationPosition> {
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: highAccuracy,
         timeout: timeoutMs,
-        maximumAge: 30000,
+        maximumAge: 0, // Force fresh live device coordinates
       });
     });
   }
@@ -370,7 +371,7 @@ class LocationTrackingService {
           }
         },
         () => {},
-        { enableHighAccuracy: false, maximumAge: 60000 }
+        { enableHighAccuracy: true, maximumAge: 0 }
       );
     }
   }
@@ -513,8 +514,14 @@ class LocationTrackingService {
           lastServerSyncedAt: data.last_location_update,
         };
         this.activeSessionId = data.session_id;
-        if (isOnDuty && !this.timerId) {
-          this.startPeriodicUpdates(apiBaseUrl);
+        if (isOnDuty) {
+          if (!this.timerId) {
+            this.startPeriodicUpdates(apiBaseUrl);
+          }
+          // Immediately query fresh device GPS coordinates to ensure live accuracy and eliminate stale coordinates
+          this.captureAndSendLocation(apiBaseUrl).catch((err) => {
+            console.debug('Initial live location refresh notice:', err);
+          });
         }
         this.notify();
       }

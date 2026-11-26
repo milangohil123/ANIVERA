@@ -216,6 +216,20 @@ class VaccinationService:
         except Exception as ex:
             logger.warning("Could not auto-advance vaccination cycle: %s", ex)
 
+        # Compute and persist next_due_date if linked to campaign or schedule
+        calculated_next_due = None
+        if payload.campaign_id:
+            try:
+                from app.modules.campaigns.models import Campaign
+                from datetime import timedelta
+                camp = await self.db.get(Campaign, payload.campaign_id)
+                if camp and camp.interval_months:
+                    calculated_next_due = payload.event_date + timedelta(days=camp.interval_months * 30)
+                    if event.vaccination_detail:
+                        event.vaccination_detail.next_due_date = calculated_next_due
+            except Exception as v_err:
+                logger.warning("Next due date calculation note: %s", v_err)
+
         await self.db.commit()
 
         d = event.vaccination_detail
@@ -233,6 +247,7 @@ class VaccinationService:
             administered_by_name=d.administered_by_name,
             authorization_check=d.authorization_check,
             performed_by=event.performed_by,
+            next_due_date=d.next_due_date if (d and d.next_due_date) else calculated_next_due,
             received_at=event.received_at,
             review_status=event.review_status,
             remarks=event.remarks

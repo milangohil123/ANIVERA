@@ -43,6 +43,7 @@ from app.modules.campaigns.schemas import (
     CampaignVillageVerificationItem,
     CampaignVillageVerificationReviewRequest,
     CampaignVillageVerificationSubmitRequest,
+    DistrictMetaItem,
     PendingAnimalItem,
     PendingFarmerGroup,
     SpeciesItem,
@@ -100,6 +101,19 @@ class CampaignService:
             d_res = await self.db.execute(select(District.id).limit(1))
             target_dist_id = d_res.scalar_one_or_none()
 
+        # 0. All 34 Gujarat Districts
+        dist_stmt = select(District).order_by(District.name_gu, District.name_en)
+        dist_res = await self.db.execute(dist_stmt)
+        district_items = [
+            DistrictMetaItem(
+                id=d.id,
+                code=d.code,
+                name_gu=d.name_gu or d.name_en or d.code,
+                name_en=d.name_en or d.code
+            )
+            for d in dist_res.scalars().all()
+        ]
+
         # 1. Species from master table (with standard fallbacks)
         species_items = []
         try:
@@ -126,32 +140,37 @@ class CampaignService:
                 for c, ng, ne in default_species
             ]
 
-        # 2. Talukas in target district (or all talukas if target_dist_id yields none)
+        # 2. Talukas
+        is_admin_user = current_user.role in ("SYS_ADMIN", "SUPER_ADMIN", "ADMIN")
         t_stmt = select(Taluka)
-        if target_dist_id:
+        if not is_admin_user and target_dist_id:
             t_stmt = t_stmt.where(Taluka.district_id == target_dist_id)
-        t_stmt = t_stmt.order_by(Taluka.name_gu, Taluka.code).limit(100)
+        t_stmt = t_stmt.order_by(Taluka.name_gu, Taluka.code)
+        if not is_admin_user:
+            t_stmt = t_stmt.limit(100)
         t_res = await self.db.execute(t_stmt)
         taluka_rows = t_res.scalars().all()
         if not taluka_rows:
-            t_res2 = await self.db.execute(select(Taluka).order_by(Taluka.name_gu, Taluka.code).limit(100))
+            t_res2 = await self.db.execute(select(Taluka).order_by(Taluka.name_gu, Taluka.code).limit(200))
             taluka_rows = t_res2.scalars().all()
 
         taluka_items = [
-            TalukaMetaItem(id=t.id, code=t.code, name_gu=t.name_gu or t.code, name_en=t.name_en or t.code)
+            TalukaMetaItem(id=t.id, district_id=t.district_id, code=t.code, name_gu=t.name_gu or t.code, name_en=t.name_en or t.code)
             for t in taluka_rows
         ]
         taluka_map = {t.id: t for t in taluka_rows}
 
-        # 3. Villages with assigned VOs (fallback to all villages if district yields none)
+        # 3. Villages with assigned VOs
         v_stmt = select(Village)
-        if target_dist_id:
+        if not is_admin_user and target_dist_id:
             v_stmt = v_stmt.where(Village.district_id == target_dist_id)
-        v_stmt = v_stmt.order_by(Village.name_gu, Village.code).limit(200)
+        v_stmt = v_stmt.order_by(Village.name_gu, Village.code).limit(3000 if is_admin_user else 300)
         v_res = await self.db.execute(v_stmt)
         village_rows = v_res.scalars().all()
 
         if not village_rows:
+            v_res2 = await self.db.execute(select(Village).order_by(Village.name_gu, Village.code).limit(300))
+            village_rows = v_res2.scalars().all()
             v_res2 = await self.db.execute(select(Village).order_by(Village.name_gu, Village.code).limit(200))
             village_rows = v_res2.scalars().all()
 
@@ -189,6 +208,7 @@ class CampaignService:
             village_items.append(
                 VillageMetaItem(
                     id=v.id,
+                    district_id=v.district_id,
                     code=v.code,
                     name_gu=v.name_gu or v.name_en or v.code,
                     name_en=v.name_en or v.code,
@@ -209,6 +229,7 @@ class CampaignService:
             programmes = ["FMD", "HS", "BQ", "BRUCELLOSIS", "PPR"]
 
         return CampaignCreationMetaResponse(
+            districts=district_items,
             species=species_items,
             talukas=taluka_items,
             villages=village_items,
@@ -221,7 +242,7 @@ class CampaignService:
         current_user: User,
         client_ip: Optional[str] = None
     ) -> CampaignResponse:
-        """Create and configure a new campaign (DEC-012: DAHO creates/configures campaigns)."""
+        """Create and configure a new campaign (Admin: Statewide; DAHO: District-level)."""
         await self.authz_service.assert_permission(
             current_user,
             "campaign.configure",
@@ -236,9 +257,26 @@ class CampaignService:
                 detail=f"Campaign with code '{payload.code}' already exists"
             )
 
-        # Enforce geographic scope on all target villages
-        for v_id in payload.village_ids:
-            await self.authz_service.assert_village_scope(current_user, v_id, ip=client_ip)
+        # Validate planned dates
+        if payload.start_date and payload.end_date and payload.end_date < payload.start_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="સમાપ્તિ તારીખ શરૂઆત તારીખ કરતાં પહેલાં હોઈ શકતી નથી (End date cannot be earlier than start date)."
+            )
+
+        # Validate animal age eligibility range
+        if payload.min_age_months is not None and payload.max_age_months is not None and payload.max_age_months < payload.min_age_months:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="મહત્તમ ઉંમર લઘુત્તમ ઉંમર કરતાં ઓછી હોઈ શકતી નથી (Maximum age cannot be less than minimum age)."
+            )
+
+        is_admin_user = current_user.role in ("SYS_ADMIN", "SUPER_ADMIN", "ADMIN")
+
+        # Enforce geographic scope on all explicitly provided target villages
+        if not is_admin_user:
+            for v_id in payload.village_ids:
+                await self.authz_service.assert_village_scope(current_user, v_id, ip=client_ip)
 
         campaign = await self.repo.create_campaign(
             code=payload.code,
@@ -262,12 +300,39 @@ class CampaignService:
             campaign.is_custom_vaccine = True
         if payload.species_codes:
             campaign.species_codes = payload.species_codes
+        if payload.min_age_months is not None:
+            campaign.min_age_months = payload.min_age_months
+        if payload.max_age_months is not None:
+            campaign.max_age_months = payload.max_age_months
+        if payload.district_ids:
+            campaign.target_district_ids = payload.district_ids
+            campaign.scope_type = "STATEWIDE"
+        elif payload.scope_type:
+            campaign.scope_type = payload.scope_type
+        if payload.interval_months is not None:
+            campaign.interval_months = payload.interval_months
+        if payload.is_recurring_schedule:
+            campaign.is_recurring_schedule = payload.is_recurring_schedule
         await self.db.flush()
 
         # Associate villages
         if payload.village_ids:
             await self.repo.set_campaign_villages(campaign.id, payload.village_ids)
             target_vids = payload.village_ids
+        elif is_admin_user and payload.district_ids:
+            v_stmt = select(Village.id).where(Village.district_id.in_(payload.district_ids), Village.active == True)
+            v_res = await self.db.execute(v_stmt)
+            target_vids = [row[0] for row in v_res.fetchall()]
+            if not target_vids:
+                v_stmt2 = select(Village.id).where(Village.district_id.in_(payload.district_ids))
+                target_vids = [row[0] for row in (await self.db.execute(v_stmt2)).fetchall()]
+            if target_vids:
+                await self.repo.set_campaign_villages(campaign.id, target_vids)
+        elif is_admin_user:
+            v_stmt = select(Village.id).where(Village.active == True).limit(200)
+            target_vids = [row[0] for row in (await self.db.execute(v_stmt)).fetchall()]
+            if target_vids:
+                await self.repo.set_campaign_villages(campaign.id, target_vids)
         else:
             # Default to all active villages in district or pilot district
             scope = await self.authz_service.get_user_scope(current_user)
@@ -284,7 +349,6 @@ class CampaignService:
         # Associate programmes & species
         prog_pairs = []
         if payload.species_codes:
-            # Validate species exist
             valid_sp_res = await self.db.execute(select(Species.code))
             valid_sp = {r[0] for r in valid_sp_res.fetchall()}
             for sc in payload.species_codes:
@@ -303,7 +367,7 @@ class CampaignService:
         if prog_pairs:
             await self.repo.set_campaign_programmes(campaign.id, prog_pairs)
 
-        # Multi-stakeholder campaign notifications (TAHO, VO, FW, Farmers, Gram Panchayat, Dairy Cooperative)
+        # Multi-stakeholder campaign notifications (Admin -> DAHO -> TAHO -> VO/FW -> Eligible Farmers / Dairy Cooperatives)
         try:
             notif_service = NotificationService(self.db)
             sp_codes = list({sp for sp, _ in prog_pairs})
@@ -311,16 +375,52 @@ class CampaignService:
             species_names_gu = [s.name_gu for s in sp_rows]
             d_code = payload.disease_code or (prog_pairs[0][1] if prog_pairs else "FMD")
 
+            from app.modules.authentication.models import TahoTalukaAssignment, DahoDistrictAssignment
+
+            # 0. If Admin created statewide campaign, notify all DAHOs in target districts
+            dist_ids_stmt = select(Village.district_id).where(Village.id.in_(target_vids)).distinct()
+            camp_dist_ids = set((await self.db.execute(dist_ids_stmt)).scalars().all())
+            if payload.district_ids:
+                camp_dist_ids.update(payload.district_ids)
+
+            if camp_dist_ids and is_admin_user:
+                daho_users_stmt = (
+                    select(User)
+                    .join(DahoDistrictAssignment, DahoDistrictAssignment.daho_user_id == User.id)
+                    .where(
+                        DahoDistrictAssignment.district_id.in_(camp_dist_ids),
+                        DahoDistrictAssignment.ended_at.is_(None),
+                        User.role == "DAHO",
+                        func.upper(User.status) == "ACTIVE"
+                    )
+                )
+                notified_dahos = set()
+                for du in (await self.db.execute(daho_users_stmt)).scalars().all():
+                    if du.id not in notified_dahos:
+                        notified_dahos.add(du.id)
+                        await notif_service.notify(
+                            recipient_user_id=du.id,
+                            kind="CAMPAIGN_STATEWIDE_ALERT",
+                            message_key="CAMPAIGN_STATEWIDE_ALERT",
+                            params={
+                                "campaign_id": str(campaign.id),
+                                "campaign_code": campaign.code,
+                                "campaign_name": campaign.name,
+                                "disease_code": d_code,
+                                "admin_name": current_user.full_name or current_user.username or "Admin",
+                            },
+                            related_type="campaign",
+                            related_id=str(campaign.id)
+                        )
+
             # 1. Resolve & notify all TAHOs in the campaign's district / talukas
             taluka_ids_stmt = select(Village.taluka_id).where(Village.id.in_(target_vids)).distinct()
             camp_taluka_ids = set((await self.db.execute(taluka_ids_stmt)).scalars().all())
-            scope = await self.authz_service.get_user_scope(current_user)
-            target_district_id = next(iter(scope.assigned_district_ids), None)
-            if target_district_id:
-                dt_stmt = select(Taluka.id).where(Taluka.district_id == target_district_id)
+            if camp_dist_ids:
+                dt_stmt = select(Taluka.id).where(Taluka.district_id.in_(camp_dist_ids))
                 camp_taluka_ids.update((await self.db.execute(dt_stmt)).scalars().all())
 
-            from app.modules.authentication.models import TahoTalukaAssignment, DahoDistrictAssignment
+            creator_title = current_user.full_name or current_user.username or ("Admin" if is_admin_user else "DAHO")
             if camp_taluka_ids:
                 taho_users_stmt = (
                     select(User)
@@ -345,7 +445,7 @@ class CampaignService:
                                 "campaign_code": campaign.code,
                                 "campaign_name": campaign.name,
                                 "disease_code": d_code,
-                                "daho_name": current_user.full_name or current_user.username or "DAHO",
+                                "daho_name": creator_title,
                             },
                             related_type="campaign",
                             related_id=str(campaign.id)
@@ -728,6 +828,10 @@ class CampaignService:
 
         resp = CampaignDetailResponse.model_validate(campaign)
         resp.name = localize_campaign_name_gu(resp.name)
+        resp.scope_type = getattr(campaign, "scope_type", "DISTRICT")
+        resp.min_age_months = getattr(campaign, "min_age_months", None)
+        resp.max_age_months = getattr(campaign, "max_age_months", None)
+        resp.target_district_ids = getattr(campaign, "target_district_ids", None)
         resp.village_ids = villages
         resp.programmes = [CampaignProgrammeResponse.model_validate(p) for p in programmes]
         resp.target_count = target_count
@@ -752,7 +856,8 @@ class CampaignService:
         allowed_talukas: Optional[Set[uuid.UUID]] = None
         allowed_districts: Optional[Set[uuid.UUID]] = None
 
-        if current_user.role in ("SYS_ADMIN",):
+        farmer_species: Optional[Set[str]] = None
+        if current_user.role in ("SYS_ADMIN", "SUPER_ADMIN", "ADMIN"):
             pass  # Unrestricted statewide visibility
         elif current_user.role in ("DAHO",):
             allowed_districts = scope.assigned_district_ids
@@ -768,11 +873,20 @@ class CampaignService:
             allowed_districts = getattr(scope, "assigned_district_ids", set()) or set()
         elif current_user.role == "FARMER":
             from app.modules.farmers.models import Farmer, FarmerAccountProvisioning
-            f_stmt = select(Farmer.village_id).join(
+            from app.modules.animals.models import Animal
+            f_stmt = select(Farmer.id, Farmer.village_id).join(
                 FarmerAccountProvisioning, FarmerAccountProvisioning.farmer_id == Farmer.id
             ).where(FarmerAccountProvisioning.user_id == current_user.id)
             f_res = await self.db.execute(f_stmt)
-            allowed_villages = {r[0] for r in f_res.fetchall() if r[0]}
+            f_row = f_res.first()
+            if f_row:
+                fid, f_vid = f_row
+                allowed_villages = {f_vid} if f_vid else set()
+                sp_res = await self.db.execute(select(Animal.species_code).where(Animal.farmer_id == fid, Animal.status == "ACTIVE"))
+                farmer_species = set(sp_res.scalars().all())
+            else:
+                allowed_villages = set()
+                farmer_species = set()
 
         campaigns = await self.repo.list_campaigns(
             allowed_village_ids=allowed_villages,
@@ -784,11 +898,26 @@ class CampaignService:
             worker_user_id=current_user.id if current_user.role in ("FIELD_WORKER", "FW", "VET_OFFICER", "VO") else None,
             created_by=current_user.id if current_user.role in ("DAHO", "TAHO") else None
         )
+
+        if current_user.role == "FARMER" and farmer_species is not None:
+            filtered_c = []
+            for c in campaigns:
+                c_species = c.species_codes or []
+                if not c_species:
+                    c_progs = await self.repo.get_campaign_programmes(c.id)
+                    c_species = [p.species_code for p in c_progs]
+                if not c_species or any(sp in farmer_species for sp in c_species):
+                    filtered_c.append(c)
+            campaigns = filtered_c
         res_list = []
         for c in campaigns:
             try:
                 item = CampaignResponse.model_validate(c)
                 item.name = localize_campaign_name_gu(item.name)
+                item.scope_type = getattr(c, "scope_type", "DISTRICT")
+                item.min_age_months = getattr(c, "min_age_months", None)
+                item.max_age_months = getattr(c, "max_age_months", None)
+                item.target_district_ids = getattr(c, "target_district_ids", None)
                 try:
                     t_cnt = await self.repo.count_target_animals(c.id)
                     item.target_animals_count = t_cnt if t_cnt > 0 else None
@@ -836,10 +965,10 @@ class CampaignService:
         current_user: User,
         client_ip: Optional[str] = None
     ) -> CampaignAssignmentResponse:
-        """Assign a Field Worker or Veterinary Officer to a campaign village (DAHO / VO authority)."""
+        """Assign a Field Worker or Veterinary Officer to a campaign village (DAHO / TAHO / VO authority)."""
         await self.authz_service.assert_any_permission(
             current_user,
-            ["campaign.assign_workers", "campaign.manage"],
+            ["campaign.assign", "campaign.assign_workers", "campaign.manage", "user.staff.manage"],
             ip=client_ip
         )
 
@@ -847,8 +976,14 @@ class CampaignService:
         if not campaign:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
 
-        # VO or DAHO must have operational scope in the village
-        await self.authz_service.assert_village_scope(current_user, payload.village_id, ip=client_ip)
+        # Verify caller has authority to assign staff to this campaign village
+        campaign_villages = await self.repo.get_campaign_villages(campaign.id)
+        if current_user.role == "TAHO" and payload.village_id in campaign_villages:
+            pass  # Authorized under campaign supervision
+        elif current_user.role in ("SYS_ADMIN", "SUPER_ADMIN", "ADMIN"):
+            pass  # Unrestricted admin authority
+        else:
+            await self.authz_service.assert_village_scope(current_user, payload.village_id, ip=client_ip)
 
         # If caller is VO, enforce that VO has ACCEPTED the campaign assignment for this village:
         if current_user.role in ("VET_OFFICER", "VO"):
@@ -1953,7 +2088,7 @@ class CampaignService:
         """Assign a staff member (VO or FW) to multiple campaign villages."""
         await self.authz_service.assert_any_permission(
             current_user,
-            ["campaign.assign_workers", "campaign.manage"],
+            ["campaign.assign", "campaign.assign_workers", "campaign.manage", "user.staff.manage"],
             ip=client_ip
         )
         campaign = await self.repo.get_campaign_by_id(campaign_id)
@@ -1971,9 +2106,15 @@ class CampaignService:
         notif_service = NotificationService(self.db)
         results = []
 
+        campaign_villages = await self.repo.get_campaign_villages(campaign.id)
         for v_id in payload.village_ids:
-            # Check village scope
-            await self.authz_service.assert_village_scope(current_user, v_id, ip=client_ip)
+            # Check village scope: if caller is TAHO/Admin and village is part of the campaign, authorize deployment
+            if current_user.role == "TAHO" and v_id in campaign_villages:
+                pass  # Authorized under campaign supervision
+            elif current_user.role in ("SYS_ADMIN", "SUPER_ADMIN", "ADMIN"):
+                pass  # Statewide admin authority
+            else:
+                await self.authz_service.assert_village_scope(current_user, v_id, ip=client_ip)
 
             # Check existing active assignment
             active_assign = await self.repo.get_active_assignment(

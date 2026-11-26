@@ -39,7 +39,7 @@ export type LayerMode = 'coverage' | 'disease' | 'pending' | 'campaign' | 'popul
 export const TahoMapsView: React.FC = () => {
   const [searchParams] = useSearchParams();
   const urlVillageId = searchParams.get('village_id');
-  const { apiBaseUrl, profile } = useAuth();
+  const { apiBaseUrl, profile, selectedTalukaId } = useAuth();
 
   // Core Data States
   const [overview, setOverview] = useState<any | null>(null);
@@ -78,8 +78,8 @@ export const TahoMapsView: React.FC = () => {
     setError(null);
     try {
       const [ov, hier] = await Promise.all([
-        adminService.getTahoOverview(apiBaseUrl),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.getTahoOverview(apiBaseUrl, selectedTalukaId || undefined),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
       ]);
       setOverview(ov);
       setHierarchy(hier);
@@ -98,11 +98,12 @@ export const TahoMapsView: React.FC = () => {
 
   useEffect(() => {
     loadInitialData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedTalukaId]);
 
   // 2. Fetch Filter-aware GIS Analytics from Backend
   const fetchGisAnalytics = async () => {
-    if (!overview?.taluka_id) return;
+    const activeTalukaId = selectedTalukaId || overview?.taluka_id;
+    if (!activeTalukaId) return;
     setIsFiltering(true);
 
     // Calculate dates based on dateRangeOption
@@ -122,6 +123,7 @@ export const TahoMapsView: React.FC = () => {
 
     try {
       const res = await adminService.getTahoGisAnalytics(apiBaseUrl, {
+        taluka_id: activeTalukaId,
         layer_mode: layerMode,
         vaccine_code: selectedVaccine || undefined,
         disease_code: selectedDisease || undefined,

@@ -85,12 +85,32 @@ class TahoService:
         override_taluka_id: Optional[uuid.UUID] = None
     ) -> Tuple[Taluka, District]:
         """Resolve active assigned Taluka for the authenticated TAHO user."""
-        if taho_user.role in ("SUPER_ADMIN", "SYS_ADMIN", "DAHO") and override_taluka_id:
-            taluka = (await self.db.execute(select(Taluka).where(Taluka.id == override_taluka_id))).scalar_one_or_none()
-            if not taluka:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specified Taluka not found.")
-            district = (await self.db.execute(select(District).where(District.id == taluka.district_id))).scalar_one_or_none()
-            return taluka, district
+        if override_taluka_id:
+            if taho_user.role == "TAHO":
+                asgn_stmt = (
+                    select(TahoTalukaAssignment, Taluka, District)
+                    .join(Taluka, TahoTalukaAssignment.taluka_id == Taluka.id)
+                    .join(District, Taluka.district_id == District.id)
+                    .where(
+                        TahoTalukaAssignment.taho_user_id == taho_user.id,
+                        TahoTalukaAssignment.taluka_id == override_taluka_id,
+                        TahoTalukaAssignment.ended_at.is_(None)
+                    )
+                )
+                row = (await self.db.execute(asgn_stmt)).first()
+                if row:
+                    _, taluka, district = row
+                    return taluka, district
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: You are not assigned to this taluka."
+                )
+            elif taho_user.role in ("SUPER_ADMIN", "SYS_ADMIN", "DAHO", "COOPERATIVE", "DAIRY_STAFF"):
+                taluka = (await self.db.execute(select(Taluka).where(Taluka.id == override_taluka_id))).scalar_one_or_none()
+                if not taluka:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Specified Taluka not found.")
+                district = (await self.db.execute(select(District).where(District.id == taluka.district_id))).scalar_one_or_none()
+                return taluka, district
 
         asgn_stmt = (
             select(TahoTalukaAssignment, Taluka, District)
@@ -100,11 +120,31 @@ class TahoService:
                 TahoTalukaAssignment.taho_user_id == taho_user.id,
                 TahoTalukaAssignment.ended_at.is_(None)
             )
+            .order_by(Taluka.name_gu)
         )
         row = (await self.db.execute(asgn_stmt)).first()
         if not row:
-            if taho_user.role in ("SUPER_ADMIN", "SYS_ADMIN"):
+            if taho_user.role in ("SUPER_ADMIN", "SYS_ADMIN", "COOPERATIVE", "DAIRY_STAFF"):
                 # Fallback to first available taluka
+                first_taluka = (await self.db.execute(select(Taluka).order_by(Taluka.name_en).limit(1))).scalar_one_or_none()
+                if first_taluka:
+                    dist = (await self.db.execute(select(District).where(District.id == first_taluka.district_id))).scalar_one_or_none()
+                    return first_taluka, dist
+            elif taho_user.role == "DAHO":
+                from app.models.geography import DahoDistrictAssignment
+                d_asgn = (await self.db.execute(
+                    select(DahoDistrictAssignment).where(
+                        DahoDistrictAssignment.daho_user_id == taho_user.id,
+                        DahoDistrictAssignment.ended_at.is_(None)
+                    )
+                )).scalars().first()
+                if d_asgn:
+                    first_taluka = (await self.db.execute(
+                        select(Taluka).where(Taluka.district_id == d_asgn.district_id).order_by(Taluka.name_en).limit(1)
+                    )).scalar_one_or_none()
+                    if first_taluka:
+                        dist = (await self.db.execute(select(District).where(District.id == first_taluka.district_id))).scalar_one_or_none()
+                        return first_taluka, dist
                 first_taluka = (await self.db.execute(select(Taluka).order_by(Taluka.name_en).limit(1))).scalar_one_or_none()
                 if first_taluka:
                     dist = (await self.db.execute(select(District).where(District.id == first_taluka.district_id))).scalar_one_or_none()
@@ -115,6 +155,36 @@ class TahoService:
             )
         _, taluka, district = row
         return taluka, district
+
+    async def list_assigned_talukas(self, taho_user: User) -> List[Dict[str, Any]]:
+        """List all active talukas assigned to this TAHO."""
+        stmt = (
+            select(Taluka, District)
+            .join(TahoTalukaAssignment, TahoTalukaAssignment.taluka_id == Taluka.id)
+            .join(District, Taluka.district_id == District.id)
+            .where(
+                TahoTalukaAssignment.taho_user_id == taho_user.id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
+            .order_by(Taluka.name_gu)
+        )
+        res = await self.db.execute(stmt)
+        items = []
+        for taluka, district in res.all():
+            v_cnt = (await self.db.execute(
+                select(func.count(Village.id)).where(Village.taluka_id == taluka.id, Village.active == True)
+            )).scalar() or 0
+            items.append({
+                "id": str(taluka.id),
+                "code": taluka.code,
+                "name_en": taluka.name_en,
+                "name_gu": taluka.name_gu,
+                "district_id": str(district.id),
+                "district_name_en": district.name_en,
+                "district_name_gu": district.name_gu,
+                "village_count": v_cnt,
+            })
+        return items
 
     # ==========================================================================
     # 1. TAHO Dashboard KPIs & Multi-Dimensional Analytics
@@ -561,10 +631,11 @@ class TahoService:
         end_date: Optional[str] = None,
         vo_id: Optional[uuid.UUID] = None,
         fw_id: Optional[uuid.UUID] = None,
-        coverage_range: Optional[str] = None
+        coverage_range: Optional[str] = None,
+        taluka_id: Optional[uuid.UUID] = None
     ) -> Dict[str, Any]:
         """Dynamically compute filter-aware GIS analytics, color assignments, legend, and connected charts."""
-        taluka, district = await self.get_taho_taluka(taho_user)
+        taluka, district = await self.get_taho_taluka(taho_user, taluka_id)
 
         # Parse date range
         d_start, d_end = None, None
@@ -1243,9 +1314,9 @@ class TahoService:
     # ==========================================================================
     # 3. VO (Veterinary Officer) Management & Email Activation
     # ==========================================================================
-    async def list_vos(self, taho_user: User) -> List[Dict[str, Any]]:
+    async def list_vos(self, taho_user: User, taluka_id: Optional[uuid.UUID] = None) -> List[Dict[str, Any]]:
         """List all Veterinary Officers assigned to villages within this Taluka."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         # Find VOs with active village assignments in this taluka
         rows = (await self.db.execute(
@@ -1448,9 +1519,9 @@ class TahoService:
     # ==========================================================================
     # 4. FW (Field Worker) Management & Location-based Village Assignment
     # ==========================================================================
-    async def list_fws(self, taho_user: User) -> List[Dict[str, Any]]:
+    async def list_fws(self, taho_user: User, taluka_id: Optional[uuid.UUID] = None) -> List[Dict[str, Any]]:
         """List all Field Workers assigned to villages within this Taluka."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         rows = (await self.db.execute(
             select(
@@ -1749,9 +1820,9 @@ class TahoService:
     # ==========================================================================
     # 5. Taluka Campaign Management
     # ==========================================================================
-    async def list_campaigns(self, taho_user: User) -> List[Dict[str, Any]]:
+    async def list_campaigns(self, taho_user: User, taluka_id: Optional[uuid.UUID] = None) -> List[Dict[str, Any]]:
         """List all vaccination campaigns active or scheduled in this Taluka."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         # Find campaigns linked to villages in this taluka
         rows = (await self.db.execute(
@@ -2043,12 +2114,13 @@ class TahoService:
     async def list_vaccinations(
         self,
         taho_user: User,
+        taluka_id: Optional[uuid.UUID] = None,
         village_id: Optional[uuid.UUID] = None,
         page: int = 1,
         page_size: int = 20
     ) -> Dict[str, Any]:
         """Return Taluka-scoped vaccination telemetry with animal, owner, village and staff details."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         base_query = (
             select(
@@ -2115,6 +2187,7 @@ class TahoService:
     async def list_animals(
         self,
         taho_user: User,
+        taluka_id: Optional[uuid.UUID] = None,
         search: Optional[str] = None,
         species: Optional[str] = None,
         village_id: Optional[uuid.UUID] = None,
@@ -2122,7 +2195,7 @@ class TahoService:
         page_size: int = 20
     ) -> Dict[str, Any]:
         """Return Taluka-scoped animal records with owner and vaccination details."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         base_query = (
             select(
@@ -2193,13 +2266,14 @@ class TahoService:
     async def list_farmers(
         self,
         taho_user: User,
+        taluka_id: Optional[uuid.UUID] = None,
         search: Optional[str] = None,
         village_id: Optional[uuid.UUID] = None,
         page: int = 1,
         page_size: int = 20
     ) -> Dict[str, Any]:
         """Return Taluka-scoped farmer directory with animal counts."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         base_query = (
             select(
@@ -2265,12 +2339,13 @@ class TahoService:
     async def list_surveillance(
         self,
         taho_user: User,
+        taluka_id: Optional[uuid.UUID] = None,
         village_id: Optional[uuid.UUID] = None,
         disease_code: Optional[str] = None,
         status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """List disease reports in Taluka with animal, owner and clinical observation details."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         stmt = (
             select(
@@ -2318,9 +2393,9 @@ class TahoService:
 
         return results
 
-    async def list_disease_alerts(self, taho_user: User) -> List[Dict[str, Any]]:
+    async def list_disease_alerts(self, taho_user: User, taluka_id: Optional[uuid.UUID] = None) -> List[Dict[str, Any]]:
         """Detect potential disease surge and cluster signals in the Taluka."""
-        taluka, _ = await self.get_taho_taluka(taho_user)
+        taluka, _ = await self.get_taho_taluka(taho_user, taluka_id)
 
         stmt = (
             select(

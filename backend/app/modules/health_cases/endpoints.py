@@ -77,6 +77,7 @@ async def list_farmer_health_reports(
     summary="List health cases in caller's Taluka for TAHO assignment and review"
 )
 async def list_taho_cases(
+    taluka_id: Optional[uuid.UUID] = Query(None),
     village_id: Optional[uuid.UUID] = Query(None),
     disease_code: Optional[str] = Query(None),
     urgency: Optional[str] = Query(None),
@@ -88,6 +89,7 @@ async def list_taho_cases(
     service = HealthWorkflowService(db)
     return await service.list_taho_cases(
         current_user,
+        taluka_id=taluka_id,
         village_id=village_id,
         disease_code=disease_code,
         urgency=urgency,

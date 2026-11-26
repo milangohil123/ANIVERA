@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, getRolePrefix, normalizeRole } from '../context/AuthContext';
 import { STRINGS_GU } from '../constants/stringsGu';
@@ -19,6 +19,8 @@ import {
   HelpCircle,
   ChevronLeft,
   ChevronRight,
+  MapPin,
+  ChevronDown,
 } from 'lucide-react';
 
 export interface NavItemDef {
@@ -46,7 +48,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
   failedCount,
   onTriggerSync,
 }) => {
-  const { session, profile, role, logout, hasPermission } = useAuth();
+  const { session, profile, role, logout, hasPermission, selectedTaluka, assignedTalukas, setSelectedTalukaId, selectedDistrict, assignedDistricts } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,9 +68,30 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const displayName = profile?.full_name || session?.user.fullName || 'અધિકૃત અધિકારી';
+  const rawDisplayName = profile?.full_name || session?.user.fullName || 'અધિકૃત અધિકારી';
+  const displayName = useMemo(() => {
+    if (role === 'SYS_ADMIN') {
+      return 'સિસ્ટમ એડમિનિસ્ટ્રેટર';
+    }
+    return rawDisplayName.replace(/\s*(બોટાદ|Botad)\s*/gi, '').trim() || rawDisplayName;
+  }, [role, rawDisplayName]);
   const roleLabel = STRINGS_GU.roles[role] || role;
   const rolePrefix = session?.user?.role ? getRolePrefix(normalizeRole(session.user.role)) : '';
+
+  const locationTag = useMemo(() => {
+    if (role === 'SYS_ADMIN') {
+      return 'ગુજરાત રાજ્ય';
+    }
+    if (role === 'DAHO') {
+      const dGu = selectedDistrict?.name_gu || assignedDistricts?.[0]?.name_gu;
+      const dEn = selectedDistrict?.name_en || assignedDistricts?.[0]?.name_en;
+      return dGu || dEn || 'જિલ્લો';
+    }
+    if (role === 'TAHO') {
+      return selectedTaluka?.name_gu || assignedTalukas?.[0]?.name_gu || selectedTaluka?.name_en || assignedTalukas?.[0]?.name_en || '';
+    }
+    return '';
+  }, [role, selectedDistrict, assignedDistricts, selectedTaluka, assignedTalukas]);
 
   // Persist collapsed state
   const toggleCollapse = () => {
@@ -105,6 +128,8 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
     'surveillance',
     'due',
     'reports',
+    'oversight',
+    'analytics',
     'new',
     'pending',
     'sync',
@@ -115,6 +140,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
 
   // Dynamic RBAC Permission Evaluator
   const isPermitted = (item: NavItemDef) => {
+    if (role === 'SYS_ADMIN') return true;
     if (!item.permission) return true;
     if (Array.isArray(item.permission)) {
       return item.permission.some((p) => hasPermission(p));
@@ -278,7 +304,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                     PashuRakshak
                   </h1>
                   <p className="text-[10px] text-[#9CA3AF] font-medium leading-tight mt-0.5 truncate">
-                    {roleLabel} Console • બોટાદ
+                    {roleLabel} Console{locationTag ? ` • ${locationTag}` : ''}
                   </p>
                 </div>
               )}
@@ -399,13 +425,13 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                 {!isCollapsed && <span className="truncate">{t('common.help') || 'Support & Help'}</span>}
               </div>
               {!isCollapsed && (
-                <span className="text-[10px] font-mono text-neutral-400">1800-BOTAD</span>
+                <span className="text-[10px] font-mono text-neutral-400">1800-PASHU</span>
               )}
             </button>
 
             {isCollapsed && (
               <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#18181B] text-white text-xs font-medium rounded-lg shadow-2xl border border-neutral-700/80 whitespace-nowrap z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                {t('common.help') || 'Support & Help'} (1800-BOTAD)
+                {t('common.help') || 'Support & Help'} (1800-PASHU)
               </div>
             )}
           </div>
@@ -553,6 +579,40 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
               </span>
             </div>
 
+            {/* TAHO Operating Taluka Context Badge & Switcher */}
+            {role === 'TAHO' && (
+              <div className="flex items-center gap-1.5 ml-1 sm:ml-2">
+                {assignedTalukas.length > 1 ? (
+                  <div className="relative inline-flex items-center">
+                    <select
+                      value={selectedTaluka?.id || selectedTaluka?.taluka_id || ''}
+                      onChange={(e) => setSelectedTalukaId(e.target.value)}
+                      className="text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg pl-7 pr-7 py-1 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer shadow-2xs"
+                      title="કાર્યક્ષેત્ર તાલુકો બદલો (Switch Operating Taluka)"
+                    >
+                      {assignedTalukas.map((t: any) => {
+                        const tId = t.id || t.taluka_id;
+                        return (
+                          <option key={tId} value={tId}>
+                            {t.name_gu || t.name_en} ({t.code || 'TALUKA'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <MapPin className="w-3.5 h-3.5 text-emerald-700 absolute left-2 pointer-events-none" />
+                    <ChevronDown className="w-3.5 h-3.5 text-emerald-700 absolute right-2 pointer-events-none" />
+                  </div>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>
+                      {selectedTaluka?.name_gu || selectedTaluka?.name_en || assignedTalukas[0]?.name_gu || assignedTalukas[0]?.name_en || 'તાલુકો'}
+                    </span>
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Dynamic Connectivity Status Pill (Responsive & Localized) */}
             <div className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
               isOnline
@@ -598,7 +658,7 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
                   {displayName}
                 </p>
                 <p className="text-[10px] text-[#64748B] leading-tight truncate">
-                  {roleLabel} • Botad
+                  {roleLabel}{locationTag ? ` • ${locationTag}` : ''}
                 </p>
               </div>
             </div>
@@ -652,8 +712,8 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
           <div className="bg-[#E6F3EF] border border-[#176B5B]/30 rounded-xl p-3.5 flex items-start gap-3">
             <PhoneCall className="w-5 h-5 text-[#176B5B] mt-0.5 shrink-0" />
             <div>
-              <h4 className="text-sm font-bold text-[#164E45]">જિલ્લા હેલ્પડેસ્ક ટોલ-ફ્રી નંબર</h4>
-              <p className="text-xs text-[#176B5B] mt-0.5 font-mono font-semibold">1800-BOTAD (1800-268-23)</p>
+              <h4 className="text-sm font-bold text-[#164E45]">પશુપાલન હેલ્પડેસ્ક ટોલ-ફ્રી નંબર</h4>
+              <p className="text-xs text-[#176B5B] mt-0.5 font-mono font-semibold">1800-233-0000 / 1800-PASHU</p>
               <p className="text-[11px] text-[#164E45] mt-1">
                 સોમવાર થી શનિવાર: સવારે ૯:૦૦ થી સાંજે ૬:૦૦ વાગ્યા સુધી કાર્યરત.
               </p>
@@ -662,11 +722,11 @@ export const WebSidebarLayout: React.FC<WebSidebarLayoutProps> = ({
 
           <div className="border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs text-slate-700 bg-white">
             <h5 className="font-bold text-slate-800">અધિકૃત પશુપાલન કચેરી:</h5>
-            <p>જિલ્લા પશુપાલન અધિકારી કચેરી (DAHO), બોટાદ, ગુજરાત</p>
-            <p className="text-slate-500 text-[11px]">ઈમેલ: daho-botad@gujarat.gov.in</p>
+            <p>પશુપાલન નિયામકની કચેરી, ગુજરાત રાજ્ય</p>
+            <p className="text-slate-500 text-[11px]">ઈમેલ: support@pashurakshak.gujarat.gov.in</p>
             <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-              <span>PashuRakshak Core Edition</span>
-              <span className="font-mono font-semibold text-slate-700">v1.4.2 (Botad Pilot)</span>
+              <span>PashuRakshak Gujarat State Edition</span>
+              <span className="font-mono font-semibold text-slate-700">v2.0</span>
             </div>
           </div>
         </div>

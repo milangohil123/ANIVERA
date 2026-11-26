@@ -145,6 +145,7 @@ export interface VOVaccination {
   camp_id?: string | null;
   administered_by_name?: string | null;
   authorization_check: string;
+  next_due_date?: string | null;
   review_status: string;
   remarks?: string | null;
   received_at: string;

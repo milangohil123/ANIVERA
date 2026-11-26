@@ -275,11 +275,17 @@ export const adminService = {
   },
 
   // 2. Talukas
-  async listTalukas(apiBaseUrl: string, districtId?: string): Promise<TalukaItem[]> {
-    const query = districtId ? `?district_id=${districtId}&limit=100` : '?limit=100';
+  async listTalukas(
+    apiBaseUrl: string,
+    districtId?: string,
+    districtIds?: string[]
+  ): Promise<TalukaItem[]> {
+    const params = new URLSearchParams({ limit: '500' });
+    if (districtId) params.append('district_id', districtId);
+    if (districtIds && districtIds.length > 0) params.append('district_ids', districtIds.join(','));
     return cachedJsonFetch<TalukaItem[]>(
       apiBaseUrl,
-      `/api/v1/administration/talukas${query}`,
+      `/api/v1/administration/talukas?${params.toString()}`,
       {},
       60000
     );
@@ -317,10 +323,18 @@ export const adminService = {
   },
 
   // 3. Villages
-  async listVillages(apiBaseUrl: string, districtId?: string, talukaId?: string): Promise<VillageItem[]> {
-    const params = new URLSearchParams({ limit: '200' });
+  async listVillages(
+    apiBaseUrl: string,
+    districtId?: string,
+    talukaId?: string,
+    talukaIds?: string[],
+    districtIds?: string[]
+  ): Promise<VillageItem[]> {
+    const params = new URLSearchParams({ limit: '2000' });
     if (districtId) params.append('district_id', districtId);
     if (talukaId) params.append('taluka_id', talukaId);
+    if (districtIds && districtIds.length > 0) params.append('district_ids', districtIds.join(','));
+    if (talukaIds && talukaIds.length > 0) params.append('taluka_ids', talukaIds.join(','));
 
     return cachedJsonFetch<VillageItem[]>(
       apiBaseUrl,
@@ -1019,12 +1033,20 @@ export const adminService = {
   // ---------------------------------------------------------------------------
   // TAHO Operational Portal
   // ---------------------------------------------------------------------------
-  async getTahoOverview(apiBaseUrl: string): Promise<any> {
-    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/overview`, {}, 30000);
+  async listTahoAssignedTalukas(apiBaseUrl: string): Promise<any[]> {
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/assigned-talukas`);
+    if (!res.ok) throw new Error('સોંપાયેલ તાલુકાઓની યાદી મેળવવામાં નિષ્ફળ');
+    return res.json();
   },
 
-  async getTahoHierarchy(apiBaseUrl: string): Promise<any> {
-    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/hierarchy`, {}, 60000);
+  async getTahoOverview(apiBaseUrl: string, talukaId?: string): Promise<any> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/overview${qs}`, {}, 30000);
+  },
+
+  async getTahoHierarchy(apiBaseUrl: string, talukaId?: string): Promise<any> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/hierarchy${qs}`, {}, 60000);
   },
 
   async getTahoGisAnalytics(apiBaseUrl: string, params?: Record<string, any>): Promise<any> {
@@ -1044,8 +1066,13 @@ export const adminService = {
     return cachedJsonFetch<any>(apiBaseUrl, `/api/v1/administration/taho/village-analytics?village_id=${villageId}`, {}, 30000);
   },
 
-  async listTahoVos(apiBaseUrl: string): Promise<any[]> {
-    return cachedJsonFetch<any[]>(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers`, {}, 30000);
+  async listTahoVos(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    return cachedJsonFetch<any[]>(apiBaseUrl, `/api/v1/administration/taho/veterinary-officers${qs}`, {}, 30000);
+  },
+
+  async listTahoVOs(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    return this.listTahoVos(apiBaseUrl, talukaId);
   },
 
   async createTahoVo(apiBaseUrl: string, payload: any): Promise<any> {
@@ -1074,10 +1101,15 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoFws(apiBaseUrl: string): Promise<any[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/field-workers`);
+  async listTahoFws(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/field-workers${qs}`);
     if (!res.ok) throw new Error('ફીલ્ડ વર્કર્સની યાદી મેળવવામાં નિષ્ફળ');
     return res.json();
+  },
+
+  async listTahoFWs(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    return this.listTahoFws(apiBaseUrl, talukaId);
   },
 
   async createTahoFw(apiBaseUrl: string, payload: any): Promise<any> {
@@ -1106,8 +1138,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoCampaigns(apiBaseUrl: string): Promise<any[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/campaigns`);
+  async listTahoCampaigns(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/campaigns${qs}`);
     if (!res.ok) throw new Error('ઝુંબેશોની યાદી મેળવવામાં નિષ્ફળ');
     return res.json();
   },
@@ -1125,8 +1158,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoVaccinations(apiBaseUrl: string, params?: { village_id?: string; page?: number; page_size?: number }): Promise<any> {
+  async listTahoVaccinations(apiBaseUrl: string, params?: { taluka_id?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
     const q = new URLSearchParams();
+    if (params?.taluka_id) q.set('taluka_id', params.taluka_id);
     if (params?.village_id) q.set('village_id', params.village_id);
     if (params?.page) q.set('page', String(params.page));
     if (params?.page_size) q.set('page_size', String(params.page_size));
@@ -1136,8 +1170,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoAnimals(apiBaseUrl: string, params?: { search?: string; species?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
+  async listTahoAnimals(apiBaseUrl: string, params?: { taluka_id?: string; search?: string; species?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
     const q = new URLSearchParams();
+    if (params?.taluka_id) q.set('taluka_id', params.taluka_id);
     if (params?.search) q.set('search', params.search);
     if (params?.species) q.set('species', params.species);
     if (params?.village_id) q.set('village_id', params.village_id);
@@ -1149,8 +1184,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoFarmers(apiBaseUrl: string, params?: { search?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
+  async listTahoFarmers(apiBaseUrl: string, params?: { taluka_id?: string; search?: string; village_id?: string; page?: number; page_size?: number }): Promise<any> {
     const q = new URLSearchParams();
+    if (params?.taluka_id) q.set('taluka_id', params.taluka_id);
     if (params?.search) q.set('search', params.search);
     if (params?.village_id) q.set('village_id', params.village_id);
     if (params?.page) q.set('page', String(params.page));
@@ -1161,8 +1197,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoSurveillance(apiBaseUrl: string, params?: { village_id?: string; disease_code?: string; status?: string }): Promise<any[]> {
+  async listTahoSurveillance(apiBaseUrl: string, params?: { taluka_id?: string; village_id?: string; disease_code?: string; status?: string }): Promise<any[]> {
     const q = new URLSearchParams();
+    if (params?.taluka_id) q.set('taluka_id', params.taluka_id);
     if (params?.village_id) q.set('village_id', params.village_id);
     if (params?.disease_code) q.set('disease_code', params.disease_code);
     if (params?.status) q.set('status', params.status);
@@ -1172,8 +1209,9 @@ export const adminService = {
     return res.json();
   },
 
-  async listTahoDiseaseAlerts(apiBaseUrl: string): Promise<any[]> {
-    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/disease-alerts`);
+  async listTahoDiseaseAlerts(apiBaseUrl: string, talukaId?: string): Promise<any[]> {
+    const qs = talukaId ? `?taluka_id=${encodeURIComponent(talukaId)}` : '';
+    const res = await authFetch(apiBaseUrl, `/api/v1/administration/taho/disease-alerts${qs}`);
     if (!res.ok) throw new Error('રોગ ચેતવણીઓ મેળવવામાં નિષ્ફળ');
     return res.json();
   },

@@ -173,7 +173,14 @@ export interface CampaignItem {
   name_gu?: string;
   name_en?: string;
   disease_code?: string;
+  disease_name?: string;
+  target_species?: string;
   district_id?: string;
+  scope_type?: string;
+  target_district_ids?: string[];
+  min_age_months?: number | null;
+  max_age_months?: number | null;
+  coverage_pct?: number | null;
   start_date?: string;
   end_date?: string;
   target_animals_count?: number | null;
@@ -305,6 +312,10 @@ export const dahoOpsService = {
       end_date?: string;
       target_animals_count?: number;
       village_ids?: string[];
+      district_ids?: string[];
+      scope_type?: string;
+      min_age_months?: number;
+      max_age_months?: number;
       species_codes?: string[];
       notes?: string;
       programmes?: { species_code: string; programme_code: string }[];

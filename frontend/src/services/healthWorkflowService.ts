@@ -233,9 +233,10 @@ export const healthWorkflowService = {
   // --- TAHO Case Assignment & Verification ---
   async listTahoCases(
     apiBaseUrl: string,
-    filters?: { village_id?: string; disease_code?: string; urgency?: string; status_filter?: string }
+    filters?: { taluka_id?: string; village_id?: string; disease_code?: string; urgency?: string; status_filter?: string }
   ): Promise<FarmerReportItem[]> {
     const q = new URLSearchParams();
+    if (filters?.taluka_id) q.set('taluka_id', filters.taluka_id);
     if (filters?.village_id) q.set('village_id', filters.village_id);
     if (filters?.disease_code) q.set('disease_code', filters.disease_code);
     if (filters?.urgency) q.set('urgency', filters.urgency);

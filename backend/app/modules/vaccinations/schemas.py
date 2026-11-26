@@ -38,6 +38,7 @@ class VaccinationResponse(BaseModel):
     administered_by_name: Optional[str] = None
     authorization_check: str
     performed_by: uuid.UUID
+    next_due_date: Optional[date] = None
     received_at: datetime
     review_status: str
     remarks: Optional[str] = None

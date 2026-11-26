@@ -504,6 +504,14 @@ export const AdminDashboard: React.FC = () => {
             </button>
 
             <button
+              onClick={() => navigate('/admin/campaigns')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 shadow-xs transition-colors"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-emerald-700" />
+              <span>રાજ્યવ્યાપી ઝુંબેશો (State Campaigns)</span>
+            </button>
+
+            <button
               onClick={() => navigate('/admin/daho')}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#135D43] text-white text-xs font-semibold hover:bg-[#0F4C37] shadow-xs transition-colors"
             >

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 export const TahoVaccinationsView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, selectedTalukaId } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'TELEMETRY' | 'COOP_SCHEDULES'>('COOP_SCHEDULES');
 
@@ -55,11 +55,12 @@ export const TahoVaccinationsView: React.FC = () => {
     try {
       const [vaxRes, hier, scheds] = await Promise.all([
         adminService.listTahoVaccinations(apiBaseUrl, {
+          taluka_id: selectedTalukaId || undefined,
           village_id: selectedVillageId || undefined,
           page,
           page_size: 15,
         }).catch(() => ({ items: [], total: 0, page: 1, total_pages: 1 })),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
         healthWorkflowService.listTahoSchedules(apiBaseUrl).catch(() => []),
       ]);
       setData(vaxRes);
@@ -75,7 +76,7 @@ export const TahoVaccinationsView: React.FC = () => {
 
   useEffect(() => {
     loadData(1);
-  }, [apiBaseUrl, selectedVillageId]);
+  }, [apiBaseUrl, selectedVillageId, selectedTalukaId]);
 
   const allVillages = hierarchy?.villages || [];
   const pendingApprovalCount = coopSchedules.filter((s) => s.status === 'SUBMITTED').length;

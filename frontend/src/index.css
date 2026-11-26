@@ -123,3 +123,34 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Mobile Safe Area Insets for standalone PWA notch and navigation pill */
+@supports (padding: max(0px)) {
+  .safe-area-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .safe-area-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .safe-area-left {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+  }
+  .safe-area-right {
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+}
+
+/* Mobile standalone PWA enhancements */
+@media all and (display-mode: standalone) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input, textarea, select {
+    user-select: auto;
+    -webkit-user-select: auto;
+  }
+}

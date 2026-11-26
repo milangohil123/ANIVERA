@@ -236,6 +236,15 @@ CREATE TABLE IF NOT EXISTS disease_masters (
 );
 CREATE INDEX IF NOT EXISTS idx_dm_active ON disease_masters(active);
 
+-- 10b. High Performance Composite Geographic and Aggregation Indexes
+CREATE INDEX IF NOT EXISTS idx_villages_dist_tal_act ON villages(district_id, taluka_id, active);
+CREATE INDEX IF NOT EXISTS idx_villages_taluka_act ON villages(taluka_id, active);
+CREATE INDEX IF NOT EXISTS idx_talukas_district_act ON talukas(district_id);
+CREATE INDEX IF NOT EXISTS idx_animals_village_status ON animals(village_id, status);
+CREATE INDEX IF NOT EXISTS idx_farmers_village_active ON farmers(village_id, active);
+CREATE INDEX IF NOT EXISTS idx_animal_events_village_type ON animal_events(village_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_taho_taluka_active ON taho_taluka_assignments(taluka_id, ended_at);
+
 CREATE TABLE IF NOT EXISTS vaccine_masters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code VARCHAR(50) UNIQUE NOT NULL,
@@ -266,6 +275,15 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS vaccine_name TEXT NULL;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS custom_vaccine_name TEXT NULL;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_custom_vaccine BOOLEAN DEFAULT FALSE;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS species_codes TEXT[] NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS min_age_months INTEGER NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS max_age_months INTEGER NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20) DEFAULT 'DISTRICT';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_district_ids UUID[] NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS interval_months INTEGER DEFAULT 6;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_recurring_schedule BOOLEAN DEFAULT FALSE;
+
+-- 12. Next due date on vaccination details for recurring schedule tracking
+ALTER TABLE vaccination_details ADD COLUMN IF NOT EXISTS next_due_date DATE NULL;
 """
 
 DEFAULT_SPECIES = [
@@ -537,7 +555,7 @@ async def ensure_health_workflow_schema():
                 await conn.execute(
                     text("""
                         INSERT INTO disease_masters (code, name_en, name_gu, name_hi, applicable_species, color, severity, description, active, archived)
-                        VALUES (:code, :name_en, :name_gu, :name_hi, :applicable_species::jsonb, :color, :severity, :description, TRUE, FALSE)
+                        VALUES (:code, :name_en, :name_gu, :name_hi, CAST(:applicable_species AS JSONB), :color, :severity, :description, TRUE, FALSE)
                         ON CONFLICT (code) DO UPDATE SET
                             name_en = EXCLUDED.name_en,
                             name_gu = EXCLUDED.name_gu,
@@ -564,7 +582,7 @@ async def ensure_health_workflow_schema():
                 await conn.execute(
                     text("""
                         INSERT INTO vaccine_masters (code, name_en, name_gu, disease_code, applicable_species, administration_route, standard_dosage, schedule_interval, verification_status, verified_source, is_custom_manual, description, active, archived)
-                        VALUES (:code, :name_en, :name_gu, :disease_code, :applicable_species::jsonb, :administration_route, :standard_dosage, :schedule_interval, :verification_status, :verified_source, FALSE, :description, TRUE, FALSE)
+                        VALUES (:code, :name_en, :name_gu, :disease_code, CAST(:applicable_species AS JSONB), :administration_route, :standard_dosage, :schedule_interval, :verification_status, :verified_source, FALSE, :description, TRUE, FALSE)
                         ON CONFLICT (code) DO UPDATE SET
                             name_en = EXCLUDED.name_en,
                             name_gu = EXCLUDED.name_gu,
@@ -591,6 +609,73 @@ async def ensure_health_workflow_schema():
                         "description": v["description"]
                     }
                 )
+
+            # 4. Standardize Admin & Statewide User Identities (Remove pilot Botad remnants)
+            await conn.execute(text("""
+                UPDATE users
+                SET full_name = 'સિસ્ટમ એડમિનિસ્ટ્રેટર',
+                    designation = 'રાજ્ય સિસ્ટમ એડમિનિસ્ટ્રેટર',
+                    organisation = 'પશુપાલન નિયામકની કચેરી, ગુજરાત રાજ્ય'
+                WHERE role IN ('SYS_ADMIN', 'SUPER_ADMIN', 'ADMIN');
+            """))
+
+            # 5. Assign DAHO Jashwant Dave to Junagadh if operating in Junagadh jurisdiction
+            await conn.execute(text("""
+                DO $$
+                DECLARE
+                    j_dist_id UUID;
+                    j_user_id UUID;
+                    curr_asgn UUID;
+                BEGIN
+                    SELECT id INTO j_dist_id FROM districts WHERE LOWER(name_en) = 'junagadh' OR name_gu = 'જૂનાગઢ' OR code = 'DIST_JUNAGADH' LIMIT 1;
+                    SELECT id INTO j_user_id FROM users WHERE full_name ILIKE '%jashwant%' OR full_name ILIKE '%dave%' OR username ILIKE '%daho%' LIMIT 1;
+                    IF j_dist_id IS NOT NULL AND j_user_id IS NOT NULL THEN
+                        -- End any old non-Junagadh assignments
+                        UPDATE daho_district_assignments
+                        SET ended_at = NOW()
+                        WHERE daho_user_id = j_user_id AND district_id != j_dist_id;
+
+                        -- Ensure active assignment to Junagadh exists
+                        SELECT id INTO curr_asgn FROM daho_district_assignments WHERE daho_user_id = j_user_id AND district_id = j_dist_id AND ended_at IS NULL LIMIT 1;
+                        IF curr_asgn IS NULL THEN
+                            INSERT INTO daho_district_assignments (id, daho_user_id, district_id, assigned_at, created_by)
+                            VALUES (gen_random_uuid(), j_user_id, j_dist_id, NOW(), j_user_id);
+                        END IF;
+
+                        -- Update user record with clean designation
+                        UPDATE users
+                        SET designation = 'જિલ્લા પશુપાલન અધિકારી (DAHO) - જૂનાગઢ',
+                            organisation = 'જિલ્લા પંચાયત પશુપાલન શાખા, જૂનાગઢ'
+                        WHERE id = j_user_id;
+                    END IF;
+                END $$;
+            """))
+
+            # 6. Ensure authentic Gujarati names across all Gujarat districts
+            district_gu_map = {
+                "Ahmedabad": "અમદાવાદ", "Amreli": "અમરેલી", "Anand": "આણંદ", "Aravalli": "અરવલ્લી",
+                "Banaskantha": "બનાસકાંઠા", "Bharuch": "ભરૂચ", "Bhavnagar": "ભાવનગર", "Botad": "બોટાદ",
+                "Chhota Udaipur": "છોટા ઉદેપુર", "Dahod": "દાહોદ", "Dang": "ડાંગ", "Devbhumi Dwarka": "દેવભૂમિ દ્વારકા",
+                "Gandhinagar": "ગાંધીનગર", "Gir Somnath": "ગીર સોમનાથ", "Jamnagar": "જામનગર", "Junagadh": "જૂનાગઢ",
+                "Kheda": "ખેડા", "Kutch": "કચ્છ", "Mahisagar": "મહીસાગર", "Mehsana": "મહેસાણા",
+                "Morbi": "મોરબી", "Narmada": "નર્મદા", "Navsari": "નવસારી", "Panchmahal": "પંચમહાલ",
+                "Patan": "પાટણ", "Porbandar": "પોરબંદર", "Rajkot": "રાજકોટ", "Sabarkantha": "સાબરકાંઠા",
+                "Surat": "સુરત", "Surendranagar": "સુરેન્દ્રનગર", "Tapi": "તાપી", "Vadodara": "વડોદરા",
+                "Valsad": "વલસાડ"
+            }
+            for d_en, d_gu in district_gu_map.items():
+                await conn.execute(
+                    text("UPDATE districts SET name_gu = :name_gu WHERE LOWER(name_en) = LOWER(:name_en) AND (name_gu IS NULL OR name_gu = '' OR name_gu = name_en);"),
+                    {"name_en": d_en, "name_gu": d_gu}
+                )
+
+            # 7. Clean up dummy test districts if present
+            await conn.execute(text("""
+                DELETE FROM districts 
+                WHERE code LIKE 'D_%' 
+                   OR name_gu LIKE 'જી%' 
+                   OR name_gu IN ('જી', 'જી ૧', 'જી ૨', 'જી એ');
+            """))
 
         logger.info("Health workflow, cooperative vaccination, and animal & disease master schema verified and seeded successfully.")
     except Exception as e:

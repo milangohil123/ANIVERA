@@ -506,6 +506,7 @@ class HealthWorkflowService:
     async def list_taho_cases(
         self,
         current_user: User,
+        taluka_id: Optional[uuid.UUID] = None,
         village_id: Optional[uuid.UUID] = None,
         disease_code: Optional[str] = None,
         urgency: Optional[str] = None,
@@ -515,15 +516,23 @@ class HealthWorkflowService:
         """List disease reports within TAHO's authorized Taluka, checking 24h assignment deadlines."""
         # Check and escalate any overdue cases
         taluka_res = await self.db.execute(
-            select(TahoTalukaAssignment.taluka_id).where(TahoTalukaAssignment.taho_user_id == current_user.id)
+            select(TahoTalukaAssignment.taluka_id).where(
+                TahoTalukaAssignment.taho_user_id == current_user.id,
+                TahoTalukaAssignment.ended_at.is_(None)
+            )
         )
         assigned_taluka_ids = list(taluka_res.scalars().all())
-        target_taluka_id = assigned_taluka_ids[0] if assigned_taluka_ids else None
+        if taluka_id and taluka_id in assigned_taluka_ids:
+            target_taluka_ids = [taluka_id]
+        else:
+            target_taluka_ids = assigned_taluka_ids
+
+        target_taluka_id = target_taluka_ids[0] if target_taluka_ids else None
         await self.check_and_escalate_overdue_cases(taluka_id=target_taluka_id)
 
         vil_query = select(Village.id)
-        if assigned_taluka_ids:
-            vil_query = vil_query.where(Village.taluka_id.in_(assigned_taluka_ids))
+        if target_taluka_ids:
+            vil_query = vil_query.where(Village.taluka_id.in_(target_taluka_ids))
         vil_res = await self.db.execute(vil_query)
         taluka_village_ids = vil_res.scalars().all()
 

@@ -139,7 +139,7 @@ export const FarmerDiseaseReportModal: React.FC<FarmerDiseaseReportModalProps> =
         setIsLocating(false);
         setErrorMsg('GPS સ્થાન મેળવવામાં ક્ષતિ થઈ. કૃપા કરીને લોકેશન પરવાનગી આપો.');
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 

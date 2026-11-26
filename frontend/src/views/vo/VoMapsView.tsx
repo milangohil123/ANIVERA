@@ -12,6 +12,7 @@ import {
   dutyService,
   type LiveFieldWorkerItem,
 } from '../../services/dutyService';
+import { locationTrackingService } from '../../services/locationTrackingService';
 import {
   RotateCcw,
   Table as TableIcon,
@@ -56,8 +57,35 @@ export const VoMapsView: React.FC = () => {
           field_workers: [],
         })),
       ]);
+
+      let workers: LiveFieldWorkerItem[] = fwData.field_workers || [];
+      const currentUserId = session?.user?.id;
+
+      // Automatically refresh and broadcast fresh live device coordinates for Field Worker
+      if (isFw && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const liveCoords = await locationTrackingService.getDeviceCoordinates();
+          workers = workers.map((w: LiveFieldWorkerItem) => {
+            if (w.fw_user_id === currentUserId) {
+              return {
+                ...w,
+                last_known_latitude: liveCoords.latitude,
+                last_known_longitude: liveCoords.longitude,
+                freshness: 'FRESH',
+                duty_status: 'ACTIVE',
+                last_location_update: new Date().toISOString(),
+              };
+            }
+            return w;
+          });
+          locationTrackingService.broadcastLocation(apiBaseUrl, liveCoords).catch(() => {});
+        } catch (gpsErr) {
+          console.debug('Live GPS auto-detection notice on map load:', gpsErr);
+        }
+      }
+
       setLayerData(data);
-      setLiveFieldWorkers(fwData.field_workers || []);
+      setLiveFieldWorkers(workers);
       isInitialLoadDoneRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'નકશા ડેટા લોડ કરવામાં નિષ્ફળ.');
@@ -101,7 +129,7 @@ export const VoMapsView: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="w-2.5 h-2.5 rounded-full bg-[#135D43]" />
           <h2 className="text-sm font-bold text-[#0F172A] font-heading">
-            {isFw ? 'કાર્યક્ષેત્ર ગામડાઓ ભૌગોલિક નકશો' : 'કાર્યક્ષેત્ર ગામડાઓ અને લાઇવ ફિલ્ડ વર્કર્સ નકશો'}
+            {isFw ? 'ક્ષેત્રીય કાર્યકર વર્તમાન સ્થાન નકશો' : 'કાર્યક્ષેત્ર ગામડાઓ અને લાઇવ ફિલ્ડ વર્કર્સ નકશો'}
           </h2>
           <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/80">
             {isFw ? 'FW_SCOPE' : 'VO_SCOPE'}
@@ -174,10 +202,10 @@ export const VoMapsView: React.FC = () => {
           onLayerChange={setActiveLayer}
           liveFieldWorkers={liveFieldWorkers}
           roleScope={isFw ? 'FW' : 'VO'}
-          title={isFw ? 'કાર્યક્ષેત્ર ગામડાઓ ભૌગોલિક નકશો' : 'કાર્યક્ષેત્ર ગામડાઓ અને ફિલ્ડ વર્કર્સ ભૌગોલિક નકશો'}
+          title={isFw ? 'ક્ષેત્રીય કાર્યકર વર્તમાન સ્થાન નકશો' : 'કાર્યક્ષેત્ર ગામડાઓ અને ફિલ્ડ વર્કર્સ ભૌગોલિક નકશો'}
           subtitle={
             isFw
-              ? 'તમારા અધિકૃત કાર્યક્ષેત્રના ગામડાઓ માટે રસીકરણ કવરેજ અને રોગ સર્વેક્ષણ નકશો.'
+              ? 'તમારું વર્તમાન લાઈવ GPS સ્થાન (કુલ સોંપાયેલ ગામ: ' + (mappedVillages.length + unmappedVillages.length) + '). ગામવાર વિગત માટે કોષ્ટક દર્શન પસંદ કરો.'
               : 'તમારા અધિકૃત ગામડાઓ માટે રસીકરણ, રોગ સર્વેક્ષણ અને ફિલ્ડ વર્કર્સનું લાઇવ GPS મોનિટરિંગ.'
           }
         />

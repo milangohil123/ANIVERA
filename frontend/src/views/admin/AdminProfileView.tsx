@@ -52,7 +52,7 @@ export const AdminProfileView: React.FC = () => {
                 {session?.user?.fullName || 'સિસ્ટમ એડમિનિસ્ટ્રેટર'}
               </h4>
               <span className="font-mono text-xs text-slate-300">
-                {session?.user?.username || 'admin_botad'}
+                {session?.user?.username || 'admin_state'}
               </span>
             </div>
           </div>

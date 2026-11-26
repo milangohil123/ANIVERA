@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 
 export const TahoSurveillanceView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const { apiBaseUrl, selectedTalukaId } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'SURVEILLANCE' | 'CASES' | 'VERIFICATION'>('CASES');
 
@@ -69,6 +69,7 @@ export const TahoSurveillanceView: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [followupInstructions, setFollowupInstructions] = useState<string>('');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -78,19 +79,21 @@ export const TahoSurveillanceView: React.FC = () => {
     try {
       const [repList, alertList, hier, caseList, voList, fwList, clusterList] = await Promise.all([
         adminService.listTahoSurveillance(apiBaseUrl, {
+          taluka_id: selectedTalukaId || undefined,
           village_id: selectedVillageId || undefined,
           disease_code: diseaseFilter || undefined,
           status: statusFilter || undefined,
         }).catch(() => []),
-        adminService.listTahoDiseaseAlerts(apiBaseUrl).catch(() => []),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.listTahoDiseaseAlerts(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
         healthWorkflowService.listTahoCases(apiBaseUrl, {
+          taluka_id: selectedTalukaId || undefined,
           status_filter: caseFilterStatus || undefined,
           urgency: caseFilterUrgency || undefined,
           village_id: selectedVillageId || undefined,
         }).catch(() => []),
-        adminService.listTahoVos(apiBaseUrl).catch(() => []),
-        adminService.listTahoFws(apiBaseUrl).catch(() => []),
+        adminService.listTahoVos(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.listTahoFws(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
         healthWorkflowService.getDiseaseClusters(apiBaseUrl).catch(() => []),
       ]);
       setReports(repList || []);
@@ -109,7 +112,7 @@ export const TahoSurveillanceView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [apiBaseUrl, selectedVillageId, diseaseFilter, statusFilter, caseFilterStatus, caseFilterUrgency]);
+  }, [apiBaseUrl, selectedVillageId, diseaseFilter, statusFilter, caseFilterStatus, caseFilterUrgency, selectedTalukaId]);
 
   const allVillages = hierarchy?.villages || [];
 
@@ -153,10 +156,12 @@ export const TahoSurveillanceView: React.FC = () => {
     if (!selectedCaseForVerify) return;
 
     if (verifyDecision === 'REJECTED' && !rejectionReason.trim()) {
+      setModalError('પુનઃતપાસ / અસ્વીકાર માટે સ્પષ્ટ કારણ દાખલ કરવું ફરજિયાત છે.');
       setNotification({ type: 'error', message: 'પુનઃતપાસ / અસ્વીકાર માટે સ્પષ્ટ કારણ દાખલ કરવું ફરજિયાત છે.' });
       return;
     }
 
+    setModalError(null);
     setIsVerifying(true);
     try {
       await healthWorkflowService.verifyTahoTreatment(apiBaseUrl, selectedCaseForVerify.report_id, {
@@ -175,11 +180,13 @@ export const TahoSurveillanceView: React.FC = () => {
             : `કેસ #${selectedCaseForVerify.report_no || selectedCaseForVerify.report_id.slice(0, 8)} પુનઃતપાસ માટે સ્ટાફને પાછો મોકલાયો છે.`,
       });
       setSelectedCaseForVerify(null);
-      loadData();
+      await loadData();
     } catch (err: any) {
+      const errorMsg = err?.message || 'સારવાર ચકાસણી સબમિટ કરવામાં નિષ્ફળતા મળી.';
+      setModalError(errorMsg);
       setNotification({
         type: 'error',
-        message: err?.message || 'સારવાર ચકાસણી સબમિટ કરવામાં નિષ્ફળતા મળી.',
+        message: errorMsg,
       });
     } finally {
       setIsVerifying(false);
@@ -568,6 +575,7 @@ export const TahoSurveillanceView: React.FC = () => {
                               setVerifyDecision('APPROVED');
                               setRejectionReason('');
                               setFollowupInstructions('');
+                              setModalError(null);
                             }}
                           >
                             સમીક્ષા & ચકાસણી
@@ -1053,6 +1061,13 @@ export const TahoSurveillanceView: React.FC = () => {
                 </div>
               )}
 
+              {modalError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                  <span>{modalError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                 <Button variant="outline" size="sm" type="button" onClick={() => setSelectedCaseForVerify(null)}>
                   રદ કરો
@@ -1061,6 +1076,7 @@ export const TahoSurveillanceView: React.FC = () => {
                   variant={verifyDecision === 'APPROVED' ? 'primary' : 'danger'}
                   size="sm"
                   type="submit"
+                  onClick={(e) => handleVerifySubmit(e)}
                   isLoading={isVerifying}
                 >
                   {verifyDecision === 'APPROVED' ? 'ચકાસણી મંજૂર કરો' : 'પુનઃતપાસ સોંપો'}

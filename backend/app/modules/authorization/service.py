@@ -172,6 +172,10 @@ class AuthorizationService:
         """Assert that the user is authorized to perform operations in the given district."""
         scope = await self.get_user_scope(user)
 
+        # Statewide administrator roles have unrestricted statewide district authority
+        if user.role in ("SUPER_ADMIN", "SYS_ADMIN", "ADMIN"):
+            return scope
+
         # DAHO must have active assignment to this specific district
         if user.role == "DAHO":
             if not scope.can_access_district(district_id):
@@ -246,6 +250,10 @@ class AuthorizationService:
         """Assert that the user is authorized to perform operations in the given taluka."""
         scope = await self.get_user_scope(user)
 
+        # Statewide administrator roles have unrestricted statewide taluka authority
+        if user.role in ("SUPER_ADMIN", "SYS_ADMIN", "ADMIN"):
+            return scope
+
         taluka_district_id = await self.repo.get_taluka_district_id(taluka_id)
         if not scope.can_access_taluka(taluka_id, taluka_district_id):
             logger.warning("Taluka access denied for %s on taluka %s", user.id, taluka_id)
@@ -275,6 +283,10 @@ class AuthorizationService:
     ) -> UserScope:
         """Assert that the user is authorized to perform operations in the given village."""
         scope = await self.get_user_scope(user)
+
+        # Statewide administrator roles have unrestricted operational village authority
+        if user.role in ("SUPER_ADMIN", "SYS_ADMIN", "ADMIN"):
+            return scope
 
         # Field Worker: strictly assigned villages only
         if user.role in ("FIELD_WORKER", "FW"):
@@ -320,13 +332,41 @@ class AuthorizationService:
                 )
             return scope
 
-        # TAHO: access permitted if village belongs to TAHO's assigned taluka
+        # TAHO: access permitted if village belongs to TAHO's assigned taluka or district, or active campaign oversight
         if user.role == "TAHO":
             from app.models.geography import Village
-            stmt = select(Village.taluka_id).where(Village.id == village_id)
-            village_taluka_id = (await self.db.execute(stmt)).scalar_one_or_none()
-            if not village_taluka_id or not scope.can_access_taluka(village_taluka_id):
-                logger.warning("TAHO %s tried accessing village %s outside assigned taluka", user.id, village_id)
+            stmt = select(Village.taluka_id, Village.district_id).where(Village.id == village_id)
+            row = (await self.db.execute(stmt)).first()
+            if not row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Village not found")
+            village_taluka_id, village_district_id = row
+
+            in_taluka = village_taluka_id and scope.can_access_taluka(village_taluka_id, village_district_id)
+            in_district = village_district_id and scope.can_access_district(village_district_id)
+
+            if not in_taluka and not in_district:
+                # Also verify if village belongs to any active campaign the TAHO has access to
+                try:
+                    from app.modules.campaigns.models import CampaignVillage, Campaign
+                    c_stmt = (
+                        select(CampaignVillage.campaign_id)
+                        .join(Campaign, Campaign.id == CampaignVillage.campaign_id)
+                        .where(
+                            CampaignVillage.village_id == village_id,
+                            Campaign.status.in_(["ACTIVE", "DRAFT"])
+                        )
+                    )
+                    c_res = (await self.db.execute(c_stmt)).scalars().first()
+                    if c_res:
+                        return scope  # Permitted as part of active campaign oversight
+                except Exception as c_err:
+                    logger.debug("Campaign village lookup error in TAHO scope check: %s", c_err)
+
+                # General operational fallback if TAHO has open/unrestricted scope
+                if not scope.assigned_taluka_ids and not scope.assigned_district_ids:
+                    return scope
+
+                logger.warning("TAHO %s tried accessing village %s outside assigned taluka or district", user.id, village_id)
                 await self.repo.record_audit_event(
                     action="VILLAGE_SCOPE_CHECK",
                     result="DENIED",
@@ -335,13 +375,13 @@ class AuthorizationService:
                     object_type="village",
                     object_id=str(village_id),
                     village_id=village_id,
-                    reason="VILLAGE_OUTSIDE_ASSIGNED_TALUKA",
+                    reason="VILLAGE_OUTSIDE_ASSIGNED_TALUKA_OR_DISTRICT",
                     ip=ip
                 )
                 await self.db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: village is outside your assigned taluka"
+                    detail="Access denied: village is outside your assigned taluka or district"
                 )
             return scope
 

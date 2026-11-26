@@ -306,6 +306,21 @@ export const VoVaccinationsView: React.FC = () => {
       ),
     },
     {
+      key: 'next_due',
+      header: 'આગામી નિયત તારીખ (Next Due)',
+      render: (row) => (
+        <div className="text-xs">
+          {row.next_due_date ? (
+            <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              {row.next_due_date}
+            </span>
+          ) : (
+            <span className="text-gray-400 font-mono text-[11px]">—</span>
+          )}
+        </div>
+      ),
+    },
+    {
       key: 'actions',
       header: 'સુધારણા',
       render: (row) => (

@@ -20,14 +20,12 @@ import {
   ChevronRight,
   Eye,
   CheckCircle2,
-  AlertCircle,
-  Clock,
   UserPlus,
   Users,
 } from 'lucide-react';
 
 export const TahoCampaignsView: React.FC = () => {
-  const { apiBaseUrl, hasPermission } = useAuth();
+  const { apiBaseUrl, hasPermission, selectedTalukaId } = useAuth();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,8 +73,8 @@ export const TahoCampaignsView: React.FC = () => {
     setIsLoading(true);
     try {
       const [cList, hier, disList, spList] = await Promise.all([
-        adminService.listTahoCampaigns(apiBaseUrl).catch(() => []),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.listTahoCampaigns(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
         masterService.listDiseases(apiBaseUrl, true).catch(() => []),
         masterService.listSpecies(apiBaseUrl, true).catch(() => []),
       ]);
@@ -93,7 +91,7 @@ export const TahoCampaignsView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedTalukaId]);
 
   const allVillages = useMemo(() => hierarchy?.villages || [], [hierarchy]);
 
@@ -212,8 +210,8 @@ export const TahoCampaignsView: React.FC = () => {
     setSelectedStaffUserId('');
     try {
       const [voList, fwList] = await Promise.all([
-        adminService.listTahoVOs(apiBaseUrl).catch(() => []),
-        adminService.listTahoFWs(apiBaseUrl).catch(() => []),
+        adminService.listTahoVos(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
+        adminService.listTahoFws(apiBaseUrl, selectedTalukaId || undefined).catch(() => []),
       ]);
       const combined = [
         ...voList.map((v: any) => ({ id: v.id, full_name: `ડૉ. ${v.full_name || v.username} (VO)`, username: v.username, role: 'VET_OFFICER' })),
@@ -285,8 +283,8 @@ export const TahoCampaignsView: React.FC = () => {
         decision === 'APPROVE'
           ? `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી પ્રમાણિત અને મંજૂર થઈ.`
           : decision === 'REJECT'
-          ? `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી સુધારણા માટે પરત મોકલાઈ.`
-          : `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી પુનઃ ખોલવામાં આવી.`
+            ? `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી સુધારણા માટે પરત મોકલાઈ.`
+            : `ગામ ${reviewVillageItem.village_name_gu} ની કામગીરી પુનઃ ખોલવામાં આવી.`
       );
       setIsVerificationReviewModalOpen(false);
       const updated = await dahoOpsService.getCampaignMonitoring(apiBaseUrl, selectedCampaignForMonitoring.id);
@@ -578,9 +576,8 @@ export const TahoCampaignsView: React.FC = () => {
                 return (
                   <label
                     key={v.village_id}
-                    className={`flex items-center gap-1.5 p-1 rounded cursor-pointer text-[11px] ${
-                      isChecked ? 'bg-emerald-50 text-emerald-900 font-medium' : 'hover:bg-slate-50'
-                    }`}
+                    className={`flex items-center gap-1.5 p-1 rounded cursor-pointer text-[11px] ${isChecked ? 'bg-emerald-50 text-emerald-900 font-medium' : 'hover:bg-slate-50'
+                      }`}
                   >
                     <input
                       type="checkbox"

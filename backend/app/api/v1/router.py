@@ -15,6 +15,7 @@ from app.modules.sync.endpoints import router as sync_router
 from app.modules.vaccinations.endpoints import router as vaccinations_router
 from app.modules.technical.endpoints import router as technical_router
 from app.modules.reports.endpoints import router as reports_router
+from app.modules.reports.analytics_endpoints import router as analytics_router
 from app.modules.maps.endpoints import router as maps_router
 from app.modules.duty.endpoints import router as duty_router
 from app.modules.translation.endpoints import router as translation_router
@@ -72,6 +73,10 @@ api_router.include_router(technical_router, prefix="/technical", tags=["Technica
 
 # Include reports and analytics endpoints under /reports
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports & Analytics"])
+
+# Include dedicated inference analytics endpoints under /analytics and /reports/analytics
+api_router.include_router(analytics_router, prefix="/analytics", tags=["Inference & Analytics"])
+api_router.include_router(analytics_router, prefix="/reports/analytics", tags=["Inference & Analytics"])
 
 # Include geospatial and map endpoints under /maps
 api_router.include_router(maps_router, prefix="/maps", tags=["Geospatial & Maps"])

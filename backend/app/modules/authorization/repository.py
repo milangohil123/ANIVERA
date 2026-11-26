@@ -149,8 +149,8 @@ class AuthorizationRepository:
                         if row[0]:
                             assigned.add(row[0])
 
-            # 4. Fallback for DAHO / VO if no explicit assignment exists in DB
-            if not assigned and role in ("DAHO", "VET_OFFICER", "VO"):
+            # 4. Fallback for DAHO / TAHO / VO if no explicit assignment exists in DB
+            if not assigned and role in ("DAHO", "TAHO", "VET_OFFICER", "VO"):
                 dist_res = await self.db.execute(select(District.id))
                 assigned.update(row[0] for row in dist_res.fetchall())
 
@@ -173,6 +173,25 @@ class AuthorizationRepository:
                 for row in res.fetchall():
                     if row[0]:
                         assigned.add(row[0])
+
+                # If no active assignment found, check any past assignment or fallback to talukas of assigned districts
+                if not assigned:
+                    h_stmt = select(TahoTalukaAssignment.taluka_id).where(
+                        TahoTalukaAssignment.taho_user_id == user_id
+                    )
+                    h_res = await self.db.execute(h_stmt)
+                    for row in h_res.fetchall():
+                        if row[0]:
+                            assigned.add(row[0])
+
+                if not assigned:
+                    dists = await self.get_assigned_districts(user_id, role)
+                    if dists:
+                        stmt = select(Taluka.id).where(Taluka.district_id.in_(dists))
+                        res = await self.db.execute(stmt)
+                        for row in res.fetchall():
+                            if row[0]:
+                                assigned.add(row[0])
             elif role in ("DAHO", None):
                 dists = await self.get_assigned_districts(user_id, role)
                 if dists:

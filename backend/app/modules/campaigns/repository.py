@@ -231,7 +231,13 @@ class CampaignRepository:
 
         if villages and prog_rows:
             species_set = {p.species_code for p in prog_rows}
-            animals_stmt = select(Animal.id, Animal.species_code).where(
+            animals_stmt = select(
+                Animal.id,
+                Animal.species_code,
+                Animal.birth_date,
+                Animal.age_months_estimate,
+                Animal.age_estimated_on
+            ).where(
                 Animal.village_id.in_(villages),
                 Animal.status == "ACTIVE",
                 Animal.species_code.in_(species_set)
@@ -245,7 +251,30 @@ class CampaignRepository:
             existing_res = await self.db.execute(existing_stmt)
             existing_pairs = {(r[0], r[1]) for r in existing_res.fetchall()}
 
-            for animal_id, sp_code in animal_rows:
+            today = date.today()
+            min_age = getattr(campaign, "min_age_months", None)
+            max_age = getattr(campaign, "max_age_months", None)
+
+            for animal_id, sp_code, b_date, age_est, est_on in animal_rows:
+                # Enforce animal age eligibility when specified
+                if min_age is not None or max_age is not None:
+                    calc_age: Optional[int] = None
+                    if b_date:
+                        calc_age = (today.year - b_date.year) * 12 + (today.month - b_date.month)
+                        if today.day < b_date.day:
+                            calc_age -= 1
+                    elif age_est is not None:
+                        elapsed = (today.year - est_on.year) * 12 + (today.month - est_on.month) if est_on else 0
+                        calc_age = age_est + max(0, elapsed)
+                    
+                    # Animals without recorded birth date or age are not marked eligible
+                    if calc_age is None:
+                        continue
+                    if min_age is not None and calc_age < min_age:
+                        continue
+                    if max_age is not None and calc_age > max_age:
+                        continue
+
                 # Find programmes matching this species in campaign
                 matching_progs = [p.programme_code for p in prog_rows if p.species_code == sp_code]
                 for p_code in matching_progs:

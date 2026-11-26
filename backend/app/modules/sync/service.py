@@ -215,8 +215,19 @@ class SyncService:
             client_time=request.client_time
         )
 
-        # Sort events by clientCreatedAt to maintain causal dependency order
-        ordered_events = sorted(request.events, key=lambda e: e.client_created_at)
+        # Sort events by causal dependency priority (Farmers -> Animals -> Disease Reports -> Vaccinations/Clinical) then clientCreatedAt
+        event_priority = {
+            "FARMER_REGISTRATION": 1,
+            "ANIMAL_REGISTRATION": 2,
+            "DISEASE_REPORT": 3,
+            "VACCINATION": 4,
+            "TREATMENT": 4,
+            "OBSERVATION": 4,
+        }
+        ordered_events = sorted(
+            request.events,
+            key=lambda e: (event_priority.get(e.type.upper().strip(), 99), e.client_created_at)
+        )
 
         results: List[SyncEventAck] = []
         accepted_count = 0
@@ -378,6 +389,20 @@ class SyncService:
             )
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="MISSING_VILLAGE")
 
+        # Idempotency check: if Farmer already exists with item.event_id, mark as ALREADY_ACCEPTED
+        existing_farmer = await self.db.get(Farmer, item.event_id)
+        if existing_farmer:
+            await self.repo.create_sync_receipt(
+                event_id=item.event_id,
+                device_id=device.id,
+                user_id=current_user.id,
+                batch_id=batch.id,
+                event_type="FARMER_REGISTRATION",
+                status="ALREADY_ACCEPTED",
+                code="IDEMPOTENT_DUPLICATE"
+            )
+            return SyncEventAck(event_id=item.event_id, status="ALREADY_ACCEPTED", code="IDEMPOTENT_DUPLICATE")
+
         try:
             village_id = uuid.UUID(str(village_id_raw))
         except ValueError:
@@ -394,8 +419,9 @@ class SyncService:
             )
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="INVALID_VILLAGE_UUID")
 
+        village = await self.db.get(Village, village_id)
         # Scope Check
-        if not scope.can_access_village(village_id):
+        if not scope.can_access_village(village_id, village.district_id if village else None, village.taluka_id if village else None):
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
                 device_id=device.id,
@@ -490,11 +516,26 @@ class SyncService:
             )
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="MISSING_MANDATORY_FIELDS")
 
+        # Idempotency check: if Animal already exists with item.event_id, mark as ALREADY_ACCEPTED
+        existing_animal = await self.db.get(Animal, item.event_id)
+        if existing_animal:
+            await self.repo.create_sync_receipt(
+                event_id=item.event_id,
+                device_id=device.id,
+                user_id=current_user.id,
+                batch_id=batch.id,
+                event_type="ANIMAL_REGISTRATION",
+                status="ALREADY_ACCEPTED",
+                code="IDEMPOTENT_DUPLICATE"
+            )
+            return SyncEventAck(event_id=item.event_id, status="ALREADY_ACCEPTED", code="IDEMPOTENT_DUPLICATE")
+
         village_id = uuid.UUID(str(village_id_raw))
         farmer_id = uuid.UUID(str(farmer_id_raw))
 
+        village = await self.db.get(Village, village_id)
         # Scope Check
-        if not scope.can_access_village(village_id):
+        if not scope.can_access_village(village_id, village.district_id if village else None, village.taluka_id if village else None):
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
                 device_id=device.id,
@@ -631,6 +672,20 @@ class SyncService:
         programme_code = payload.get("programme_code") or payload.get("programmeCode")
         event_date_raw = payload.get("event_date") or payload.get("eventDate") or payload.get("administeredOn")
 
+        # Idempotency check: if AnimalEvent already exists with item.event_id, mark as ALREADY_ACCEPTED
+        existing_event = await self.db.get(AnimalEvent, item.event_id)
+        if existing_event:
+            await self.repo.create_sync_receipt(
+                event_id=item.event_id,
+                device_id=device.id,
+                user_id=current_user.id,
+                batch_id=batch.id,
+                event_type="VACCINATION",
+                status="ALREADY_ACCEPTED",
+                code="IDEMPOTENT_DUPLICATE"
+            )
+            return SyncEventAck(event_id=item.event_id, status="ALREADY_ACCEPTED", code="IDEMPOTENT_DUPLICATE")
+
         if not animal_id_raw or not programme_code or not event_date_raw:
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
@@ -679,7 +734,8 @@ class SyncService:
             )
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="ANIMAL_NOT_FOUND")
 
-        if not scope.can_access_village(animal.village_id):
+        village = await self.db.get(Village, animal.village_id)
+        if not scope.can_access_village(animal.village_id, village.district_id if village else None, village.taluka_id if village else None):
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
                 device_id=device.id,
@@ -759,6 +815,21 @@ class SyncService:
         """Handle treatment or observation clinical event sync."""
         payload = item.payload
         event_type = item.type.upper().strip()
+
+        # Idempotency check: if AnimalEvent already exists with item.event_id, mark as ALREADY_ACCEPTED
+        existing_event = await self.db.get(AnimalEvent, item.event_id)
+        if existing_event:
+            await self.repo.create_sync_receipt(
+                event_id=item.event_id,
+                device_id=device.id,
+                user_id=current_user.id,
+                batch_id=batch.id,
+                event_type=event_type,
+                status="ALREADY_ACCEPTED",
+                code="IDEMPOTENT_DUPLICATE"
+            )
+            return SyncEventAck(event_id=item.event_id, status="ALREADY_ACCEPTED", code="IDEMPOTENT_DUPLICATE")
+
         animal_id_raw = payload.get("animal_id") or payload.get("animalId")
         event_date_raw = payload.get("event_date") or payload.get("eventDate")
 
@@ -794,7 +865,8 @@ class SyncService:
             )
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="ANIMAL_NOT_FOUND")
 
-        if not scope.can_access_village(animal.village_id):
+        village = await self.db.get(Village, animal.village_id)
+        if not scope.can_access_village(animal.village_id, village.district_id if village else None, village.taluka_id if village else None):
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
                 device_id=device.id,
@@ -864,6 +936,21 @@ class SyncService:
     ) -> SyncEventAck:
         """Handle offline disease report intake. Never auto-confirms outbreaks."""
         payload = item.payload
+
+        # Idempotency check: if DiseaseReport already exists with item.event_id, mark as ALREADY_ACCEPTED
+        existing_report = await self.db.get(DiseaseReport, item.event_id)
+        if existing_report:
+            await self.repo.create_sync_receipt(
+                event_id=item.event_id,
+                device_id=device.id,
+                user_id=current_user.id,
+                batch_id=batch.id,
+                event_type="DISEASE_REPORT",
+                status="ALREADY_ACCEPTED",
+                code="IDEMPOTENT_DUPLICATE"
+            )
+            return SyncEventAck(event_id=item.event_id, status="ALREADY_ACCEPTED", code="IDEMPOTENT_DUPLICATE")
+
         village_id_raw = payload.get("village_id") or payload.get("villageId")
         disease_code = payload.get("disease_code") or payload.get("diseaseCode")
         report_date_raw = payload.get("report_date") or payload.get("reportDate")
@@ -934,7 +1021,7 @@ class SyncService:
             return SyncEventAck(event_id=item.event_id, status="REJECTED", code="INVALID_DATE_FORMAT")
 
         # 4. Scope verification
-        if not scope.can_access_village(village_id):
+        if not scope.can_access_village(village_id, village.district_id, village.taluka_id):
             await self.repo.create_sync_receipt(
                 event_id=item.event_id,
                 device_id=device.id,

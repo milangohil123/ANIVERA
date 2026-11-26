@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { adminService } from '../../services/adminService';
 import { Card } from '../../components/common/Card';
@@ -16,10 +17,12 @@ import {
   Syringe,
   Activity,
   ChevronRight,
+  TrendingUp,
 } from 'lucide-react';
 
 export const TahoReportsView: React.FC = () => {
-  const { apiBaseUrl } = useAuth();
+  const navigate = useNavigate();
+  const { apiBaseUrl, selectedTalukaId } = useAuth();
   const [overview, setOverview] = useState<any | null>(null);
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,8 +31,8 @@ export const TahoReportsView: React.FC = () => {
     setIsLoading(true);
     try {
       const [ov, hier] = await Promise.all([
-        adminService.getTahoOverview(apiBaseUrl),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.getTahoOverview(apiBaseUrl, selectedTalukaId || undefined),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
       ]);
       setOverview(ov);
       setHierarchy(hier);
@@ -42,7 +45,7 @@ export const TahoReportsView: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedTalukaId]);
 
   const exportCSV = (data: any[], filename: string) => {
     if (!data || data.length === 0) {
@@ -116,6 +119,14 @@ export const TahoReportsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/taho/analytics')}
+            leftIcon={<TrendingUp className="w-3.5 h-3.5" />}
+          >
+            ઇન્ફરન્સ ડેશબોર્ડ (Live Analytics)
+          </Button>
           <Button variant="outline" size="sm" onClick={handlePrint} leftIcon={<Printer className="w-3.5 h-3.5" />}>
             પ્રિન્ટ / PDF
           </Button>

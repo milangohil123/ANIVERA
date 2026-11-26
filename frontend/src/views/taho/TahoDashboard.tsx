@@ -33,7 +33,7 @@ import {
 
 export const TahoDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { apiBaseUrl, profile, session } = useAuth();
+  const { apiBaseUrl, profile, session, selectedTalukaId, assignedTalukas } = useAuth();
   const [overview, setOverview] = useState<any | null>(null);
   const [hierarchy, setHierarchy] = useState<any | null>(null);
   const [villagesGeoJson, setVillagesGeoJson] = useState<any | null>(null);
@@ -49,8 +49,8 @@ export const TahoDashboard: React.FC = () => {
     setError(null);
     try {
       const [ov, hier] = await Promise.all([
-        adminService.getTahoOverview(apiBaseUrl),
-        adminService.getTahoHierarchy(apiBaseUrl).catch(() => null),
+        adminService.getTahoOverview(apiBaseUrl, selectedTalukaId || undefined),
+        adminService.getTahoHierarchy(apiBaseUrl, selectedTalukaId || undefined).catch(() => null),
       ]);
       setOverview(ov);
       setHierarchy(hier);
@@ -72,8 +72,12 @@ export const TahoDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    if (assignedTalukas.length > 1 && !selectedTalukaId) {
+      navigate('/taho/select-taluka');
+      return;
+    }
     loadData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, selectedTalukaId, assignedTalukas.length]);
 
   const handleSeedDemo = async () => {
     if (!window.confirm('શું તમે તાલુકા માટે ૨ ડેમો રેકોર્ડ્સ (VO, FW, ઝુંબેશ, ખેડૂત, પશુઓ અને રસીકરણ) લોડ કરવા માંગો છો? આ રેકોર્ડ્સ [DEMO] તરીકે ચિહ્નિત થશે.')) return;

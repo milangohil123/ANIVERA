@@ -218,12 +218,15 @@ class AdministrationRepository:
     async def list_talukas(
         self,
         district_id: Optional[uuid.UUID] = None,
+        district_ids: Optional[List[uuid.UUID]] = None,
         offset: int = 0,
-        limit: int = 50
+        limit: int = 500
     ) -> List[Taluka]:
         stmt = select(Taluka)
         if district_id:
             stmt = stmt.where(Taluka.district_id == district_id)
+        elif district_ids:
+            stmt = stmt.where(Taluka.district_id.in_(district_ids))
         stmt = stmt.order_by(Taluka.code).offset(offset).limit(limit)
         res = await self.db.execute(stmt)
         return list(res.scalars().all())
@@ -276,15 +279,21 @@ class AdministrationRepository:
         self,
         district_id: Optional[uuid.UUID] = None,
         taluka_id: Optional[uuid.UUID] = None,
+        district_ids: Optional[List[uuid.UUID]] = None,
+        taluka_ids: Optional[List[uuid.UUID]] = None,
         village_ids: Optional[Set[uuid.UUID]] = None,
         offset: int = 0,
-        limit: int = 100
+        limit: int = 2000
     ) -> List[Village]:
         stmt = select(Village)
         if district_id:
             stmt = stmt.where(Village.district_id == district_id)
+        elif district_ids:
+            stmt = stmt.where(Village.district_id.in_(district_ids))
         if taluka_id:
             stmt = stmt.where(Village.taluka_id == taluka_id)
+        elif taluka_ids:
+            stmt = stmt.where(Village.taluka_id.in_(taluka_ids))
         if village_ids is not None:
             if len(village_ids) == 0:
                 return []

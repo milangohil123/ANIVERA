@@ -70,6 +70,12 @@ class Campaign(Base):
     custom_vaccine_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_custom_vaccine: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     species_codes: Mapped[Optional[List[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    min_age_months: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_age_months: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    scope_type: Mapped[str] = mapped_column(String(20), default="DISTRICT", nullable=False)
+    target_district_ids: Mapped[Optional[List[uuid.UUID]]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=True)
+    interval_months: Mapped[Optional[int]] = mapped_column(Integer, default=6, nullable=True)
+    is_recurring_schedule: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

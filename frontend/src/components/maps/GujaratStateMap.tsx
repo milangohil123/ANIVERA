@@ -114,6 +114,7 @@ export interface GujaratStateMapProps {
   selectedDistrictId?: string;
   selectedDistrictProps?: any;
   onDistrictSelect?: (districtProps: any) => void;
+  onDistrictHover?: (districtProps: any | null) => void;
   selectedTalukaId?: string;
   selectedTalukaProps?: any;
   onTalukaSelect?: (talukaProps: any) => void;
@@ -137,6 +138,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
   selectedDistrictId,
   selectedDistrictProps,
   onDistrictSelect,
+  onDistrictHover,
   selectedTalukaId,
   selectedTalukaProps,
   onTalukaSelect,
@@ -799,6 +801,12 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         paint: {
           'fill-color': [
             'case',
+            ['has', 'fill_color'],
+            ['get', 'fill_color'],
+            ['has', 'fillColor'],
+            ['get', 'fillColor'],
+            ['==', ['get', 'district_id'], selectedDistrictId || ''],
+            '#38BDF8',
             ['==', ['get', 'status'], 'ASSIGNED'],
             '#135D43', // Forest green
             ['==', ['get', 'status'], 'CONFLICT'],
@@ -846,8 +854,16 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         },
       });
 
-      // District Interaction Handlers
+      // District Interaction Handlers: single-click selects & displays metrics, dblclick drills down to talukas
       map.on('click', 'districts-fill', (e) => {
+        if (isDrawingMode) return;
+        if (e.features && e.features[0]) {
+          const props = e.features[0].properties;
+          onDistrictSelect?.(props);
+        }
+      });
+
+      map.on('dblclick', 'districts-fill', (e) => {
         if (isDrawingMode) return;
         if (e.features && e.features[0]) {
           const props = e.features[0].properties;
@@ -860,11 +876,13 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         if (isDrawingMode) return;
         if (e.features && e.features[0]) {
           map.getCanvas().style.cursor = 'pointer';
+          const p = e.features[0].properties;
           setHoveredEntity({
             type: 'DISTRICT',
-            ...e.features[0].properties,
+            ...p,
           });
           setHoverPos({ x: e.point.x, y: e.point.y });
+          onDistrictHover?.(p);
         }
       });
 
@@ -873,6 +891,7 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
         map.getCanvas().style.cursor = '';
         setHoveredEntity(null);
         setHoverPos(null);
+        onDistrictHover?.(null);
       });
     }
 
@@ -899,6 +918,10 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
             'case',
             ['==', ['get', 'taluka_id'], selectedTalukaId || ''],
             '#38BDF8',
+            ['has', 'fill_color'],
+            ['get', 'fill_color'],
+            ['has', 'fillColor'],
+            ['get', 'fillColor'],
             ['any', ['==', ['get', 'status'], 'ASSIGNED'], ['==', ['get', 'is_assigned'], true]],
             '#135D43',
             '#0EA5E9',
@@ -1819,26 +1842,69 @@ export const GujaratStateMap: React.FC<GujaratStateMapProps> = ({
                 )}
               </div>
 
+              {hoveredEntity.type === 'DISTRICT' && (
+                <div className="mt-1 pt-1 border-t border-slate-700/80 space-y-1 text-[11px]">
+                  {hoveredEntity.code && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">કોડ (Code):</span>
+                      <span className="font-mono text-slate-200">{hoveredEntity.code}</span>
+                    </div>
+                  )}
+                  {(hoveredEntity.villages_count !== undefined || hoveredEntity.village_count !== undefined) && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">ગામો (Villages):</span>
+                      <span className="font-bold text-sky-300">{formatNumber(hoveredEntity.villages_count ?? hoveredEntity.village_count)}</span>
+                    </div>
+                  )}
+                  {hoveredEntity.animal_count !== undefined && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">પશુધન (Animals):</span>
+                      <span className="font-bold text-amber-300">{formatNumber(hoveredEntity.animal_count)} પશુ</span>
+                    </div>
+                  )}
+                  {hoveredEntity.coverage_pct !== undefined && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">રસીકરણ કવરેજ:</span>
+                      <span className="font-bold text-emerald-400">{hoveredEntity.coverage_pct}% ({formatNumber(hoveredEntity.vaccination_count || 0)} ડોઝ)</span>
+                    </div>
+                  )}
+                  {hoveredEntity.disease_count !== undefined && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">રોગ સ્થિતિ:</span>
+                      <span className={`font-bold ${hoveredEntity.disease_count > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {hoveredEntity.disease_count > 0 ? `${hoveredEntity.disease_count} સક્રિય કેસ` : 'રોગમુક્ત / સુરક્ષિત'}
+                      </span>
+                    </div>
+                  )}
+                  {hoveredEntity.daho_name && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">DAHO:</span>
+                      <span className="font-semibold text-emerald-300">{hoveredEntity.daho_name}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {hoveredEntity.type === 'TALUKA' && (
-                <div className="mt-1 pt-1 border-t border-slate-700/80 flex items-center justify-between text-[11px] gap-3">
-                  <span className="text-slate-400">જિલ્લો (District):</span>
-                  <span className="font-bold text-emerald-400">
-                    {hoveredEntity.district_name_gu || hoveredEntity.district_name || hoveredEntity.district_name_en || '-'}
-                  </span>
-                </div>
-              )}
-
-              {hoveredEntity.code && (
-                <div className="flex items-center justify-between text-[10px] text-slate-300 mt-0.5 gap-3">
-                  <span className="text-slate-400">કોડ (Code):</span>
-                  <span className="font-mono text-slate-200">{hoveredEntity.code}</span>
-                </div>
-              )}
-
-              {hoveredEntity.village_count !== undefined && (
-                <div className="flex items-center justify-between text-[10px] text-slate-300 mt-0.5 gap-3">
-                  <span className="text-slate-400">ગામો (Villages):</span>
-                  <span className="font-bold text-sky-300">{formatNumber(hoveredEntity.village_count)}</span>
+                <div className="mt-1 pt-1 border-t border-slate-700/80 space-y-1 text-[11px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-400">જિલ્લો (District):</span>
+                    <span className="font-bold text-emerald-400">
+                      {hoveredEntity.district_name_gu || hoveredEntity.district_name || hoveredEntity.district_name_en || '-'}
+                    </span>
+                  </div>
+                  {hoveredEntity.code && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">કોડ (Code):</span>
+                      <span className="font-mono text-slate-200">{hoveredEntity.code}</span>
+                    </div>
+                  )}
+                  {hoveredEntity.village_count !== undefined && (
+                    <div className="flex items-center justify-between text-[10px] text-slate-300 gap-3">
+                      <span className="text-slate-400">ગામો (Villages):</span>
+                      <span className="font-bold text-sky-300">{formatNumber(hoveredEntity.village_count)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

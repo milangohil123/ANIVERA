@@ -119,6 +119,7 @@ class VaccinationDetail(Base):
     )
     authorization_check: Mapped[str] = mapped_column(Text, default="NOT_CHECKED", nullable=False)
     head_count_vaccinated: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    next_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     event: Mapped["AnimalEvent"] = relationship("AnimalEvent", back_populates="vaccination_detail")
 

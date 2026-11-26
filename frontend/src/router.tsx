@@ -20,6 +20,7 @@ import {
 
 // Views
 import { DahoDistrictSelectorView } from './views/daho/DahoDistrictSelectorView';
+import { TahoTalukaSelectorView } from './views/taho/TahoTalukaSelectorView';
 import { TahoDashboard } from './views/taho/TahoDashboard';
 import { TahoMapsView } from './views/taho/TahoMapsView';
 import { TahoStaffView } from './views/taho/TahoStaffView';
@@ -78,6 +79,7 @@ import { CoopCampsView } from './views/coop/CoopCampsView';
 import { CoopReportsView } from './views/coop/CoopReportsView';
 import { CoopProfileView } from './views/coop/CoopProfileView';
 import { AdminDashboard } from './views/admin/AdminDashboard';
+import { AdminCampaignsView } from './views/admin/AdminCampaignsView';
 import { AdminMasterManagementView } from './views/admin/AdminMasterManagementView';
 import { AdminStateMapView } from './views/admin/AdminStateMapView';
 import { AdminGeographyView } from './views/admin/AdminGeographyView';
@@ -95,6 +97,7 @@ import { FwAttachmentView } from './views/fw/FwAttachmentView';
 import { FwPendingView } from './views/fw/FwPendingView';
 import { FwSyncView } from './views/fw/FwSyncView';
 import { NotificationsView } from './views/notifications/NotificationsView';
+import { InferenceAnalyticsDashboard } from './views/analytics/InferenceAnalyticsDashboard';
 
 const RootRedirect: React.FC = () => {
   const { isAuthenticated, rolePrefix, isLoading } = useAuth();
@@ -124,6 +127,16 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
+      {/* TAHO Taluka Selection Screen (Multi-Taluka Jurisdiction) */}
+      <Route
+        path="/taho/select-taluka"
+        element={
+          <ProtectedRoute allowedRoles={['TAHO', 'SYS_ADMIN']}>
+            <TahoTalukaSelectorView />
+          </ProtectedRoute>
+        }
+      />
+
       {/* DAHO Protected Tree */}
       <Route
         path="/daho"
@@ -145,6 +158,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><DahoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/daho/maps" replace />} />
         <Route path="reports" element={<ProtectedRoute requiredPermission="reports.district"><DahoReportsView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.district"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<DahoProfileView />} />
       </Route>
@@ -169,6 +183,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="farmers" element={<ProtectedRoute requiredPermission="farmer.view"><TahoFarmersView /></ProtectedRoute>} />
         <Route path="surveillance" element={<ProtectedRoute requiredPermission="disease.case.assign"><TahoSurveillanceView /></ProtectedRoute>} />
         <Route path="reports" element={<ProtectedRoute requiredPermission="reports.taluka"><TahoReportsView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.taluka"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<TahoProfileView />} />
       </Route>
@@ -194,6 +209,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="camps" element={<ProtectedRoute requiredPermission="campaign.monitor"><VoCampsView /></ProtectedRoute>} />
         <Route path="inventory" element={<ProtectedRoute requiredPermission="reports.village"><VoInventoryView /></ProtectedRoute>} />
         <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><VoReportsView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.village"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="maps" element={<ProtectedRoute requiredPermission="map.view"><VoMapsView /></ProtectedRoute>} />
         <Route path="map" element={<Navigate to="/vo/maps" replace />} />
         <Route path="sync" element={<VoSyncView />} />
@@ -217,6 +233,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="animals" element={<ProtectedRoute requiredPermission="animal.register"><FwAnimalsView /></ProtectedRoute>} />
         <Route path="scan" element={<ProtectedRoute requiredPermission="animal.view"><FwScanView /></ProtectedRoute>} />
         <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><FwReportsView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.village"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="reports/new" element={<ProtectedRoute requiredPermission="disease.report"><FwDiseaseReportView /></ProtectedRoute>} />
         <Route path="reports/attachments" element={<ProtectedRoute requiredPermission="disease.report"><FwAttachmentView /></ProtectedRoute>} />
         <Route path="vaccinations" element={<ProtectedRoute requiredPermission="vaccination.create"><FwVaccinationsView /></ProtectedRoute>} />
@@ -267,6 +284,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="camps" element={<ProtectedRoute requiredPermission="coop.schedules.create"><CoopCampsView /></ProtectedRoute>} />
         <Route path="surveillance" element={<ProtectedRoute requiredPermission="reports.analytics.disease"><CoopSurveillanceView /></ProtectedRoute>} />
         <Route path="reports" element={<ProtectedRoute requiredPermission="reports.village"><CoopReportsView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.village"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="notifications" element={<NotificationsView />} />
         <Route path="profile" element={<CoopProfileView />} />
       </Route>
@@ -282,12 +300,14 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/admin/overview" replace />} />
         <Route path="overview" element={<AdminDashboard />} />
+        <Route path="campaigns" element={<ProtectedRoute requiredPermission="campaign.configure"><AdminCampaignsView /></ProtectedRoute>} />
         <Route path="masters" element={<ProtectedRoute requiredPermission="system.settings.manage"><AdminMasterManagementView /></ProtectedRoute>} />
         <Route path="map" element={<ProtectedRoute requiredPermission="map.view"><AdminStateMapView /></ProtectedRoute>} />
         <Route path="geography" element={<ProtectedRoute requiredPermission="geo.state.manage"><AdminGeographyView /></ProtectedRoute>} />
         <Route path="daho" element={<ProtectedRoute requiredPermission="user.daho.create"><AdminDahoView /></ProtectedRoute>} />
         <Route path="assignments" element={<ProtectedRoute requiredPermission="user.role.assign"><AdminAssignmentsView /></ProtectedRoute>} />
         <Route path="oversight" element={<ProtectedRoute requiredPermission="reports.district"><AdminOperationalOversightView /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute requiredPermission="reports.district"><InferenceAnalyticsDashboard /></ProtectedRoute>} />
         <Route path="rbac" element={<ProtectedRoute requiredPermission="system.roles.manage"><AdminRbacView /></ProtectedRoute>} />
         <Route path="roles" element={<ProtectedRoute requiredPermission="system.roles.manage"><AdminRbacView /></ProtectedRoute>} />
         <Route path="users" element={<ProtectedRoute requiredPermission="user.staff.manage"><AdminUsersView /></ProtectedRoute>} />

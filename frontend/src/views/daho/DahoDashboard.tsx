@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KpiCard } from '../../components/common/KpiCard';
 import {
@@ -61,19 +61,25 @@ export const DahoDashboard: React.FC = () => {
     }
   }, [assignedDistricts, selectedDistrictId, navigate]);
 
-  const activeDistrictId =
-    selectedDistrictId ||
-    assignedDistricts[0]?.id ||
-    assignedDistricts[0]?.district_id ||
-    scope?.assigned_districts?.[0] ||
-    profile?.assigned_districts?.[0];
+  const activeDistrictId = useMemo(() => {
+    if (selectedDistrictId && assignedDistricts.some((d: any) => (d.id || d.district_id) === selectedDistrictId)) {
+      return selectedDistrictId;
+    }
+    return (
+      assignedDistricts[0]?.id ||
+      assignedDistricts[0]?.district_id ||
+      scope?.assigned_districts?.[0] ||
+      profile?.assigned_districts?.[0] ||
+      null
+    );
+  }, [selectedDistrictId, assignedDistricts, scope, profile]);
 
   const currentDistrictObj = assignedDistricts.find(
     (d: any) => (d.id || d.district_id) === activeDistrictId
   ) || null;
 
-  const currentDistrictNameGu = currentDistrictObj?.name_gu || summary?.name_gu || 'બોટાદ જિલ્લો';
-  const currentDistrictNameEn = currentDistrictObj?.name_en || 'Botad';
+  const currentDistrictNameGu = currentDistrictObj?.name_gu || summary?.name_gu || 'જિલ્લો';
+  const currentDistrictNameEn = currentDistrictObj?.name_en || summary?.name_en || 'District';
 
   // Modal states for TAHO assignment and creation
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -589,7 +595,7 @@ export const DahoDashboard: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#135D43] text-white text-xs font-semibold hover:bg-[#0F4C37] shadow-xs transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>+ નવો TAHO ઉમેરો</span>
+              <span>નવો TAHO ઉમેરો</span>
             </button>
           </div>
         </div>
@@ -797,7 +803,7 @@ export const DahoDashboard: React.FC = () => {
                   કોઈ સક્રિય રસીકરણ ઝુંબેશ ઉપલબ્ધ નથી
                 </h3>
                 <p className="text-xs text-[#64748B] max-w-md">
-                  હાલ બોટાદ જિલ્લામાં કોઈ સક્રિય રસીકરણ ઝુંબેશ ચાલુ નથી. નવી ઝુંબેશ શરૂ કરવા અથવા વિગતો જોવા માટે ઝુંબેશ સંચાલન ખોલો.
+                  હાલ {currentDistrictNameGu}માં કોઈ સક્રિય રસીકરણ ઝુંબેશ ચાલુ નથી. નવી ઝુંબેશ શરૂ કરવા અથવા વિગતો જોવા માટે ઝુંબેશ સંચાલન ખોલો.
                 </p>
               </div>
               <button
@@ -825,7 +831,7 @@ export const DahoDashboard: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-[#64748B]">
-              દૈનિક નોંધાયેલ રસીકરણ ડોઝની પ્રગતિ (બોટાદ પાયલોટ રાઉન્ડ)
+              દૈનિક નોંધાયેલ રસીકરણ ડોઝની પ્રગતિ ({currentDistrictNameGu})
             </p>
 
             <LinearAreaChart
@@ -872,7 +878,7 @@ export const DahoDashboard: React.FC = () => {
                   </p>
                 </div>
                 <span className="text-[10px] font-semibold text-slate-500 bg-white px-2.5 py-0.5 rounded border border-slate-200">
-                  બોટાદ • ગઢડા • બરવાળા • રાણપુર (મેપિંગ પ્રક્રિયામાં)
+                  {currentDistrictNameGu} તાલુકાઓ (મેપિંગ પ્રક્રિયામાં)
                 </span>
               </div>
             )}
@@ -995,7 +1001,7 @@ export const DahoDashboard: React.FC = () => {
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/90 border border-slate-200 text-slate-800 text-[11px] font-bold shadow-xs">
                     <MapPin className="w-3.5 h-3.5 text-[#135D43]" />
-                    <span>બોટાદ જિલ્લો GIS ભૌગોલિક નકશો</span>
+                    <span>{currentDistrictNameGu} GIS ભૌગોલિક નકશો</span>
                   </div>
                   <p className="text-[10px] text-[#135D43] font-semibold">
                     જીવંત રસીકરણ અને રોગ નકશો ખોલો ↗

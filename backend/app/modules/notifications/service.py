@@ -1,7 +1,8 @@
 """Service layer for In-App Notifications and simulated external dispatch."""
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Set
+from datetime import date
+from typing import Any, Dict, List, Optional, Set, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,7 +90,7 @@ GUJARATI_TEMPLATES: Dict[str, Dict[str, str]] = {
     },
     "CAMPAIGN_FARMER_ANNOUNCEMENT": {
         "title": "આગામી પશુ રસીકરણ ઝુંબેશ",
-        "body": "તમારા ગામ {village_name} માં રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ થનાર છે. કૃપા કરીને તમારા પશુઓને રસીકરણ માટે તૈયાર રાખો.",
+        "body": "તમારા ગામ {village_name} માં રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ થનાર છે. તમારા {eligible_count} પશુઓ આ ઝુંબેશ હેઠળ પાત્ર છે. કૃપા કરીને રસીકરણ માટે તૈયાર રાખો.",
     },
     "CAMPAIGN_GP_ANNOUNCEMENT": {
         "title": "ગ્રામ પંચાયત પશુ રસીકરણ ઝુંબેશ સૂચના",
@@ -98,6 +99,10 @@ GUJARATI_TEMPLATES: Dict[str, Dict[str, str]] = {
     "CAMPAIGN_COOP_ANNOUNCEMENT": {
         "title": "ડેરી સહકારી મંડળી રસીકરણ ઝુંબેશ સૂચના",
         "body": "ગામ {village_name} માં રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ કરાઈ છે. પશુપાલકોને સહભાગી થવા અનુરોધ છે.",
+    },
+    "CAMPAIGN_STATEWIDE_ALERT": {
+        "title": "રાજ્ય કક્ષાની રસીકરણ ઝુંબેશ જાહેરાત",
+        "body": "રાજ્ય વહીવટીતંત્ર (Admin) દ્વારા નવી રાજ્યવ્યાપી રસીકરણ ઝુંબેશ '{campaign_name}' ({disease_code}) શરૂ કરવામાં આવી છે.",
     },
     "CAMPAIGN_TAHO_ALERT": {
         "title": "જિલ્લા રસીકરણ ઝુંબેશ જાહેરાત",
@@ -593,44 +598,102 @@ class NotificationService:
             if fwn:
                 dispatched["fw"] = dispatched.get("fw", 0) + 1
 
-        # 2. Farmers in Village
-        farmer_recipient_ids: Set[uuid.UUID] = set()
-        f_prov_stmt = (
-            select(FarmerAccountProvisioning.user_id)
-            .join(Farmer, Farmer.id == FarmerAccountProvisioning.farmer_id)
-            .where(
-                Farmer.village_id == village_id,
-                FarmerAccountProvisioning.revoked_at.is_(None)
-            )
-        )
-        for row in (await self.db.execute(f_prov_stmt)).fetchall():
-            farmer_recipient_ids.add(row[0])
+        # 2. Farmers in Village (Strict Animal-Wise Eligibility)
+        # Requirement: An eligible farmer MUST own at least one ACTIVE animal matching species & age range.
+        target_species = getattr(campaign, "species_codes", None) or []
+        if not target_species:
+            from app.modules.campaigns.models import CampaignProgramme
+            cp_rows = (await self.db.execute(
+                select(CampaignProgramme.species_code).where(CampaignProgramme.campaign_id == campaign.id)
+            )).scalars().all()
+            target_species = list(set(cp_rows)) if cp_rows else ["CATTLE", "BUFFALO"]
 
-        f_link_stmt = (
-            select(FarmerUserLink.user_id)
-            .join(Farmer, Farmer.id == FarmerUserLink.farmer_id)
-            .where(Farmer.village_id == village_id)
+        from app.modules.animals.models import Animal
+        animal_stmt = select(
+            Animal.farmer_id,
+            Animal.id,
+            Animal.species_code,
+            Animal.birth_date,
+            Animal.age_months_estimate,
+            Animal.age_estimated_on
+        ).where(
+            Animal.village_id == village_id,
+            Animal.status == "ACTIVE",
+            Animal.species_code.in_(target_species)
         )
-        for row in (await self.db.execute(f_link_stmt)).fetchall():
-            farmer_recipient_ids.add(row[0])
+        anim_rows = (await self.db.execute(animal_stmt)).all()
 
-        f_mob_stmt = (
-            select(User.id)
-            .where(
-                User.role == "FARMER",
-                User.status == "ACTIVE",
-                User.mobile_e164.in_(
-                    select(Farmer.mobile_e164).where(
-                        Farmer.village_id == village_id,
-                        Farmer.mobile_e164.isnot(None)
-                    )
+        today = date.today()
+        min_age = getattr(campaign, "min_age_months", None)
+        max_age = getattr(campaign, "max_age_months", None)
+
+        # Count eligible animals per farmer
+        farmer_eligible_counts: Dict[uuid.UUID, int] = {}
+        for fid, aid, sc, b_date, age_est, est_on in anim_rows:
+            is_age_eligible = True
+            if min_age is not None or max_age is not None:
+                calc_age: Optional[int] = None
+                if b_date:
+                    calc_age = (today.year - b_date.year) * 12 + (today.month - b_date.month)
+                    if today.day < b_date.day:
+                        calc_age -= 1
+                elif age_est is not None:
+                    elapsed = (today.year - est_on.year) * 12 + (today.month - est_on.month) if est_on else 0
+                    calc_age = age_est + max(0, elapsed)
+                
+                # Unknown age is excluded when an age range is required
+                if calc_age is None:
+                    is_age_eligible = False
+                else:
+                    if min_age is not None and calc_age < min_age:
+                        is_age_eligible = False
+                    if max_age is not None and calc_age > max_age:
+                        is_age_eligible = False
+
+            if is_age_eligible:
+                farmer_eligible_counts[fid] = farmer_eligible_counts.get(fid, 0) + 1
+
+        eligible_farmer_ids = set(farmer_eligible_counts.keys())
+
+        farmer_recipient_pairs: Set[Tuple[uuid.UUID, uuid.UUID]] = set()
+        if eligible_farmer_ids:
+            f_prov_stmt = (
+                select(FarmerAccountProvisioning.user_id, Farmer.id)
+                .join(Farmer, Farmer.id == FarmerAccountProvisioning.farmer_id)
+                .where(
+                    Farmer.id.in_(eligible_farmer_ids),
+                    FarmerAccountProvisioning.revoked_at.is_(None)
                 )
             )
-        )
-        for row in (await self.db.execute(f_mob_stmt)).fetchall():
-            farmer_recipient_ids.add(row[0])
+            for row in (await self.db.execute(f_prov_stmt)).fetchall():
+                farmer_recipient_pairs.add((row[0], row[1]))
 
-        for f_uid in farmer_recipient_ids:
+            f_link_stmt = (
+                select(FarmerUserLink.user_id, Farmer.id)
+                .join(Farmer, Farmer.id == FarmerUserLink.farmer_id)
+                .where(Farmer.id.in_(eligible_farmer_ids))
+            )
+            for row in (await self.db.execute(f_link_stmt)).fetchall():
+                farmer_recipient_pairs.add((row[0], row[1]))
+
+            f_mob_stmt = (
+                select(User.id, Farmer.id)
+                .join(Farmer, Farmer.mobile_e164 == User.mobile_e164)
+                .where(
+                    Farmer.id.in_(eligible_farmer_ids),
+                    User.role == "FARMER",
+                    User.status == "ACTIVE"
+                )
+            )
+            for row in (await self.db.execute(f_mob_stmt)).fetchall():
+                farmer_recipient_pairs.add((row[0], row[1]))
+
+        notified_users: Set[uuid.UUID] = set()
+        for f_uid, fid in farmer_recipient_pairs:
+            if f_uid in notified_users:
+                continue
+            notified_users.add(f_uid)
+            cnt = farmer_eligible_counts.get(fid, 1)
             fn = await self.notify(
                 recipient_user_id=f_uid,
                 kind="CAMPAIGN_FARMER_ANNOUNCEMENT",
@@ -640,7 +703,8 @@ class NotificationService:
                     "campaign_name": campaign.name,
                     "disease_code": disease_code,
                     "village_id": str(village_id),
-                    "village_name": v_name
+                    "village_name": v_name,
+                    "eligible_count": str(cnt)
                 },
                 related_type="campaign",
                 related_id=str(campaign.id)

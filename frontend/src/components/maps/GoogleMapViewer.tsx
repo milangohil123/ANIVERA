@@ -26,6 +26,7 @@ import type {
 import type { LiveFieldWorkerItem } from '../../services/dutyService';
 import { useAuth } from '../../context/AuthContext';
 import { locationTrackingService } from '../../services/locationTrackingService';
+import { googleMapsService } from '../../services/googleMapsService';
 
 export type MapLayerMode = 'VACCINATION' | 'SURVEILLANCE';
 export type CoverageCategory = 'ALL' | 'HIGH' | 'MODERATE' | 'LOW' | 'NODATA';
@@ -110,7 +111,7 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
   onLayerChange,
   title = 'બોટાદ જિલ્લો ભૌગોલિક નકશો (Botad District Geospatial Map)',
   subtitle = 'ઓપનસ્ટ્રીટમેપ જીઓ-ડેટા, રસીકરણ સિદ્ધિ દર અને રોગ સર્વેક્ષણ જીઓ-મોનિટરિંગ',
-  roleScope: _roleScope = 'VO',
+  roleScope = 'VO',
   onVillageSelect,
   className = '',
   liveFieldWorkers = [],
@@ -137,6 +138,7 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
   const fwMarkersRef = useRef<maplibregl.Marker[]>([]);
   const userMarkerRef = useRef<maplibregl.Marker | null>(null);
   const hasFittedBoundsRef = useRef<boolean>(false);
+  const locateUserRef = useRef<() => void>();
 
   const handleLayerSwitch = (layer: MapLayerMode) => {
     setInternalLayer(layer);
@@ -258,11 +260,17 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
     if (mapInstanceRef.current) return;
 
     try {
+      // For Field Worker view, default center directly to the Field Worker's current live location
+      const myFw = liveFieldWorkers.find((f) => f.fw_user_id === session?.user?.id) || liveFieldWorkers[0];
+      const initialCenter = roleScope === 'FW' && myFw?.last_known_longitude && myFw?.last_known_latitude
+        ? [myFw.last_known_longitude, myFw.last_known_latitude]
+        : [BOTAD_CENTER.lng, BOTAD_CENTER.lat];
+
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
         style: FREE_OSM_STYLE,
-        center: [BOTAD_CENTER.lng, BOTAD_CENTER.lat],
-        zoom: 10.5,
+        center: initialCenter as [number, number],
+        zoom: roleScope === 'FW' ? 13 : 10.5,
         attributionControl: false,
       });
 
@@ -289,6 +297,10 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
 
       map.on('load', () => {
         map.resize();
+        // Immediately query live browser geolocation with zero cache to locate user's real location
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          locateUserRef.current?.();
+        }
       });
     } catch (err) {
       console.warn('MapLibre GL Map initialization note:', err);
@@ -313,8 +325,13 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
-    // Render Markers for each filtered village
-    filteredVillages.forEach((village) => {
+    // For Field Worker view (roleScope === 'FW'), we show ONLY the single current live location of the Field Worker,
+    // not showing clutter pins for all assigned villages (unless specifically selected in search/filter).
+    const villagesToRender = roleScope === 'FW'
+      ? (selectedVillage ? [selectedVillage] : (searchQuery.trim() ? filteredVillages : []))
+      : filteredVillages;
+
+    villagesToRender.forEach((village) => {
       const isSurv = activeLayer === 'SURVEILLANCE';
       const markerColor = isSurv ? village.survColor : village.vacColor;
       const isSelected = selectedVillage?.id === village.id;
@@ -388,8 +405,9 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
       markersRef.current.push(marker);
     });
 
-    // Auto fit bounds ONCE upon initial village data load (avoids map jumping on subsequent updates)
-    if (filteredVillages.length > 0 && !hasFittedBoundsRef.current) {
+    // Auto fit bounds ONCE upon initial village data load for VO/DAHO views.
+    // For Field Worker view (roleScope === 'FW'), do not fit bounds to all assigned villages; keep focused on FW live location.
+    if (roleScope !== 'FW' && filteredVillages.length > 0 && !hasFittedBoundsRef.current) {
       hasFittedBoundsRef.current = true;
       const bounds = new maplibregl.LngLatBounds();
       filteredVillages.forEach((v) => bounds.extend([v.lng, v.lat]));
@@ -416,7 +434,14 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
       return;
     }
 
-    liveFieldWorkers.forEach((fw) => {
+    // In Field Worker view, display only the logged-in Field Worker's single current location pin
+    const fwsToRender = roleScope === 'FW'
+      ? (liveFieldWorkers.filter((fw) => fw.fw_user_id === session?.user?.id).length > 0
+          ? liveFieldWorkers.filter((fw) => fw.fw_user_id === session?.user?.id)
+          : liveFieldWorkers.slice(0, 1))
+      : liveFieldWorkers;
+
+    fwsToRender.forEach((fw) => {
       if (
         fw.last_known_latitude === undefined ||
         fw.last_known_latitude === null ||
@@ -537,7 +562,7 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
   }, [liveFieldWorkers, showFwLayer, selectedFw, onFieldWorkerSelect]);
 
   // --------------------------------------------------------------------------
-  // 4. HTML5 Browser Geolocation (Locate Me)
+  // 4. HTML5 Browser Geolocation (Locate Me - Strictly Live, Zero Stale Cache)
   // --------------------------------------------------------------------------
   const handleLocateUser = () => {
     if (!navigator.geolocation) {
@@ -546,62 +571,100 @@ export const GoogleMapViewer: React.FC<GoogleMapViewerProps> = ({
     }
 
     setIsLocatingUser(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setIsLocatingUser(false);
-        const { latitude, longitude } = pos.coords;
 
-        const map = mapInstanceRef.current;
-        if (!map) return;
+    const onPosSuccess = async (pos: GeolocationPosition) => {
+      setIsLocatingUser(false);
+      const { latitude, longitude } = pos.coords;
 
-        // User Marker
-        if (userMarkerRef.current) userMarkerRef.current.remove();
+      const map = mapInstanceRef.current;
+      if (!map) return;
 
-        const uEl = document.createElement('div');
-        uEl.className = 'user-pin-marker';
-        uEl.style.width = '18px';
-        uEl.style.height = '18px';
-        uEl.style.borderRadius = '50%';
-        uEl.style.backgroundColor = '#0284C7';
-        uEl.style.border = '3px solid #FFFFFF';
-        uEl.style.boxShadow = '0 0 0 5px rgba(2, 132, 199, 0.35)';
+      // User Marker
+      if (userMarkerRef.current) userMarkerRef.current.remove();
 
-        const uMarker = new maplibregl.Marker({ element: uEl })
-          .setLngLat([longitude, latitude])
-          .setPopup(
-            new maplibregl.Popup({ offset: 12 }).setHTML(
-              '<div style="font-size:11px; font-weight:bold; color:#0284C7;">તમારું વર્તમાન સ્થાન (Current Location)</div>'
-            )
-          )
-          .addTo(map);
+      const uEl = document.createElement('div');
+      uEl.className = 'user-pin-marker';
+      uEl.style.width = '22px';
+      uEl.style.height = '22px';
+      uEl.style.borderRadius = '50%';
+      uEl.style.backgroundColor = '#0284C7';
+      uEl.style.border = '3px solid #FFFFFF';
+      uEl.style.boxShadow = '0 0 0 6px rgba(2, 132, 199, 0.4)';
 
-        userMarkerRef.current = uMarker;
+      const popup = new maplibregl.Popup({ offset: 14 }).setHTML(
+        `<div style="font-size:11px; font-family:Inter,sans-serif; padding:4px;">
+          <div style="font-weight:bold; color:#0284C7;">તમારું વર્તમાન સ્થાન (Current Live Location)</div>
+          <div style="font-size:10px; color:#64748B; margin-top:2px;">ચકાસી રહ્યું છે...</div>
+        </div>`
+      );
 
-        // If the current user is a Field Worker, broadcast live coordinates to the server immediately
-        const userRole = session?.user?.role;
-        if (userRole === 'FIELD_WORKER' || userRole === 'FW') {
-          locationTrackingService
-            .broadcastLocation(apiBaseUrl, {
-              latitude,
-              longitude,
-              accuracy: pos.coords.accuracy || 10,
-            })
-            .catch((err) => console.warn('Live location broadcast error:', err));
-        }
+      const uMarker = new maplibregl.Marker({ element: uEl })
+        .setLngLat([longitude, latitude])
+        .setPopup(popup)
+        .addTo(map);
 
-        map.flyTo({
-          center: [longitude, latitude],
-          zoom: 14,
-          speed: 1.5,
-        });
-      },
-      (err) => {
-        setIsLocatingUser(false);
-        alert(`સ્થાન મેળવી શકાયું નથી: ${err.message}`);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
+      userMarkerRef.current = uMarker;
+
+      // Reverse geocode dynamically to show user's current city/area (e.g. Ahmedabad)
+      try {
+        const address = await googleMapsService.reverseGeocode(latitude, longitude);
+        popup.setHTML(
+          `<div style="font-family:Inter,sans-serif; padding:6px 8px; font-size:11px; max-width:240px;">
+            <div style="font-weight:bold; color:#0284C7; font-size:12px;">તમારું વર્તમાન સ્થાન (Live Location)</div>
+            <div style="color:#0F172A; font-weight:500; margin-top:3px; line-height:1.4;">${address}</div>
+            <div style="margin-top:4px; font-size:9px; color:#10B981; font-weight:bold;">● તાજું GPS સ્થાન પ્રાપ્ત થયું</div>
+          </div>`
+        );
+      } catch (geoErr) {
+        console.debug('Reverse geocoding error:', geoErr);
+      }
+
+      // If the current user is a Field Worker, broadcast live coordinates to the server immediately
+      const userRole = session?.user?.role;
+      if (userRole === 'FIELD_WORKER' || userRole === 'FW') {
+        locationTrackingService
+          .broadcastLocation(apiBaseUrl, {
+            latitude,
+            longitude,
+            accuracy: pos.coords.accuracy || 10,
+          })
+          .catch((err) => console.warn('Live location broadcast error:', err));
+      }
+
+      map.flyTo({
+        center: [longitude, latitude],
+        zoom: 14,
+        speed: 1.5,
+      });
+    };
+
+    const onPosError = () => {
+      // High-accuracy timeout fallback to standard accuracy (network/WiFi)
+      navigator.geolocation.getCurrentPosition(
+        onPosSuccess,
+        (fallbackErr) => {
+          setIsLocatingUser(false);
+          let msg = `સ્થાન મેળવી શકાયું નથી: ${fallbackErr.message}`;
+          if (fallbackErr.code === fallbackErr.PERMISSION_DENIED) {
+            msg = 'બ્રાઉઝરમાં લોકેશન પરવાનગી નકારવામાં આવી છે. કૃપા કરીને બ્રાઉઝર એડ્રેસ બારમાં પરવાનગી મંજૂર કરો.';
+          } else if (fallbackErr.code === fallbackErr.POSITION_UNAVAILABLE) {
+            msg = 'ઉપકરણનું જીઓ-લોકેશન સિગ્નલ ઉપલબ્ધ નથી.';
+          } else if (fallbackErr.code === fallbackErr.TIMEOUT) {
+            msg = 'GPS સ્થાન મેળવવામાં સમય સમાપ્ત થઈ ગયો. કૃપા કરીને ફરી પ્રયાસ કરો.';
+          }
+          alert(msg);
+        },
+        { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 }
+      );
+    };
+
+    navigator.geolocation.getCurrentPosition(onPosSuccess, onPosError, {
+      enableHighAccuracy: true,
+      timeout: 8000,
+      maximumAge: 0, // Strict zero cache to guarantee live location
+    });
   };
+  locateUserRef.current = handleLocateUser;
 
   const handleResetView = () => {
     setSelectedVillage(null);

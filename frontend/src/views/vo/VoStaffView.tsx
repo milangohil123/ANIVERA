@@ -29,7 +29,6 @@ export const VoStaffView: React.FC = () => {
   const [liveFws, setLiveFws] = useState<LiveFieldWorkerItem[]>([]);
   const [fieldWorkerAccounts, setFieldWorkerAccounts] = useState<any[]>([]);
   const [complaintGroups, setComplaintGroups] = useState<ComplaintGroupResponse[]>([]);
-  const [villages, setVillages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -42,7 +41,7 @@ export const VoStaffView: React.FC = () => {
     setIsLoading(true);
     setNotice(null);
     try {
-      const [dutyData, fwList, groups, vList] = await Promise.all([
+      const [dutyData, fwList, groups] = await Promise.all([
         dutyService.getVoLiveFieldWorkers(apiBaseUrl).catch(() => ({
           total_field_workers: 0,
           active_on_duty: 0,
@@ -52,13 +51,11 @@ export const VoStaffView: React.FC = () => {
         })),
         voService.listFieldWorkers(apiBaseUrl).catch(() => []),
         dutyService.listComplaintGroups(apiBaseUrl).catch(() => []),
-        voService.listVillages(apiBaseUrl).catch(() => []),
       ]);
 
       setLiveFws(dutyData.field_workers || []);
       setFieldWorkerAccounts(fwList);
       setComplaintGroups(groups);
-      setVillages(vList);
     } catch (err: any) {
       setNotice({
         type: 'error',
@@ -89,7 +86,7 @@ export const VoStaffView: React.FC = () => {
 
   const handleOpenFwModal = (fw: LiveFieldWorkerItem) => {
     setSelectedFw(fw);
-    const assigned = complaintGroups.filter((g) => g.assigned_fw_user_id === fw.fw_user_id);
+    const assigned = complaintGroups.filter((g) => g.assigned_fw_id === fw.fw_user_id);
     setFwAssignedGroups(assigned);
   };
 
@@ -106,8 +103,8 @@ export const VoStaffView: React.FC = () => {
 
   const totalFws = liveFws.length;
   const activeOnDuty = liveFws.filter((f) => f.duty_status === 'ACTIVE').length;
-  const freshLocations = liveFws.filter((f) => f.is_location_fresh).length;
-  const totalAssignedTasks = complaintGroups.filter((g) => !!g.assigned_fw_user_id).length;
+  const freshLocations = liveFws.filter((f) => f.freshness === 'FRESH').length;
+  const totalAssignedTasks = complaintGroups.filter((g) => !!g.assigned_fw_id).length;
 
   const columns: Column<LiveFieldWorkerItem>[] = [
     {
@@ -150,16 +147,16 @@ export const VoStaffView: React.FC = () => {
       header: 'GPS લોકેશન અને તાજગી',
       render: (row) => (
         <div className="text-xs text-slate-700">
-          {row.last_latitude && row.last_longitude ? (
+          {row.last_known_latitude && row.last_known_longitude ? (
             <div>
               <div className="flex items-center gap-1 font-mono text-[11px] text-[#135D43]">
                 <MapPin className="w-3.5 h-3.5 text-[#135D43]" />
                 <span>
-                  {row.last_latitude.toFixed(3)}, {row.last_longitude.toFixed(3)}
+                  {row.last_known_latitude.toFixed(3)}, {row.last_known_longitude.toFixed(3)}
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
-                {row.is_location_fresh ? '✓ તાજી લોકેશન (Live)' : 'સ્થિર લોકેશન'}
+                {row.freshness === 'FRESH' ? '✓ તાજી લોકેશન (Live)' : 'સ્થિર લોકેશન'}
               </div>
             </div>
           ) : (
@@ -341,11 +338,11 @@ export const VoStaffView: React.FC = () => {
                   <span className="text-slate-400">કુલ સોંપાયેલ જૂથ:</span>{' '}
                   <strong className="text-slate-900">{fwAssignedGroups.length}</strong>
                 </div>
-                {selectedFw.last_latitude && (
+                {selectedFw.last_known_latitude && (
                   <div className="col-span-2">
                     <span className="text-slate-400">તાજેતરનું GPS સ્થાન:</span>{' '}
                     <span className="font-mono text-[#135D43]">
-                      {selectedFw.last_latitude.toFixed(4)}, {selectedFw.last_longitude?.toFixed(4)}
+                      {selectedFw.last_known_latitude.toFixed(4)}, {selectedFw.last_known_longitude?.toFixed(4)}
                     </span>
                   </div>
                 )}

@@ -534,7 +534,7 @@ export const DiseaseReportForm: React.FC<DiseaseReportFormProps> = ({
       (err) => {
         alert(`સ્થાન મેળવવામાં નિષ્ફળ: ${err.message}`);
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 

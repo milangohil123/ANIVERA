@@ -25,6 +25,10 @@ class CampaignCreate(BaseModel):
     start_date: Optional[date] = Field(None, description="Planned campaign start date")
     end_date: Optional[date] = Field(None, description="Planned campaign end date")
     village_ids: List[uuid.UUID] = Field(default_factory=list, description="Target village identifiers")
+    district_ids: List[uuid.UUID] = Field(default_factory=list, description="Target district identifiers (for statewide/multi-district campaigns)")
+    scope_type: Optional[str] = Field("DISTRICT", description="Scope type (STATEWIDE, DISTRICT, TALUKA)")
+    min_age_months: Optional[int] = Field(None, ge=0, description="Minimum animal age in months for eligibility")
+    max_age_months: Optional[int] = Field(None, ge=0, description="Maximum animal age in months for eligibility")
     species_codes: List[str] = Field(default_factory=list, description="Selected animal species codes (e.g. CATTLE, BUFFALO)")
     disease_code: Optional[str] = Field(None, description="Target disease code (e.g. FMD, HS, BQ)")
     vaccine_code: Optional[str] = Field(None, description="Selected vaccine master code (e.g. VAC-FMD-01)")
@@ -34,6 +38,8 @@ class CampaignCreate(BaseModel):
     target_animals_count: Optional[int] = Field(None, description="Planned target animal count by DAHO")
     programmes: List[CampaignProgrammeItem] = Field(default_factory=list, description="Species and programmes covered")
     notes: Optional[str] = Field(None, description="Additional notes / instructions")
+    interval_months: Optional[int] = Field(6, description="Recurring vaccination interval in months (e.g. 6 or 12)")
+    is_recurring_schedule: bool = Field(False, description="Whether this campaign is a recurring schedule-based vaccination programme")
     assigned_vo_ids: List[uuid.UUID] = Field(default_factory=list, description="Optional VO user IDs to assign")
     assigned_fw_ids: List[uuid.UUID] = Field(default_factory=list, description="Optional FW user IDs to assign")
 
@@ -73,6 +79,12 @@ class CampaignResponse(BaseModel):
     disease_name: Optional[str] = None
     target_species: Optional[str] = None
     coverage_pct: Optional[float] = None
+    scope_type: Optional[str] = "DISTRICT"
+    target_district_ids: Optional[List[uuid.UUID]] = None
+    min_age_months: Optional[int] = None
+    max_age_months: Optional[int] = None
+    interval_months: Optional[int] = 6
+    is_recurring_schedule: Optional[bool] = False
 
 
 class CampaignDetailResponse(CampaignResponse):
@@ -165,9 +177,18 @@ class SpeciesItem(BaseModel):
     name_en: str
 
 
+class DistrictMetaItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    code: str
+    name_gu: str
+    name_en: str
+
+
 class TalukaMetaItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
+    district_id: Optional[uuid.UUID] = None
     code: str
     name_gu: str
     name_en: str
@@ -176,6 +197,7 @@ class TalukaMetaItem(BaseModel):
 class VillageMetaItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
+    district_id: Optional[uuid.UUID] = None
     code: str
     name_gu: str
     name_en: str
@@ -186,6 +208,7 @@ class VillageMetaItem(BaseModel):
 
 
 class CampaignCreationMetaResponse(BaseModel):
+    districts: List[DistrictMetaItem] = Field(default_factory=list)
     species: List[SpeciesItem]
     talukas: List[TalukaMetaItem]
     villages: List[VillageMetaItem]

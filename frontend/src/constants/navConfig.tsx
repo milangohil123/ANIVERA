@@ -20,6 +20,7 @@ import {
   Layers,
   Building2,
   ShieldCheck,
+  TrendingUp,
 } from 'lucide-react';
 import { STRINGS_GU } from './stringsGu';
 import { type NavItemDef } from '../layouts/WebSidebarLayout';
@@ -37,6 +38,7 @@ export const DAHO_NAV_ITEMS: NavItemDef[] = [
   { path: '/daho/surveillance', get label() { return STRINGS_GU.nav.daho.surveillance; }, icon: <Activity className={ICON_CLASS} />, permission: 'disease.case.assign' },
   { path: '/daho/maps', get label() { return STRINGS_GU.nav.daho.maps; }, icon: <MapPin className={ICON_CLASS} />, permission: 'map.view' },
   { path: '/daho/reports', get label() { return STRINGS_GU.nav.daho.reports; }, icon: <BarChart3 className={ICON_CLASS} />, permission: 'reports.district' },
+  { path: '/daho/analytics', label: 'ઇન્ફરન્સ અને એનાલિટિક્સ', icon: <TrendingUp className={ICON_CLASS} />, permission: 'reports.district' },
   { path: '/daho/profile', get label() { return STRINGS_GU.nav.daho.profile; }, icon: <User className={ICON_CLASS} /> },
 ];
 
@@ -50,6 +52,7 @@ export const TAHO_NAV_ITEMS: NavItemDef[] = [
   { path: '/taho/farmers', label: 'પશુપાલક ડિરેક્ટરી', icon: <Users className={ICON_CLASS} />, permission: 'farmer.view' },
   { path: '/taho/surveillance', label: 'રોગ સર્વેલન્સ', icon: <Activity className={ICON_CLASS} />, permission: 'disease.case.assign' },
   { path: '/taho/reports', label: 'રિપોર્ટ્સ અને પૃથ્થકરણ', icon: <BarChart3 className={ICON_CLASS} />, permission: 'reports.taluka' },
+  { path: '/taho/analytics', label: 'ઇન્ફરન્સ અને એનાલિટિક્સ', icon: <TrendingUp className={ICON_CLASS} />, permission: 'reports.taluka' },
   { path: '/taho/profile', label: 'પ્રોફાઇલ', icon: <User className={ICON_CLASS} /> },
 ];
 
@@ -66,6 +69,7 @@ export const VO_NAV_ITEMS: NavItemDef[] = [
   { path: '/vo/surveillance-reviews', get label() { return STRINGS_GU.nav.vo.surveillanceReviews; }, icon: <Activity className={ICON_CLASS} />, permission: 'disease.report' },
   { path: '/vo/maps', get label() { return STRINGS_GU.nav.vo.maps || 'GIS નકશો'; }, icon: <MapPin className={ICON_CLASS} />, permission: 'map.view' },
   { path: '/vo/reports', get label() { return STRINGS_GU.nav.vo.reports; }, icon: <BarChart3 className={ICON_CLASS} />, permission: 'reports.village' },
+  { path: '/vo/analytics', label: 'ઇન્ફરન્સ અને એનાલિટિક્સ', icon: <TrendingUp className={ICON_CLASS} />, permission: 'reports.village' },
   { path: '/vo/sync', get label() { return STRINGS_GU.nav.vo.sync; }, icon: <RefreshCw className={ICON_CLASS} /> },
   { path: '/vo/profile', get label() { return STRINGS_GU.nav.vo.profile; }, icon: <User className={ICON_CLASS} /> },
 ];
@@ -103,6 +107,7 @@ export const COOP_NAV_ITEMS: NavItemDef[] = [
   { path: '/coop/camps', get label() { return STRINGS_GU.nav.coop.camps || 'કેમ્પ સંકલન'; }, icon: <Tent className={ICON_CLASS} />, permission: 'coop.schedules.create' },
   { path: '/coop/surveillance', get label() { return STRINGS_GU.nav.coop.surveillance || 'રોગ દેખરેખ'; }, icon: <Activity className={ICON_CLASS} />, permission: 'reports.analytics.disease' },
   { path: '/coop/reports', get label() { return STRINGS_GU.nav.coop.reports || 'અહેવાલો'; }, icon: <BarChart3 className={ICON_CLASS} />, permission: 'reports.village' },
+  { path: '/coop/analytics', label: 'ઇન્ફરન્સ અને એનાલિટિક્સ', icon: <TrendingUp className={ICON_CLASS} />, permission: 'reports.village' },
   { path: '/coop/profile', get label() { return STRINGS_GU.nav.coop.profile || 'પ્રોફાઇલ'; }, icon: <User className={ICON_CLASS} /> },
 ];
 
@@ -110,10 +115,12 @@ export const ADMIN_NAV_ITEMS: NavItemDef[] = [
   { path: '/admin/overview', get label() { return STRINGS_GU.nav.admin.overview; }, icon: <LayoutDashboard className={ICON_CLASS} /> },
   { path: '/admin/masters', get label() { return STRINGS_GU.nav.admin.masters || 'પશુ અને રોગ માસ્ટર (Species, Diseases & Vaccines)'; }, icon: <Layers className={ICON_CLASS} />, permission: 'system.settings.manage' },
   { path: '/admin/map', get label() { return STRINGS_GU.nav.admin.map; }, icon: <MapPin className={ICON_CLASS} />, permission: 'map.view' },
+  { path: '/admin/campaigns', label: 'રાજ્યવ્યાપી રસીકરણ ઝુંબેશો (State Campaigns)', icon: <Megaphone className={ICON_CLASS} />, permission: 'campaign.configure' },
   { path: '/admin/geography', get label() { return STRINGS_GU.nav.admin.geography; }, icon: <Database className={ICON_CLASS} />, permission: 'geo.state.manage' },
   { path: '/admin/daho', get label() { return STRINGS_GU.nav.admin.daho; }, icon: <Shield className={ICON_CLASS} />, permission: 'user.daho.create' },
   { path: '/admin/assignments', get label() { return STRINGS_GU.nav.admin.assignments; }, icon: <Layers className={ICON_CLASS} />, permission: 'user.role.assign' },
   { path: '/admin/oversight', get label() { return STRINGS_GU.nav.admin.oversight; }, icon: <BarChart3 className={ICON_CLASS} />, permission: 'reports.district' },
+  { path: '/admin/analytics', label: 'ઇન્ફરન્સ અને એનાલિટિક્સ (Inference)', icon: <TrendingUp className={ICON_CLASS} />, permission: 'reports.district' },
   { path: '/admin/rbac', get label() { return STRINGS_GU.nav.admin.rbac || 'ભૂમિકા નિયંત્રણ'; }, icon: <ShieldCheck className={ICON_CLASS} />, permission: 'system.roles.manage' },
   { path: '/admin/users', get label() { return STRINGS_GU.nav.admin.users; }, icon: <Users className={ICON_CLASS} />, permission: 'user.staff.manage' },
   { path: '/admin/audit-logs', get label() { return STRINGS_GU.nav.admin.auditLogs; }, icon: <History className={ICON_CLASS} />, permission: 'system.logs.view' },

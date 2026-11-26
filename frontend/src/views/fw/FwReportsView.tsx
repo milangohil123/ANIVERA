@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   Clock,
   Layers,
+  TrendingUp,
 } from 'lucide-react';
 
 const sanitizeCsvCell = (val: any): string => {
@@ -257,6 +258,15 @@ export const FwReportsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/fw/analytics')}
+            leftIcon={<TrendingUp className="w-3.5 h-3.5" />}
+            className="text-xs"
+          >
+            ઇન્ફરન્સ ડેશબોર્ડ (Live Analytics)
+          </Button>
           <Button
             variant="outline"
             size="sm"

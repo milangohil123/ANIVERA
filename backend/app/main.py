@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="PashuRakshak Botad — Digital Livestock Vaccination Tracking and Disease Early-Warning Platform",
+    description="PashuRakshak — Digital Livestock Vaccination Tracking and Disease Early-Warning Platform (Gujarat)",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",

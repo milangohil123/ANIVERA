@@ -1907,47 +1907,78 @@ class SuperAdminService:
                 "color": meta["color"]
             })
 
-        # 9. Real Taluka Summaries
-        talukas = (await self.db.execute(
+        # 9. Real Taluka Summaries (Optimized: Bulk Aggregations across all District Talukas)
+        talukas = list((await self.db.execute(
             select(Taluka).where(Taluka.district_id == district_id).order_by(Taluka.name_en)
-        )).scalars().all()
+        )).scalars().all())
+        t_ids = [t.id for t in talukas]
+
+        v_map: Dict[uuid.UUID, int] = {}
+        an_map: Dict[uuid.UUID, int] = {}
+        fm_map: Dict[uuid.UUID, int] = {}
+        vax_map: Dict[uuid.UUID, int] = {}
+        dis_map: Dict[uuid.UUID, int] = {}
+        asgn_map: Dict[uuid.UUID, Tuple[Any, Any]] = {}
+
+        if t_ids:
+            v_res = await self.db.execute(
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.taluka_id.in_(t_ids), Village.active == True)
+                .group_by(Village.taluka_id)
+            )
+            v_map = dict(v_res.fetchall())
+
+            an_res = await self.db.execute(
+                select(Village.taluka_id, func.count(distinct(Animal.id)))
+                .join(Animal, Animal.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), Animal.status == "ACTIVE")
+                .group_by(Village.taluka_id)
+            )
+            an_map = dict(an_res.fetchall())
+
+            fm_res = await self.db.execute(
+                select(Village.taluka_id, func.count(distinct(Farmer.id)))
+                .join(Farmer, Farmer.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), Farmer.active == True)
+                .group_by(Village.taluka_id)
+            )
+            fm_map = dict(fm_res.fetchall())
+
+            vax_res = await self.db.execute(
+                select(Village.taluka_id, func.count(AnimalEvent.event_id))
+                .join(AnimalEvent, AnimalEvent.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), AnimalEvent.event_type == "VACCINATION")
+                .group_by(Village.taluka_id)
+            )
+            vax_map = dict(vax_res.fetchall())
+
+            dis_res = await self.db.execute(
+                select(Village.taluka_id, func.count(DiseaseReport.report_id))
+                .join(DiseaseReport, DiseaseReport.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids))
+                .group_by(Village.taluka_id)
+            )
+            dis_map = dict(dis_res.fetchall())
+
+            asgn_res = await self.db.execute(
+                select(TahoTalukaAssignment, User)
+                .join(User, TahoTalukaAssignment.taho_user_id == User.id)
+                .where(
+                    TahoTalukaAssignment.taluka_id.in_(t_ids),
+                    TahoTalukaAssignment.ended_at.is_(None)
+                )
+            )
+            asgn_map = {a.taluka_id: (a, u) for a, u in asgn_res.all()}
 
         taluka_summaries = []
         unassigned_talukas_count = 0
         for t in talukas:
-            t_villages = (await self.db.execute(
-                select(func.count(Village.id)).where(Village.taluka_id == t.id, Village.active == True)
-            )).scalar() or 0
-
-            t_animals = (await self.db.execute(
-                select(func.count(distinct(Animal.id)))
-                .join(Village, Animal.village_id == Village.id)
-                .where(Village.taluka_id == t.id, Animal.status == "ACTIVE")
-            )).scalar() or 0
-
-            t_farmers = (await self.db.execute(
-                select(func.count(distinct(Farmer.id)))
-                .join(Village, Farmer.village_id == Village.id)
-                .where(Village.taluka_id == t.id, Farmer.active == True)
-            )).scalar() or 0
-
-            t_vaccinations = (await self.db.execute(
-                select(func.count(AnimalEvent.event_id))
-                .join(Village, AnimalEvent.village_id == Village.id)
-                .where(Village.taluka_id == t.id, AnimalEvent.event_type == "VACCINATION")
-            )).scalar() or 0
-
-            t_disease = (await self.db.execute(
-                select(func.count(DiseaseReport.report_id))
-                .join(Village, DiseaseReport.village_id == Village.id)
-                .where(Village.taluka_id == t.id)
-            )).scalar() or 0
-
-            asgn = (await self.db.execute(
-                select(TahoTalukaAssignment, User)
-                .join(User, TahoTalukaAssignment.taho_user_id == User.id)
-                .where(TahoTalukaAssignment.taluka_id == t.id, TahoTalukaAssignment.ended_at.is_(None))
-            )).first()
+            t_villages = v_map.get(t.id, 0)
+            t_animals = an_map.get(t.id, 0)
+            t_farmers = fm_map.get(t.id, 0)
+            t_vaccinations = vax_map.get(t.id, 0)
+            t_disease = dis_map.get(t.id, 0)
+            asgn = asgn_map.get(t.id)
 
             assigned_taho = None
             if asgn:
@@ -2034,53 +2065,79 @@ class SuperAdminService:
     # 10. Taluka & TAHO Management
     # ==========================================================================
     async def get_daho_talukas(self, district_id: uuid.UUID) -> List[Dict[str, Any]]:
-        """Return all talukas for a district with active TAHO assignment details."""
+        """Return all talukas for a district with active TAHO assignment details (Bulk Optimized)."""
         talukas = list((await self.db.execute(
             select(Taluka)
             .where(Taluka.district_id == district_id)
             .order_by(Taluka.name_en)
         )).scalars().all())
+        t_ids = [t.id for t in talukas]
 
-        results = []
-        for t in talukas:
-            asgn_stmt = (
+        v_map: Dict[uuid.UUID, int] = {}
+        an_map: Dict[uuid.UUID, int] = {}
+        fm_map: Dict[uuid.UUID, int] = {}
+        vax_map: Dict[uuid.UUID, int] = {}
+        dis_map: Dict[uuid.UUID, int] = {}
+        asgn_map: Dict[uuid.UUID, Tuple[Any, Any]] = {}
+
+        if t_ids:
+            v_res = await self.db.execute(
+                select(Village.taluka_id, func.count(Village.id))
+                .where(Village.taluka_id.in_(t_ids), Village.active == True)
+                .group_by(Village.taluka_id)
+            )
+            v_map = dict(v_res.fetchall())
+
+            an_res = await self.db.execute(
+                select(Village.taluka_id, func.count(distinct(Animal.id)))
+                .join(Animal, Animal.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), Animal.status == "ACTIVE")
+                .group_by(Village.taluka_id)
+            )
+            an_map = dict(an_res.fetchall())
+
+            fm_res = await self.db.execute(
+                select(Village.taluka_id, func.count(distinct(Farmer.id)))
+                .join(Farmer, Farmer.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), Farmer.active == True)
+                .group_by(Village.taluka_id)
+            )
+            fm_map = dict(fm_res.fetchall())
+
+            vax_res = await self.db.execute(
+                select(Village.taluka_id, func.count(AnimalEvent.event_id))
+                .join(AnimalEvent, AnimalEvent.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids), AnimalEvent.event_type == "VACCINATION")
+                .group_by(Village.taluka_id)
+            )
+            vax_map = dict(vax_res.fetchall())
+
+            dis_res = await self.db.execute(
+                select(Village.taluka_id, func.count(DiseaseReport.report_id))
+                .join(DiseaseReport, DiseaseReport.village_id == Village.id)
+                .where(Village.taluka_id.in_(t_ids))
+                .group_by(Village.taluka_id)
+            )
+            dis_map = dict(dis_res.fetchall())
+
+            asgn_res = await self.db.execute(
                 select(TahoTalukaAssignment, User)
                 .join(User, TahoTalukaAssignment.taho_user_id == User.id)
                 .where(
-                    TahoTalukaAssignment.taluka_id == t.id,
+                    TahoTalukaAssignment.taluka_id.in_(t_ids),
                     TahoTalukaAssignment.ended_at.is_(None)
                 )
             )
-            asgn_row = (await self.db.execute(asgn_stmt)).first()
+            asgn_map = {a.taluka_id: (a, u) for a, u in asgn_res.all()}
 
-            v_count = (await self.db.execute(
-                select(func.count(Village.id)).where(Village.taluka_id == t.id, Village.active == True)
-            )).scalar() or 0
-
-            an_count = (await self.db.execute(
-                select(func.count(distinct(Animal.id)))
-                .join(Village, Animal.village_id == Village.id)
-                .where(Village.taluka_id == t.id, Animal.status == "ACTIVE")
-            )).scalar() or 0
-
-            fm_count = (await self.db.execute(
-                select(func.count(distinct(Farmer.id)))
-                .join(Village, Farmer.village_id == Village.id)
-                .where(Village.taluka_id == t.id, Farmer.active == True)
-            )).scalar() or 0
-
-            vax_count = (await self.db.execute(
-                select(func.count(AnimalEvent.event_id))
-                .join(Village, AnimalEvent.village_id == Village.id)
-                .where(Village.taluka_id == t.id, AnimalEvent.event_type == "VACCINATION")
-            )).scalar() or 0
-
-            dis_count = (await self.db.execute(
-                select(func.count(DiseaseReport.report_id))
-                .join(Village, DiseaseReport.village_id == Village.id)
-                .where(Village.taluka_id == t.id)
-            )).scalar() or 0
-
+        results = []
+        for t in talukas:
+            asgn_row = asgn_map.get(t.id)
+            v_count = v_map.get(t.id, 0)
+            an_count = an_map.get(t.id, 0)
+            fm_count = fm_map.get(t.id, 0)
+            vax_count = vax_map.get(t.id, 0)
+            dis_count = dis_map.get(t.id, 0)
             cov_pct = round((vax_count / an_count * 100), 1) if an_count > 0 else 0.0
 
             assigned_taho = None
@@ -2349,15 +2406,20 @@ class SuperAdminService:
                 )
             prev_asgn.ended_at = now_dt
 
-        # 2. End any other taluka assignment for this TAHO (single active taluka per TAHO)
-        other_asgn = (await self.db.execute(
+        # 2. Allow one TAHO to hold multiple active Talukas across the district.
+        # Prevent duplicate assignment to the exact same taluka
+        existing_dup = (await self.db.execute(
             select(TahoTalukaAssignment).where(
                 TahoTalukaAssignment.taho_user_id == taho_user_id,
+                TahoTalukaAssignment.taluka_id == taluka_id,
                 TahoTalukaAssignment.ended_at.is_(None)
             )
         )).scalar_one_or_none()
-        if other_asgn:
-            other_asgn.ended_at = now_dt
+        if existing_dup:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"TAHO '{taho_user.full_name}' is already assigned to {taluka.name_en}."
+            )
 
         # 3. Create fresh assignment
         new_asgn = TahoTalukaAssignment(
